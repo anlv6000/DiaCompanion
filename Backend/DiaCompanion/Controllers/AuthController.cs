@@ -27,6 +27,17 @@ namespace DiaCompanion.Controllers
             });
         }
 
+        [HttpPost("register/doctor")]
+        public async Task<IActionResult> RegisterDoctor(RegisterDoctorDto dto)
+        {
+            await _authService.RegisterDotorAsync(dto);
+
+            return Ok(new
+            {
+                message = "Register success"
+            });
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login(
             LoginDto dto)

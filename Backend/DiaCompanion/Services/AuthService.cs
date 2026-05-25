@@ -12,6 +12,8 @@ namespace DiaCompanion.Services
     public class AuthService
     {
         private readonly IMongoCollection<User> _userCollection;
+        private readonly IMongoCollection<Doctor> _doctorCollection;
+
         private readonly JwtSettings _jwtSettings;
         private readonly IMongoCollection<Patient> _patientCollection;
 
@@ -21,7 +23,8 @@ namespace DiaCompanion.Services
         {
             _userCollection =
                 mongoDbService.GetCollection<User>("User");
-
+            _doctorCollection =
+    mongoDbService.GetCollection<Doctor>("Doctor");
             _jwtSettings = jwtSettings.Value;
         }
 
@@ -60,6 +63,62 @@ namespace DiaCompanion.Services
 
             await _userCollection.InsertOneAsync(user);
         }
+
+
+        public async Task RegisterDotorAsync(RegisterDoctorDto dto)
+        {
+            var existingUser =
+                await _userCollection
+                    .Find(x => x.Email == dto.Email)
+                    .FirstOrDefaultAsync();
+
+            if (existingUser != null)
+            {
+                throw new Exception("Email already exists");
+            }
+
+            var user = new User
+            {
+                FullName = dto.FullName,
+                PhoneNumber = dto.PhoneNumber,
+                Email = dto.Email,
+
+                PasswordHash =
+                    BCrypt.Net.BCrypt.HashPassword(
+                        dto.Password),
+
+                Gender = dto.Gender,
+
+                Dob = dto.Dob,
+
+                Role = UserRole.Doctor,
+
+                CreatedAt = DateTime.UtcNow
+
+            };
+
+            await _userCollection.InsertOneAsync(user);
+
+
+            var doctor = new Doctor
+            {
+                UserId = user.Id,
+
+                Specialty = dto.Specialty,
+
+                LicenseNumber = dto.LicenseNumber,
+
+                Department = dto.Department,
+
+                Hospital = dto.Hospital
+            };
+
+
+            await _doctorCollection.InsertOneAsync(doctor);
+
+        }
+
+
         // LOGIN
         public async Task<string> LoginAsync(
             LoginDto dto)
