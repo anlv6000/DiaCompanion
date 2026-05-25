@@ -21,6 +21,12 @@ namespace DiaCompanion.Models
         [BsonElement("role")]
         public string Role { get; set; } = null!;
 
+        [BsonElement("gender")]
+        public string Gender { get; set; } = null!;
+
+        [BsonElement("dob")]
+        public DateTime Dob { get; set; }
+
         [BsonElement("created_at")]
         public DateTime CreatedAt { get; set; }
 

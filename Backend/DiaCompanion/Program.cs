@@ -18,7 +18,12 @@ namespace DiaCompanion
             builder.Services.AddSwaggerGen();
             builder.Services.Configure<MongoDbSettings>(
             builder.Configuration.GetSection("MongoDbSettings"));
+            builder.Services.Configure<JwtSettings>(
+            builder.Configuration.GetSection("JwtSettings"));
             builder.Services.AddSingleton<MongoDbService>();
+            builder.Services.AddScoped<PatientService>();
+            builder.Services.AddScoped<AuthService>();
+            
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -29,6 +34,8 @@ namespace DiaCompanion
             }
 
             app.UseHttpsRedirection();
+
+            app.UseAuthentication();
 
             app.UseAuthorization();
 
