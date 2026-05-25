@@ -10,6 +10,8 @@
 
         public string Gender { get; set; } = null!;
 
+        public string PhoneNumber { get; set; } = null;
+
         public DateTime Dob { get; set; }
 
 

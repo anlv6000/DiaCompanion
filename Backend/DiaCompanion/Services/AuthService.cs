@@ -40,7 +40,7 @@ namespace DiaCompanion.Services
             var user = new User
             {
                 FullName = dto.FullName,
-
+                PhoneNumber = dto.PhoneNumber,
                 Email = dto.Email,
 
                 PasswordHash =
@@ -51,7 +51,7 @@ namespace DiaCompanion.Services
 
                 Dob = dto.Dob,
 
-                Role = "Patient",
+                Role = UserRole.Patient,
 
                 CreatedAt = DateTime.UtcNow
 
@@ -100,8 +100,7 @@ namespace DiaCompanion.Services
                     user.Email),
 
                 new Claim(
-                    ClaimTypes.Role,
-                    user.Role),
+                    ClaimTypes.Role, user.Role.ToString()),
                 new Claim(
                     "full_name",
                     user.FullName)

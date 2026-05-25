@@ -15,6 +15,9 @@ namespace DiaCompanion.Models
         [BsonElement("full_name")]
         public string FullName { get; set; } = null!;
 
+        [BsonElement("phone_number")]
+        public string PhoneNumber { get; set; } = null!;
+
         [BsonElement("dob")]
         public string Dob { get; set; } = null!;
 
