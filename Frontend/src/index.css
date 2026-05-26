@@ -1,0 +1,10 @@
+/* index.css — minimal base only.
+   Font and color are set by medical.css per page. */
+
+body {
+  margin: 0;
+}
+
+code {
+  font-family: 'IBM Plex Mono', source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
