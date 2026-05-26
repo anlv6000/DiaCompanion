@@ -23,7 +23,17 @@ namespace DiaCompanion
             builder.Services.AddSingleton<MongoDbService>();
             builder.Services.AddScoped<PatientService>();
             builder.Services.AddScoped<AuthService>();
-            
+            builder.Services.AddCors(options =>
+                {
+                    options.AddPolicy("AllowFrontend",
+                        policy =>
+                        {
+                            policy.WithOrigins("http://localhost:3000", "http://localhost:5173") // địa chỉ frontend
+                                .AllowAnyHeader()
+                                .AllowAnyMethod();
+                        });
+                });
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -39,6 +49,7 @@ namespace DiaCompanion
 
             app.UseAuthorization();
 
+            app.UseCors("AllowFrontend");
 
             app.MapControllers();
 
