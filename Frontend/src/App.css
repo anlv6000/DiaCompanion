@@ -1,0 +1,18 @@
+/* App.css — global reset only.
+   All theme/color/font rules live in medical.css (imported per page).
+   Do not add font-family, background, or color-scheme here. */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}

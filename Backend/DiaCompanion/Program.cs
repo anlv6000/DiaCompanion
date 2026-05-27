@@ -18,7 +18,22 @@ namespace DiaCompanion
             builder.Services.AddSwaggerGen();
             builder.Services.Configure<MongoDbSettings>(
             builder.Configuration.GetSection("MongoDbSettings"));
+            builder.Services.Configure<JwtSettings>(
+            builder.Configuration.GetSection("JwtSettings"));
             builder.Services.AddSingleton<MongoDbService>();
+            builder.Services.AddScoped<PatientService>();
+            builder.Services.AddScoped<AuthService>();
+            builder.Services.AddCors(options =>
+                {
+                    options.AddPolicy("AllowFrontend",
+                        policy =>
+                        {
+                            policy.WithOrigins("http://localhost:3000", "http://localhost:5173") // địa chỉ frontend
+                                .AllowAnyHeader()
+                                .AllowAnyMethod();
+                        });
+                });
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -30,8 +45,11 @@ namespace DiaCompanion
 
             app.UseHttpsRedirection();
 
+            app.UseAuthentication();
+
             app.UseAuthorization();
 
+            app.UseCors("AllowFrontend");
 
             app.MapControllers();
 
