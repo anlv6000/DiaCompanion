@@ -57,8 +57,6 @@ namespace DiaCompanion.Services
                 Role = UserRole.Patient,
 
                 CreatedAt = DateTime.UtcNow
-
-                
             };
 
             await _userCollection.InsertOneAsync(user);

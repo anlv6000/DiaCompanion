@@ -1,0 +1,28 @@
+Train v1 — TJDR U-Net (ResNet34, 512×512)
+
+Seed split = 42 (70/15/15)
+Train = 313 | Val = 67 | Test = 68
+
+Model: U-Net (encoder ResNet34 pretrained ImageNet), 5 lớp (0 nền, 1 EX, 2 HE, 3 MA, 4 SE)
+Loss: Dice + CrossEntropy
+Optimizer: AdamW lr=1e-4, weight_decay=1e-4
+Epochs: 40
+
+Best validation (epoch 40):
+mDice = 0.455
+EX: Dice=nan IoU=nan
+HE: Dice=0.643 IoU=0.474
+MA: Dice=0.480 IoU=0.316
+SE: Dice=0.242 IoU=0.137
+
+Test set results:
+EX: Dice=nan IoU=nan
+HE: Dice=0.496 IoU=0.330
+MA: Dice=0.613 IoU=0.442
+SE: Dice=0.104 IoU=0.055
+
+Nhận xét:
+- EX không xuất hiện trong tập train → Dice/IoU = NaN.
+- HE và MA đạt mức khá (IoU ~0.33–0.44).
+- SE rất thấp do lesion nhỏ và hiếm.
+- Kết quả còn cách mốc tham chiếu TJDR/IDRiD (IoU ~0.66, F1 ~0.79).
