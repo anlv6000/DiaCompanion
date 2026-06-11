@@ -1,0 +1,39 @@
+# Kết quả huấn luyện U-Net EfficientNet-B4 trên TJDR
+
+## Thông tin huấn luyện
+- Dataset: TJDR (train/val/test split 70/15/15, seed=42)
+- Input size: 768×768
+- Model: U-Net, encoder EfficientNet-B4 (pretrained ImageNet)
+- Loss: Dice + Focal (α=0.25, γ=2.0)
+- Optimizer: AdamW (lr=1e-4, weight_decay=1e-4)
+- Scheduler: CosineAnnealingLR (T_max=100)
+- Batch size: 4
+- Epochs chạy: 60 (Colab free, ~5.5 giờ)
+
+## Diễn biến huấn luyện
+- Epoch 1–8: Loss giảm nhanh (~1.19 → 0.56), nhưng val mDice ≈ 0.0 (mô hình chỉ dự đoán nền).
+- Epoch 9–20: Bắt đầu học được HE và MA, val mDice tăng lên ~0.43.
+- Epoch 21–30: SE bắt đầu xuất hiện, Dice tăng dần; mDice đạt ~0.55.
+- Epoch 31–40: HE rất tốt (Dice ~0.75), MA ổn định (~0.60), SE ~0.31–0.33; mDice dao động ~0.55–0.57.
+- Epoch 41–60: Mô hình hội tụ, mDice giữ ở mức ~0.55–0.57, không cải thiện thêm. EX vẫn chưa học được (Dice = NaN).
+
+## Kết quả cuối cùng (epoch 60)
+- Validation mDice: ~0.56
+- Theo từng lớp:
+  - HE (xuất huyết): Dice ~0.75, IoU ~0.61
+  - MA (vi phình mạch): Dice ~0.60, IoU ~0.44
+  - SE (soft exudates): Dice ~0.33, IoU ~0.20
+  - EX (exudates): Dice = NaN (chưa học được)
+
+## Nhận xét
+- Mô hình đã học tốt HE và MA, bắt đầu học SE, nhưng EX chưa nhận diện được.
+- mDice hội tụ ở mức ~0.56, khó vượt 0.6 với cấu hình hiện tại.
+- Nguyên nhân: imbalance dữ liệu, EX quá ít, loss chưa nhấn mạnh lớp hiếm.
+
+## Đề xuất cải thiện
+- Thêm class weights cho EX và SE trong CrossEntropy.
+- Oversampling ảnh có EX/SE trong train set.
+- Augmentation crop zoom để tăng số lần nhìn thấy tổn thương nhỏ.
+- Thử Tversky Loss (α=0.7, β=0.3) để giảm bỏ sót.
+- Giảm input size xuống 512 để tiết kiệm thời gian Colab free.
+
