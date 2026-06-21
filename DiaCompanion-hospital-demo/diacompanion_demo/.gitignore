@@ -1,0 +1,38 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Model weights are large binary files - keep them out of git, copy manually
+backend/ai_scripts/model_1/weights/*.pth
+backend/ai_scripts/model_2/weights/*.pth
+backend/ai_scripts/model_3/weights/*.keras
+backend/ai_scripts/model_4/weights/*.keras
+backend/ai_scripts/model_5/weights/*.pth
+backend/ai_scripts/model_5/weights/*.pkl
+backend/ai_scripts/model_5/weights/*.csv
+
+# Generated inference outputs
+backend/ai_scripts/model_*/outputs/*.png
+
+# Uploaded test images (if any get saved locally during dev)
+backend/uploads/
+*.tmp
