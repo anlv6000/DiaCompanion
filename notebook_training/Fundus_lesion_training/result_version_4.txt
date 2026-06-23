@@ -1,0 +1,49 @@
+# Kết quả huấn luyện U-Net EfficientNet-B4 trên TJDR
+
+## Thông tin huấn luyện
+- Dataset: TJDR (train/val/test split 70/15/15, seed=42)
+- Input size: 768×768
+- Model: U-Net, encoder EfficientNet-B4 (pretrained ImageNet)
+- Loss: Dice + Focal (α=0.25, γ=2.0)
+- Optimizer: AdamW (lr=1e-4, weight_decay=1e-4)
+- Scheduler: CosineAnnealingLR (T_max=100)
+- Batch size: 4
+- Epochs chạy: tối đa 100, early stopping tại epoch 80 (patience=12, ~6 giờ Colab free)
+
+## Diễn biến huấn luyện
+Epoch 1–10: Loss giảm nhanh (~1.65 → 0.73), nhưng mDice ≈ 0.0 (mô hình chỉ dự đoán nền).
+
+Epoch 11–20: HE bắt đầu học được, Dice tăng lên ~0.40–0.50; MA và SE gần như 0.
+
+Epoch 21–30: MA và SE xuất hiện rõ hơn, Dice ~0.18–0.24; EX bắt đầu tăng nhẹ; mDice đạt ~0.25–0.30.
+
+Epoch 31–40: EX học mạnh, Dice ~0.49–0.63; HE ổn định ~0.73–0.76; MA ~0.54–0.59; SE ~0.25–0.30; mDice đạt ~0.54.
+
+Epoch 41–60: Mô hình hội tụ, mDice giữ ở mức ~0.56–0.57; EX ~0.57–0.60; HE ~0.77–0.79; MA ~0.60–0.61; SE ~0.30–0.32.
+
+Epoch 61–80: Hiệu năng cải thiện nhẹ, best weighted mDice = 0.549 tại epoch 68; sau đó không tăng thêm.
+
+## Kết quả cuối cùng (epoch ~50)
+Validation weighted mDice: 0.549
+
+Theo từng lớp:
+
+	EX (exudates): Dice ~0.60, IoU ~0.43
+
+	HE (xuất huyết): Dice ~0.78, IoU ~0.63
+	
+	MA (vi phình mạch): Dice ~0.61, IoU ~0.44
+
+	SE (soft exudates): Dice ~0.34, IoU ~0.20
+
+## Nhận xét
+- Mô hình học tốt HE và MA, EX cũng khá ổn định.
+- SE vẫn thấp do dữ liệu hiếm và tổn thương nhỏ khó học.
+- Weighted mDice hội tụ ở mức ~0.55, cao hơn bản cũ (~0.57 mDice nhưng chưa cân bằng các lớp).
+
+Early stopping hợp lý, tránh overfitting sau epoch 70.
+
+## Đề xuất cải thiện
+- Có thể thấy có vấn đề trong xác nhận màu so với bài báo của Mao Et el, dề xuất thay đổi cách hoạt động của Augumentation để xác định lại màu.
+- Đề xuất sử dụng mô hình encoder Eff-B0 để giảm trọng số từ 20M - 5M, phù hợp với mô hình nhỏ.
+
