@@ -1,0 +1,105 @@
+KẾT QUẢ MÔ HÌNH v4-2 (EfficientNet-B2) — SAU KHI SỬA BUG ĐỌC MASK
+DiaCompanion — Mô-đun phân đoạn tổn thương DR trên TJDR
+====================================================================
+
+1. BUG ĐÃ PHÁT HIỆN VÀ KHẮC PHỤC
+--------------------------------
+- Mask TJDR là PNG dạng palette/indexed (mode 'P'), index gốc đã đúng
+  chuẩn: 0=nền, 1=EX, 2=HE, 3=MA, 4=SE.
+- Pipeline cũ (v1-v3) đọc mask bằng cv2.imread() + cv2.cvtColor(BGR2GRAY)
+  -> làm xáo trộn nhãn theo chu trình EX->HE->MA->SE->EX.
+- Đã xác minh bằng dữ liệu thật trên máy (4/4 lớp đều bị hoán đổi).
+- Khắc phục: đọc trực tiếp palette index bằng PIL, bỏ hoàn toàn cv2 cho
+  bước đọc mask.
+- Hệ quả: toàn bộ kết quả v1-v3 không còn giá trị tham chiếu, vì ground
+  truth dùng để train đã sai nhãn hoàn toàn. v4/v4-2 là kết quả tin cậy
+  đầu tiên.
+
+2. THAY ĐỔI THIẾT KẾ: GỘP DATASET
+---------------------------------
+- TJDR gốc: 561 ảnh, chia sẵn thành train/ (448) và test/ (113).
+- Bài báo gốc (Mao et al., Table V) không tách 2 domain này khi báo cáo
+  kết quả — coi 561 ảnh là 1 dataset thống nhất.
+- v4/v4-2 gộp lại đúng cách: 561 ảnh -> pool chung -> split 70/15/15,
+  seed=42 -> Train 392 / Val 84 / Test 85 ảnh.
+- Đã xác minh không có ảnh trùng giữa 3 tập.
+- Kết quả: gap Val<->Test giảm từ 42% (v2 cũ) xuống còn ~4%.
+
+3. CẤU HÌNH HUẤN LUYỆN
+-----------------------
+Dataset          : TJDR gộp 561 ảnh, split 70/15/15, seed=42
+Train/Val/Test    : 392 / 84 / 85 ảnh
+Đọc nhãn          : PIL palette index trực tiếp (đã sửa bug)
+Input             : Resize 768x768 (nhất quán train/val/test)
+Kiến trúc         : U-Net (segmentation-models-pytorch)
+Encoder           : EfficientNet-B2 (ImageNet pretrained), 10.0M tham số
+Loss              : DiceLoss + CrossEntropyLoss (class-weighted)
+Class weights     : [0.050, 0.771, 0.307, 4.463, 1.000]  (BG,EX,HE,MA,SE)
+Optimizer         : AdamW (lr=1e-4, weight_decay=1e-4)
+Scheduler         : CosineAnnealingLR (T_max=100)
+Early stopping    : Weighted mDice (EX*0.15+HE*0.20+MA*0.30+SE*0.35), patience=20
+Checkpoint tốt nhất: Epoch 68 (early stop), best val weighted mDice = 0.558
+
+4. KẾT QUẢ CHÍNH THỨC (Test set, 85 ảnh, micro-average theo pixel)
+--------------------------------------------------------------------
+Lesion    Dice     IoU      So với bài báo gốc (IoU)
+EX        0.739    0.586    0.369 -> vượt xa
+HE        0.596    0.424    0.469 -> gần bằng
+MA        0.280    0.163    0.200 -> thấp hơn nhẹ
+SE        0.467    0.305    0.346 -> thấp hơn nhẹ
+----------------------------------------------------
+Mean      0.521    0.370    0.346 -> vượt benchmark
+
+Gap Val <-> Test: Best Val wDice=0.558 | Test mDice=0.521 | Gap=+0.037
+(So với gap 0.242 / 42% ở v2 cũ trước khi gộp dataset + sửa bug)
+
+5. LƯU Ý QUAN TRỌNG: KẾT QUẢ LOCAL KHÁC BIỆT — KHÔNG PHẢI LỖI
+----------------------------------------------------------------
+Khi test lại trên máy local (cùng 85 ảnh, cùng checkpoint), kết quả ra
+thấp hơn: Mean Dice = 0.321, Mean IoU = 0.244.
+
+Đã điều tra và xác nhận: KHÔNG có lỗi kỹ thuật. Nguyên nhân là khác biệt
+phương pháp tính chỉ số:
+
+                     Cell Colab            Script Local
+Phương pháp          Micro-average pixel   Macro-average ảnh
+Cách tính            Cộng dồn TP/FP/FN     Tính Dice riêng từng ảnh,
+                     toàn bộ 85 ảnh,       rồi lấy trung bình 85 giá
+                     tính Dice 1 lần       trị
+Ảnh hưởng            Ảnh nhiều lesion      Mọi ảnh trọng số bằng nhau,
+                     chi phối nhiều hơn    kể cả ảnh gần như không có
+                                           lesion (dễ kéo Dice xuống)
+
+-> Đã loại trừ: checkpoint hỏng (NaN/Inf), load model sai (key mismatch),
+   85 ảnh test bị lệch giữa 2 môi trường, giá trị tensor trung gian sai
+   lệch. Tất cả đều khớp 100%.
+
+KẾT LUẬN: số liệu 0.521 (micro-average, Cell Colab) là số liệu CHÍNH
+THỨC để báo cáo, vì khớp với cách bài báo gốc Mao et al. tính Table V.
+Số liệu 0.321 (local, macro-average) chỉ dùng để debug per-ảnh, KHÔNG
+dùng làm kết quả báo cáo.
+
+6. KẾT LUẬN TỔNG THỂ
+---------------------
+- Bug đọc mask (palette PNG xử lý sai qua cv2+BGR2GRAY) đã được phát
+  hiện, xác minh bằng dữ liệu thật, và khắc phục triệt để.
+- Toàn bộ kết quả v1-v3 không còn giá trị so sánh do ground truth sai.
+- Gộp dataset đúng phương pháp luận bài báo gốc giúp giảm gap Val<->Test
+  từ 42% xuống dưới 4%.
+- EfficientNet-B2 đạt Mean Dice 0.521 / Mean IoU 0.370 — VƯỢT mốc tham
+  chiếu bài báo gốc (Mean IoU 0.346), đặc biệt vượt trội ở EX.
+- MA và SE (lesion diện tích pixel nhỏ nhất) vẫn thấp hơn nhẹ benchmark
+  — phù hợp với độ khó nội tại đã ghi nhận trong bài báo gốc.
+
+7. HƯỚNG TIẾP THEO
+-------------------
+- Chạy lại v4 (EfficientNet-B4) và v4-3 (ResNet34) với cùng pipeline đã
+  sửa bug để so sánh công bằng 3 kiến trúc encoder.
+- Thử nghiệm oversampling MA/SE và augmentation crop/zoom trên nền
+  pipeline đã sửa bug để cải thiện thêm 2 lớp khó nhất.
+- Ghi rõ trong báo cáo capstone: phát hiện bug, quá trình xác minh, và
+  việc kết quả v1-v3 không còn giá trị so sánh — đây là phát hiện có
+  giá trị học thuật về tầm quan trọng của việc xác minh pipeline dữ liệu.
+
+====================================================================
+File model: tjdr_unet_v4_2_best.pth (40.7 MB, MD5: 0681f8627e09c8bae2c5a435de14298b)
