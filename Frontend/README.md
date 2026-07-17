@@ -1,70 +1,89 @@
-# Getting Started with Create React App
+# DiaCompanion — Web (clinical console)
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Console lâm sàng (bác sĩ/admin) cho hệ thống sàng lọc võng mạc đái tháo đường.
+React + Vite + TypeScript + Tailwind, dữ liệu lấy từ backend .NET đã tạo.
+Giao diện tuân theo `DESIGN.md` (IBM Plex, teal, hairline, thang DR colorblind-safe,
+badge deferral) — chống "AI-slop".
 
-## Available Scripts
+## 1. Chạy (web)
 
-In the project directory, you can run:
+```bash
+npm install
+npm run dev        # http://localhost:5173
+```
 
-### `npm start`
+Cần backend .NET chạy ở `http://localhost:5080` (xem repo backend). Đăng nhập:
+`an.doctor@diacompanion.local` / `Password123!` (bác sĩ) hoặc
+`admin@diacompanion.local` / `Password123!` (admin).
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+> Backend đã bật CORS cho phép mọi origin ở môi trường dev, nên gọi từ 5173 sang 5080 chạy được.
+> Đổi địa chỉ backend qua biến môi trường: tạo `.env` với `VITE_API_BASE=http://localhost:5080`.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## 2. Build production
 
-### `npm test`
+```bash
+npm run build      # ra thư mục dist/
+npm run preview    # xem thử bản build
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 3. Đóng gói Electron (tùy chọn)
 
-### `npm run build`
+```bash
+npm i -D electron
+npm run build
+npx electron electron/main.cjs
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+App dùng `HashRouter` nên chạy được cả web lẫn khi load từ `file://` trong Electron
+mà không cần sửa gì. Fonts self-host (offline OK).
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## 4. Kiến trúc dữ liệu (theo yêu cầu)
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Quy tắc: **mọi dữ liệu từ backend đi qua `DataContext` trước; page gọi `DataContext`;
+component chỉ nhận props và KHÔNG tự fetch.**
 
-### `npm run eject`
+```
+src/
+  config/api.ts          # baseAPI + bảng route API (tách riêng như yêu cầu)
+  lib/apiClient.ts        # fetch wrapper, gắn Bearer token
+  contexts/
+    AuthContext.tsx       # đăng nhập, token (in-memory), role, hasRole()
+    DataContext.tsx       # NƠI DUY NHẤT gọi backend: loaders + actions + state
+  routes.tsx              # bảng route trung tâm + guard auth/role
+  components/             # THUẦN trình bày (props only) — không gọi context data
+    AppShell.tsx          # nav + top bar (chỉ dùng AuthContext)
+    clinical.tsx          # GradeChip, DeferBadge, ReferableTag, MeterBar, DataState
+    charts.tsx            # RiskCoverageChart, ProgressionChart
+    ui/primitives.tsx     # Button/Badge/Panel/Input… restyle theo token
+  pages/                  # gọi useData()/useAuth(), đọc state, truyền xuống component
+  styles/tokens.css       # biến CSS = nguồn chân lý token (khớp DESIGN.md)
+  types/models.ts         # kiểu TS khớp DTO backend (camelCase)
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+Luồng: `Page → useData().loadX()` → `DataContext` gọi `apiClient` → lưu vào state của
+`DataContext` → page đọc state, truyền props cho component trình bày. Component không
+bao giờ import `apiClient` hay gọi loader.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## 5. Map trang → Use Case → endpoint
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+| Trang | UC | Endpoint (qua DataContext) |
+|---|---|---|
+| Login | UC-01 | `POST /api/auth/login` |
+| Triage (mặc định) | UC-12 | `GET /api/aidiagnosis/triage` |
+| Detail rail: Phê duyệt/Ghi đè | UC-15 | `POST /api/reviews/{id}` |
+| Bệnh nhân | UC-05 | `GET /api/patients?q=&diabetesType=` |
+| Hồ sơ bệnh án | UC-06 | `GET /api/patients/{id}` |
+| Diễn tiến | UC-13 | `GET /api/aidiagnosis/progression/{patientId}` |
+| Ca mâu thuẫn (Admin) | UC-19 | `GET /api/reviews/conflicts` |
+| Thống kê | UC-28 | `GET /api/dashboard/stats` |
+| Cấu hình (Admin) | UC-03 | `GET/PUT /api/adminconfig/configs`, `/models` |
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## 6. Ghi chú
 
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- Bảng Triage hiển thị **mã ảnh (`#fundusImageId`)** làm định danh ca, vì endpoint
+  `/triage` trả về `AiDiagnosis` chưa kèm tên bệnh nhân. Nếu muốn hiện tên BN trên
+  hàng đợi, cần bổ sung join ở backend (thêm PatientId/FullName vào response `triage`).
+- Token giữ **in-memory** theo `AGENTS.md` → refresh trang sẽ về màn đăng nhập.
+- `POST /api/aidiagnosis/run/{id}` đã có sẵn trong `DataContext.runAi` để nối màn
+  fundus viewer (bước 4) — viewer ảnh + overlay tổn thương là phần chưa dựng ở scaffold này.
+```
