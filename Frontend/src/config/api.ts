@@ -17,4 +17,26 @@ export const API_ROUTES = {
   configs: "/api/adminconfig/configs",
   models: "/api/adminconfig/models",
   activateModel: (id: number) => `/api/adminconfig/models/${id}/activate`,
+  // users (staff)
+  users: "/api/users",
+  lockUser: (id: number) => `/api/users/${id}/lock`,
+  // visits
+  visits: "/api/visits",
+  completeVisit: (id: number) => `/api/visits/${id}/complete`,
+  // fundus
+  fundus: "/api/fundus",
+  fundusByPatient: (patientId: number) => `/api/fundus/patient/${patientId}`,
+  fundusQuality: (id: number) => `/api/fundus/${id}/quality`,
+  // prescriptions
+  prescriptions: "/api/prescriptions",
+  prescriptionsByPatient: (patientId: number) => `/api/prescriptions/patient/${patientId}`,
+  // appointments (clinic view for web)
+  clinic: "/api/appointments/clinic",
+  // monitoring (doctor view)
+  metricsByPatient: (patientId: number) => `/api/healthmetrics/patient/${patientId}`,
+  adherence: (patientId: number) => `/api/medication/patient/${patientId}/adherence`,
+  symptomsByPatient: (patientId: number) => `/api/symptoms/patient/${patientId}`,
+  // blog / feedback
+  blog: "/api/blog",
+  feedback: "/api/feedback",
 } as const;

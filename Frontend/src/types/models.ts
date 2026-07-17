@@ -138,3 +138,148 @@ export interface ReviewPayload {
   finalGrade: DrGrade;
   note?: string;
 }
+
+// ---- staff user (admin management) ----
+export interface StaffUser {
+  id: number;
+  fullName: string;
+  email: string;
+  role: Role;
+  licenseNo: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+export interface CreateStaffPayload {
+  fullName: string;
+  email: string;
+  password: string;
+  role: Role;
+  licenseNo?: string;
+}
+
+// ---- patient create/update ----
+export interface CreatePatientPayload {
+  fullName: string;
+  dateOfBirth?: string | null;
+  gender?: string;
+  phone?: string;
+  address?: string;
+  diabetesType?: string;
+  diabetesDurationYears?: number | null;
+}
+export interface UpdatePatientPayload {
+  fullName: string;
+  phone?: string;
+  address?: string;
+  diabetesType?: string;
+  diabetesDurationYears?: number | null;
+}
+
+// ---- visit ----
+export interface CreateVisitPayload {
+  patientId: number;
+  doctorId?: number | null;
+  visitDate?: string | null;
+}
+export interface CompleteVisitPayload {
+  conclusion: string;
+  referral?: string;
+}
+
+// ---- fundus ----
+export interface FundusImage {
+  id: number;
+  patientId: number;
+  visitId: number | null;
+  eye: string;
+  filePath: string;
+  qualityStatus: string; // Pending | Gradable | Ungradable
+  uploadedById: number;
+  uploadedAt: string;
+}
+export interface UploadFundusPayload {
+  patientId: number;
+  visitId?: number | null;
+  eye: string;
+  filePath: string;
+}
+
+// ---- prescription ----
+export interface PrescriptionItem {
+  id?: number;
+  drugName: string;
+  dose?: string;
+  frequency?: string;
+  durationDays?: number | null;
+}
+export interface Prescription {
+  id: number;
+  patientId: number;
+  visitId: number | null;
+  issuedAt: string;
+  note: string | null;
+  items: PrescriptionItem[];
+}
+export interface CreatePrescriptionPayload {
+  patientId: number;
+  visitId?: number | null;
+  note?: string;
+  items: PrescriptionItem[];
+}
+
+// ---- appointment ----
+export interface Appointment {
+  id: number;
+  patientId: number;
+  doctorId: number | null;
+  scheduledAt: string;
+  status: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+// ---- monitoring (doctor view) ----
+export interface HealthMetric {
+  id: number;
+  patientId: number;
+  metricType: string;
+  value: number;
+  unit: string | null;
+  recordedAt: string;
+}
+export interface Adherence {
+  total: number;
+  taken: number;
+  rate: number;
+}
+export interface SymptomReport {
+  id: number;
+  patientId: number;
+  description: string;
+  severity: string;
+  adviceGiven: string | null;
+  reportedAt: string;
+}
+
+// ---- blog / feedback ----
+export interface BlogPost {
+  id: number;
+  authorId: number;
+  title: string;
+  body: string;
+  isPublished: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+}
+export interface CreateBlogPayload {
+  title: string;
+  body: string;
+  isPublished: boolean;
+}
+export interface Feedback {
+  id: number;
+  patientId: number;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}

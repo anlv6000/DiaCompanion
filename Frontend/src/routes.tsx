@@ -8,6 +8,10 @@ import { TriagePage } from "@/pages/TriagePage";
 import { PatientsPage, PatientRecordPage } from "@/pages/PatientsPage";
 import { ProgressionPage } from "@/pages/ProgressionPage";
 import { ConflictsPage, DashboardPage, AdminConfigPage, NotFoundPage } from "@/pages/AdminPages";
+import { FundusViewerPage } from "@/pages/FundusViewerPage";
+import { UsersPage } from "@/pages/UsersPage";
+import { PatientFormPage } from "@/pages/PatientFormPage";
+import { ClinicSchedulePage, BlogAdminPage, FeedbackPage } from "@/pages/EngagementPages";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -34,7 +38,28 @@ export function AppRoutes() {
       >
         <Route index element={<TriagePage />} />
         <Route path="patients" element={<PatientsPage />} />
+        <Route path="patients/new" element={<PatientFormPage />} />
         <Route path="patients/:id" element={<PatientRecordPage />} />
+        <Route path="patients/:id/edit" element={<PatientFormPage />} />
+        <Route path="fundus/:fundusImageId" element={<FundusViewerPage />} />
+        <Route path="clinic" element={<ClinicSchedulePage />} />
+        <Route path="blog" element={<BlogAdminPage />} />
+        <Route
+          path="users"
+          element={
+            <RequireRole roles={["Admin"]}>
+              <UsersPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="feedback"
+          element={
+            <RequireRole roles={["Admin"]}>
+              <FeedbackPage />
+            </RequireRole>
+          }
+        />
         <Route path="progression" element={<ProgressionPage />} />
         <Route path="progression/:patientId" element={<ProgressionPage />} />
         <Route
