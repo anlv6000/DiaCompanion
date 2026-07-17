@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AiDiagnosis, DrGrade } from "@/types/models";
@@ -112,6 +113,7 @@ function TriageTable({
 function ReviewRail({ diag, onDone }: { diag: AiDiagnosis | null; onDone: () => void }) {
   const { submitReview, loading, error } = useData();
   const { hasRole } = useAuth();
+  const navigate = useNavigate();
   const [override, setOverride] = useState(false);
   const [finalGrade, setFinalGrade] = useState<DrGrade>("Normal");
   const [note, setNote] = useState("");
@@ -148,6 +150,13 @@ function ReviewRail({ diag, onDone }: { diag: AiDiagnosis | null; onDone: () => 
     <Panel className="w-[340px] shrink-0 flex flex-col">
       <PanelHeader title="Kết quả AI" />
       <div className="p-4 space-y-3 text-dense">
+        <Button
+          variant="outline"
+          className="w-full justify-center"
+          onClick={() => navigate(`/fundus/${diag.fundusImageId}`)}
+        >
+          Xem ảnh đáy mắt
+        </Button>
         <div className="flex items-center justify-between">
           <span className="text-ink-faint">Ảnh</span>
           <span className="font-mono text-ink tabular-nums">#{diag.fundusImageId}</span>

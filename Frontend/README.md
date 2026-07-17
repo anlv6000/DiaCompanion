@@ -1,89 +1,75 @@
-# DiaCompanion — Web (clinical console)
+# DiaCompanion — Web (clinical console) — bản hoàn chỉnh
 
 Console lâm sàng (bác sĩ/admin) cho hệ thống sàng lọc võng mạc đái tháo đường.
-React + Vite + TypeScript + Tailwind, dữ liệu lấy từ backend .NET đã tạo.
-Giao diện tuân theo `DESIGN.md` (IBM Plex, teal, hairline, thang DR colorblind-safe,
-badge deferral) — chống "AI-slop".
+React + Vite + TypeScript + Tailwind, dữ liệu qua `DataContext`, giao diện theo
+`DESIGN.md`. Đã ghép **fundus viewer + overlay tổn thương**, token lưu **sessionStorage**,
+và Electron chạy **server localhost ngầm** (không dùng `file://`).
 
-## 1. Chạy (web)
+## 1. Chạy web (dev)
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
 ```
 
-Cần backend .NET chạy ở `http://localhost:5080` (xem repo backend). Đăng nhập:
-`an.doctor@diacompanion.local` / `Password123!` (bác sĩ) hoặc
-`admin@diacompanion.local` / `Password123!` (admin).
+Cần backend .NET ở `http://localhost:5080`. 
 
-> Backend đã bật CORS cho phép mọi origin ở môi trường dev, nên gọi từ 5173 sang 5080 chạy được.
-> Đổi địa chỉ backend qua biến môi trường: tạo `.env` với `VITE_API_BASE=http://localhost:5080`.
-
-## 2. Build production
+## 2. Chạy như app desktop (Electron, localhost ngầm)
 
 ```bash
-npm run build      # ra thư mục dist/
-npm run preview    # xem thử bản build
+npm install          # kéo cả electron (lần đầu ~vài chục MB)
+npm run app          # = build + electron .
 ```
 
-## 3. Đóng gói Electron (tùy chọn)
+Electron KHÔNG load `file://`. Nó bật một HTTP server tĩnh phục vụ `dist/` ở
+`http://localhost:9001` (nếu bận thì tự tăng 9002, 9003...) rồi mở cửa sổ trỏ vào đó —
+routing/MIME/cache chuẩn như web thật, dễ tối ưu. Logic ở `electron/main.cjs`.
+
+Chỉ chạy Electron sau khi đã có `dist/` (dùng `npm run app` là gọn nhất, nó build sẵn).
+
+## 3. Đóng gói cài đặt (tùy chọn)
 
 ```bash
-npm i -D electron
-npm run build
-npx electron electron/main.cjs
+npm run dist         # electron-builder -> dist-electron/ (nsis/dmg/AppImage)
 ```
 
-App dùng `HashRouter` nên chạy được cả web lẫn khi load từ `file://` trong Electron
-mà không cần sửa gì. Fonts self-host (offline OK).
+## 4. Kiến trúc dữ liệu (giữ nguyên nguyên tắc)
 
-## 4. Kiến trúc dữ liệu (theo yêu cầu)
-
-Quy tắc: **mọi dữ liệu từ backend đi qua `DataContext` trước; page gọi `DataContext`;
-component chỉ nhận props và KHÔNG tự fetch.**
+Mọi dữ liệu backend đi qua `DataContext` trước; page gọi `DataContext`;
+component chỉ nhận props, không tự fetch. `baseAPI` nằm ở `src/config/api.ts`.
 
 ```
 src/
-  config/api.ts          # baseAPI + bảng route API (tách riêng như yêu cầu)
-  lib/apiClient.ts        # fetch wrapper, gắn Bearer token
+  config/api.ts                # baseAPI + bảng route API
+  lib/apiClient.ts             # fetch wrapper + bearer token
   contexts/
-    AuthContext.tsx       # đăng nhập, token (in-memory), role, hasRole()
-    DataContext.tsx       # NƠI DUY NHẤT gọi backend: loaders + actions + state
-  routes.tsx              # bảng route trung tâm + guard auth/role
-  components/             # THUẦN trình bày (props only) — không gọi context data
-    AppShell.tsx          # nav + top bar (chỉ dùng AuthContext)
-    clinical.tsx          # GradeChip, DeferBadge, ReferableTag, MeterBar, DataState
-    charts.tsx            # RiskCoverageChart, ProgressionChart
-    ui/primitives.tsx     # Button/Badge/Panel/Input… restyle theo token
-  pages/                  # gọi useData()/useAuth(), đọc state, truyền xuống component
-  styles/tokens.css       # biến CSS = nguồn chân lý token (khớp DESIGN.md)
-  types/models.ts         # kiểu TS khớp DTO backend (camelCase)
+    AuthContext.tsx            # token sessionStorage (refresh giữ phiên; đóng hẳn trình duyệt mới mất)
+    DataContext.tsx            # NƠI DUY NHẤT gọi backend
+  routes.tsx                   # bảng route + guard auth/role
+  components/
+    AppShell.tsx               # nav + top bar
+    FundusViewer.tsx           # viewer thuần props: zoom/pan + overlay + red-free
+    lesions.ts                 # màu tổn thương Wong + mock generator + ảnh tổng hợp
+    clinical.tsx, charts.tsx, ui/primitives.tsx
+  pages/
+    TriagePage.tsx             # worklist mặc định; nút "Xem ảnh đáy mắt" -> /fundus/:id
+    FundusViewerPage.tsx       # gọi DataContext.runAi, hiển thị viewer
+    PatientsPage.tsx, ProgressionPage.tsx, AdminPages.tsx, LoginPage.tsx
 ```
 
-Luồng: `Page → useData().loadX()` → `DataContext` gọi `apiClient` → lưu vào state của
-`DataContext` → page đọc state, truyền props cho component trình bày. Component không
-bao giờ import `apiClient` hay gọi loader.
+## 5. Fundus viewer
 
-## 5. Map trang → Use Case → endpoint
+Mở từ Triage (chọn ca -> "Xem ảnh đáy mắt") hoặc trực tiếp `/#/fundus/{fundusImageId}`.
+Có zoom/pan, red-free (lọc kênh xanh), overlay MA/HE/EX/SE bật/tắt riêng (màu Wong
+colorblind-safe). Trang gọi `useData().runAi(id)` để lấy kết quả AI thật.
 
-| Trang | UC | Endpoint (qua DataContext) |
-|---|---|---|
-| Login | UC-01 | `POST /api/auth/login` |
-| Triage (mặc định) | UC-12 | `GET /api/aidiagnosis/triage` |
-| Detail rail: Phê duyệt/Ghi đè | UC-15 | `POST /api/reviews/{id}` |
-| Bệnh nhân | UC-05 | `GET /api/patients?q=&diabetesType=` |
-| Hồ sơ bệnh án | UC-06 | `GET /api/patients/{id}` |
-| Diễn tiến | UC-13 | `GET /api/aidiagnosis/progression/{patientId}` |
-| Ca mâu thuẫn (Admin) | UC-19 | `GET /api/reviews/conflicts` |
-| Thống kê | UC-28 | `GET /api/dashboard/stats` |
-| Cấu hình (Admin) | UC-03 | `GET/PUT /api/adminconfig/configs`, `/models` |
+> Overlay hiện là marker placeholder sinh từ id ca, vì backend/model mock mới trả
+> *số đếm* tổn thương (`lesionSummary`), chưa có mask theo pixel. Khi service Python
+> trả mask thật: đổi lớp `<circle>` trong `FundusViewer.tsx` thành `<image>` mask PNG
+> (hoặc `<polygon>`), phần zoom/pan/red-free giữ nguyên.
 
 ## 6. Ghi chú
 
-- Bảng Triage hiển thị **mã ảnh (`#fundusImageId`)** làm định danh ca, vì endpoint
-  `/triage` trả về `AiDiagnosis` chưa kèm tên bệnh nhân. Nếu muốn hiện tên BN trên
-  hàng đợi, cần bổ sung join ở backend (thêm PatientId/FullName vào response `triage`).
-- Token giữ **in-memory** theo `AGENTS.md` → refresh trang sẽ về màn đăng nhập.
-- `POST /api/aidiagnosis/run/{id}` đã có sẵn trong `DataContext.runAi` để nối màn
-  fundus viewer (bước 4) — viewer ảnh + overlay tổn thương là phần chưa dựng ở scaffold này.
-```
+- Router dùng `HashRouter` (URL có `#/`) -> chạy tốt cả web lẫn qua localhost server của Electron.
+- Bảng Triage hiển thị `#fundusImageId` làm định danh ca (endpoint `/triage` chưa kèm
+  tên bệnh nhân — muốn hiện tên cần thêm join ở backend).

@@ -3,20 +3,38 @@ import { api, ApiError } from "@/lib/apiClient";
 import { API_ROUTES } from "@/config/api";
 import type {
   AiDiagnosis,
+  Adherence,
+  Appointment,
+  BlogPost,
   ConflictExport,
+  CreateBlogPayload,
+  CreatePatientPayload,
+  CreatePrescriptionPayload,
+  CreateStaffPayload,
+  CreateVisitPayload,
+  CompleteVisitPayload,
   DashboardStats,
+  Feedback,
+  FundusImage,
+  HealthMetric,
   ModelVersion,
+  Patient,
   PatientPage,
   PatientRecord,
+  Prescription,
   ProgressionData,
   ReviewPayload,
+  StaffUser,
+  SymptomReport,
   SystemConfig,
+  UpdatePatientPayload,
+  UploadFundusPayload,
 } from "@/types/models";
 
 /**
  * DataContext is the ONLY place that talks to the backend.
- * Rule (per architecture): pages call these loaders/actions and read the state
- * slices below; presentational components receive data via props and never fetch.
+ * Rule: pages call these loaders/actions and read the state slices below;
+ * presentational components receive data via props and never fetch.
  */
 
 type LoadFlags = Record<string, boolean>;
@@ -31,12 +49,22 @@ interface DataState {
   conflicts: ConflictExport | null;
   configs: SystemConfig[] | null;
   models: ModelVersion[] | null;
+  // added
+  users: StaffUser[] | null;
+  fundusList: FundusImage[] | null;
+  prescriptions: Prescription[] | null;
+  clinic: Appointment[] | null;
+  metrics: HealthMetric[] | null;
+  adherence: Adherence | null;
+  symptoms: SymptomReport[] | null;
+  blog: BlogPost[] | null;
+  feedback: Feedback[] | null;
 }
 
 interface DataContextValue extends DataState {
   loading: LoadFlags;
   error: LoadErrors;
-  // loaders (read)
+  // reads
   loadTriage: () => Promise<void>;
   loadPatients: (q?: string, diabetesType?: string, page?: number) => Promise<void>;
   loadPatientRecord: (id: number) => Promise<void>;
@@ -45,11 +73,30 @@ interface DataContextValue extends DataState {
   loadConflicts: () => Promise<void>;
   loadConfigs: () => Promise<void>;
   loadModels: () => Promise<void>;
-  // actions (write) — refresh affected slices afterwards
+  loadUsers: (role?: string) => Promise<void>;
+  loadFundusByPatient: (patientId: number) => Promise<void>;
+  loadPrescriptions: (patientId: number) => Promise<void>;
+  loadClinic: (from?: string, to?: string) => Promise<void>;
+  loadMetrics: (patientId: number, type?: string) => Promise<void>;
+  loadAdherence: (patientId: number) => Promise<void>;
+  loadSymptoms: (patientId: number) => Promise<void>;
+  loadBlog: () => Promise<void>;
+  loadFeedback: () => Promise<void>;
+  // writes
   runAi: (fundusImageId: number) => Promise<AiDiagnosis>;
   submitReview: (aiDiagnosisId: number, payload: ReviewPayload) => Promise<void>;
   saveConfig: (key: string, value: string, description?: string) => Promise<void>;
   activateModel: (id: number) => Promise<void>;
+  createUser: (payload: CreateStaffPayload) => Promise<void>;
+  lockUser: (id: number, active: boolean) => Promise<void>;
+  createPatient: (payload: CreatePatientPayload) => Promise<Patient>;
+  updatePatient: (id: number, payload: UpdatePatientPayload) => Promise<void>;
+  createVisit: (payload: CreateVisitPayload) => Promise<void>;
+  completeVisit: (id: number, payload: CompleteVisitPayload) => Promise<void>;
+  uploadFundus: (payload: UploadFundusPayload) => Promise<void>;
+  setQuality: (id: number, qualityStatus: string) => Promise<void>;
+  createPrescription: (payload: CreatePrescriptionPayload) => Promise<void>;
+  createBlog: (payload: CreateBlogPayload) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -63,6 +110,15 @@ const emptyState: DataState = {
   conflicts: null,
   configs: null,
   models: null,
+  users: null,
+  fundusList: null,
+  prescriptions: null,
+  clinic: null,
+  metrics: null,
+  adherence: null,
+  symptoms: null,
+  blog: null,
+  feedback: null,
 };
 
 function errMsg(e: unknown): string {
@@ -79,7 +135,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState<LoadFlags>({});
   const [error, setError] = useState<LoadErrors>({});
 
-  // generic runner: manages loading/error per key and assigns into state
   const run = useCallback(
     async <T,>(key: string, fn: () => Promise<T>, assign?: (data: T) => Partial<DataState>) => {
       setLoading((s) => ({ ...s, [key]: true }));
@@ -98,8 +153,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const v = (p: Promise<unknown>) => p.then(() => undefined);
+
+  // ---------- reads ----------
   const loadTriage = useCallback(
-    () => run("triage", () => api.get<AiDiagnosis[]>(API_ROUTES.triage), (d) => ({ triage: d })).then(() => undefined),
+    () => v(run("triage", () => api.get<AiDiagnosis[]>(API_ROUTES.triage), (d) => ({ triage: d }))),
     [run],
   );
 
@@ -110,71 +168,116 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (diabetesType) params.set("diabetesType", diabetesType);
       params.set("page", String(page));
       params.set("pageSize", "20");
-      return run(
-        "patients",
-        () => api.get<PatientPage>(`${API_ROUTES.patients}?${params.toString()}`),
-        (d) => ({ patients: d }),
-      ).then(() => undefined);
+      return v(
+        run("patients", () => api.get<PatientPage>(`${API_ROUTES.patients}?${params}`), (d) => ({ patients: d })),
+      );
     },
     [run],
   );
 
   const loadPatientRecord = useCallback(
     (id: number) =>
-      run("patientRecord", () => api.get<PatientRecord>(API_ROUTES.patient(id)), (d) => ({ patientRecord: d })).then(
-        () => undefined,
-      ),
+      v(run("patientRecord", () => api.get<PatientRecord>(API_ROUTES.patient(id)), (d) => ({ patientRecord: d }))),
     [run],
   );
 
   const loadProgression = useCallback(
     (patientId: number) =>
-      run(
-        "progression",
-        () => api.get<ProgressionData>(API_ROUTES.progression(patientId)),
-        (d) => ({ progression: d }),
-      ).then(() => undefined),
+      v(run("progression", () => api.get<ProgressionData>(API_ROUTES.progression(patientId)), (d) => ({ progression: d }))),
     [run],
   );
 
   const loadDashboard = useCallback(
-    () =>
-      run("dashboard", () => api.get<DashboardStats>(API_ROUTES.dashboard), (d) => ({ dashboard: d })).then(
-        () => undefined,
-      ),
+    () => v(run("dashboard", () => api.get<DashboardStats>(API_ROUTES.dashboard), (d) => ({ dashboard: d }))),
     [run],
   );
 
   const loadConflicts = useCallback(
-    () =>
-      run("conflicts", () => api.get<ConflictExport>(API_ROUTES.conflicts), (d) => ({ conflicts: d })).then(
-        () => undefined,
-      ),
+    () => v(run("conflicts", () => api.get<ConflictExport>(API_ROUTES.conflicts), (d) => ({ conflicts: d }))),
     [run],
   );
 
   const loadConfigs = useCallback(
-    () => run("configs", () => api.get<SystemConfig[]>(API_ROUTES.configs), (d) => ({ configs: d })).then(() => undefined),
+    () => v(run("configs", () => api.get<SystemConfig[]>(API_ROUTES.configs), (d) => ({ configs: d }))),
     [run],
   );
 
   const loadModels = useCallback(
-    () => run("models", () => api.get<ModelVersion[]>(API_ROUTES.models), (d) => ({ models: d })).then(() => undefined),
+    () => v(run("models", () => api.get<ModelVersion[]>(API_ROUTES.models), (d) => ({ models: d }))),
     [run],
   );
 
-  const runAi = useCallback(
-    async (fundusImageId: number) => {
-      const diag = await run("runAi", () => api.post<AiDiagnosis>(API_ROUTES.runAi(fundusImageId)));
-      return diag;
+  const loadUsers = useCallback(
+    (role?: string) => {
+      const qs = role ? `?role=${encodeURIComponent(role)}` : "";
+      return v(run("users", () => api.get<StaffUser[]>(`${API_ROUTES.users}${qs}`), (d) => ({ users: d })));
     },
+    [run],
+  );
+
+  const loadFundusByPatient = useCallback(
+    (patientId: number) =>
+      v(run("fundusList", () => api.get<FundusImage[]>(API_ROUTES.fundusByPatient(patientId)), (d) => ({ fundusList: d }))),
+    [run],
+  );
+
+  const loadPrescriptions = useCallback(
+    (patientId: number) =>
+      v(run("prescriptions", () => api.get<Prescription[]>(API_ROUTES.prescriptionsByPatient(patientId)), (d) => ({ prescriptions: d }))),
+    [run],
+  );
+
+  const loadClinic = useCallback(
+    (from?: string, to?: string) => {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const qs = params.toString() ? `?${params}` : "";
+      return v(run("clinic", () => api.get<Appointment[]>(`${API_ROUTES.clinic}${qs}`), (d) => ({ clinic: d })));
+    },
+    [run],
+  );
+
+  const loadMetrics = useCallback(
+    (patientId: number, type?: string) => {
+      const qs = type ? `?type=${encodeURIComponent(type)}` : "";
+      return v(run("metrics", () => api.get<HealthMetric[]>(`${API_ROUTES.metricsByPatient(patientId)}${qs}`), (d) => ({ metrics: d })));
+    },
+    [run],
+  );
+
+  const loadAdherence = useCallback(
+    (patientId: number) =>
+      v(run("adherence", () => api.get<Adherence>(API_ROUTES.adherence(patientId)), (d) => ({ adherence: d }))),
+    [run],
+  );
+
+  const loadSymptoms = useCallback(
+    (patientId: number) =>
+      v(run("symptoms", () => api.get<SymptomReport[]>(API_ROUTES.symptomsByPatient(patientId)), (d) => ({ symptoms: d }))),
+    [run],
+  );
+
+  const loadBlog = useCallback(
+    () => v(run("blog", () => api.get<BlogPost[]>(API_ROUTES.blog), (d) => ({ blog: d }))),
+    [run],
+  );
+
+  const loadFeedback = useCallback(
+    () => v(run("feedback", () => api.get<Feedback[]>(API_ROUTES.feedback), (d) => ({ feedback: d }))),
+    [run],
+  );
+
+  // ---------- writes ----------
+  const runAi = useCallback(
+    (fundusImageId: number) => run("runAi", () => api.post<AiDiagnosis>(API_ROUTES.runAi(fundusImageId))),
     [run],
   );
 
   const submitReview = useCallback(
     async (aiDiagnosisId: number, payload: ReviewPayload) => {
       await run("review", () => api.post(API_ROUTES.review(aiDiagnosisId), payload));
-      await loadTriage(); // refresh queue after a decision
+      await loadTriage();
     },
     [run, loadTriage],
   );
@@ -195,6 +298,77 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [run, loadModels],
   );
 
+  const createUser = useCallback(
+    async (payload: CreateStaffPayload) => {
+      await run("createUser", () => api.post(API_ROUTES.users, payload));
+      await loadUsers();
+    },
+    [run, loadUsers],
+  );
+
+  const lockUser = useCallback(
+    async (id: number, active: boolean) => {
+      await run("lockUser", () => api.put(`${API_ROUTES.lockUser(id)}?active=${active}`));
+      await loadUsers();
+    },
+    [run, loadUsers],
+  );
+
+  const createPatient = useCallback(
+    (payload: CreatePatientPayload) => run("createPatient", () => api.post<Patient>(API_ROUTES.patients, payload)),
+    [run],
+  );
+
+  const updatePatient = useCallback(
+    async (id: number, payload: UpdatePatientPayload) => {
+      await run("updatePatient", () => api.put(API_ROUTES.patient(id), payload));
+      await loadPatientRecord(id);
+    },
+    [run, loadPatientRecord],
+  );
+
+  const createVisit = useCallback(
+    async (payload: CreateVisitPayload) => {
+      await run("createVisit", () => api.post(API_ROUTES.visits, payload));
+      await loadPatientRecord(payload.patientId);
+    },
+    [run, loadPatientRecord],
+  );
+
+  const completeVisit = useCallback(
+    (id: number, payload: CompleteVisitPayload) => v(run("completeVisit", () => api.put(API_ROUTES.completeVisit(id), payload))),
+    [run],
+  );
+
+  const uploadFundus = useCallback(
+    async (payload: UploadFundusPayload) => {
+      await run("uploadFundus", () => api.post(API_ROUTES.fundus, payload));
+      await loadFundusByPatient(payload.patientId);
+    },
+    [run, loadFundusByPatient],
+  );
+
+  const setQuality = useCallback(
+    (id: number, qualityStatus: string) => v(run("setQuality", () => api.put(API_ROUTES.fundusQuality(id), { qualityStatus }))),
+    [run],
+  );
+
+  const createPrescription = useCallback(
+    async (payload: CreatePrescriptionPayload) => {
+      await run("createPrescription", () => api.post(API_ROUTES.prescriptions, payload));
+      await loadPrescriptions(payload.patientId);
+    },
+    [run, loadPrescriptions],
+  );
+
+  const createBlog = useCallback(
+    async (payload: CreateBlogPayload) => {
+      await run("createBlog", () => api.post(API_ROUTES.blog, payload));
+      await loadBlog();
+    },
+    [run, loadBlog],
+  );
+
   const value = useMemo<DataContextValue>(
     () => ({
       ...state,
@@ -208,27 +382,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
       loadConflicts,
       loadConfigs,
       loadModels,
+      loadUsers,
+      loadFundusByPatient,
+      loadPrescriptions,
+      loadClinic,
+      loadMetrics,
+      loadAdherence,
+      loadSymptoms,
+      loadBlog,
+      loadFeedback,
       runAi,
       submitReview,
       saveConfig,
       activateModel,
+      createUser,
+      lockUser,
+      createPatient,
+      updatePatient,
+      createVisit,
+      completeVisit,
+      uploadFundus,
+      setQuality,
+      createPrescription,
+      createBlog,
     }),
     [
-      state,
-      loading,
-      error,
-      loadTriage,
-      loadPatients,
-      loadPatientRecord,
-      loadProgression,
-      loadDashboard,
-      loadConflicts,
-      loadConfigs,
-      loadModels,
-      runAi,
-      submitReview,
-      saveConfig,
-      activateModel,
+      state, loading, error,
+      loadTriage, loadPatients, loadPatientRecord, loadProgression, loadDashboard, loadConflicts,
+      loadConfigs, loadModels, loadUsers, loadFundusByPatient, loadPrescriptions, loadClinic,
+      loadMetrics, loadAdherence, loadSymptoms, loadBlog, loadFeedback,
+      runAi, submitReview, saveConfig, activateModel, createUser, lockUser, createPatient,
+      updatePatient, createVisit, completeVisit, uploadFundus, setQuality, createPrescription, createBlog,
     ],
   );
 

@@ -6,6 +6,10 @@ import {
   LayoutDashboard,
   Settings,
   GitCompareArrows,
+  CalendarDays,
+  Newspaper,
+  UserCog,
+  MessageSquare,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -24,9 +28,13 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Triage", icon: LayoutList, roles: ["Admin", "Doctor"], end: true },
   { to: "/patients", label: "Bệnh nhân", icon: Users, roles: ["Admin", "Doctor", "Nurse"] },
+  { to: "/clinic", label: "Lịch khám", icon: CalendarDays, roles: ["Admin", "Doctor"] },
   { to: "/progression", label: "Diễn tiến", icon: LineChart, roles: ["Admin", "Doctor"] },
   { to: "/conflicts", label: "Ca mâu thuẫn", icon: GitCompareArrows, roles: ["Admin"] },
   { to: "/dashboard", label: "Thống kê", icon: LayoutDashboard, roles: ["Admin", "Doctor"] },
+  { to: "/blog", label: "Blog", icon: Newspaper, roles: ["Admin", "Doctor"] },
+  { to: "/feedback", label: "Phản hồi", icon: MessageSquare, roles: ["Admin"] },
+  { to: "/users", label: "Tài khoản", icon: UserCog, roles: ["Admin"] },
   { to: "/admin", label: "Cấu hình", icon: Settings, roles: ["Admin"] },
 ];
 
