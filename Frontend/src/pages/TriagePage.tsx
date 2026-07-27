@@ -1,236 +1,398 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
+import { useAsync, useDebounce } from "@/lib/hooks";
+import {
+  PageHeader,
+  Panel,
+  Field,
+  Button,
+  DataTable,
+  LoadState,
+  GradeBadge,
+  EyeBadge,
+  StatusBadge,
+  Meter,
+} from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import type { AiDiagnosis, DrGrade } from "@/types/models";
-import { DataState, DeferBadge, GradeChip, MeterBar, ReferableTag } from "@/components/clinical";
-import { Button, Panel, PanelHeader, Select, cx } from "@/components/ui/primitives";
-import { GRADE_ORDER } from "@/lib/grades";
-import { fmtDateTime, pct } from "@/lib/format";
+import { useToast } from "@/contexts/ToastContext";
+import { fmtDate, num } from "@/lib/format";
+import { grades } from "@/lib/enums";
+import type { TriageItemDto } from "@/types/api";
 
 export function TriagePage() {
-  const { triage, loading, error, loadTriage } = useData();
-  const [selected, setSelected] = useState<AiDiagnosis | null>(null);
+  const data = useData();
+  const [doctor, setDoctor] = useState("");
+  const [deferred, setDeferred] = useState("");
+  const [q, setQ] = useState("");
+  const dq = useDebounce(q);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [history, setHistory] = useState<(string | undefined)[]>([]);
+  const [selected, setSelected] = useState<TriageItemDto | null>(null);
 
-  useEffect(() => {
-    loadTriage();
-  }, [loadTriage]);
-
-  return (
-    <div className="h-full flex flex-col gap-4">
-      <div>
-        <h1 className="font-serif text-title text-ink">Hàng đợi triage</h1>
-        <p className="text-meta text-ink-faint mt-0.5">
-          Ca chờ bác sĩ — ưu tiên: chuyển bác sĩ (defer) → cần chuyển tuyến → bất đồng cao.
-        </p>
-      </div>
-
-      <div className="flex-1 min-h-0 flex gap-4">
-        <Panel className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <PanelHeader
-            title="Ca chờ xử lý"
-            right={
-              <span className="text-meta text-ink-faint tabular-nums">
-                {triage ? `${triage.length} ca` : ""}
-              </span>
-            }
-          />
-          <div className="flex-1 min-h-0 overflow-auto">
-            <DataState
-              loading={loading.triage}
-              error={error.triage}
-              empty={triage?.length === 0}
-              emptyLabel="Không còn ca nào trong hàng đợi."
-              onRetry={loadTriage}
-            >
-              <TriageTable rows={triage ?? []} selectedId={selected?.id} onSelect={setSelected} />
-            </DataState>
-          </div>
-        </Panel>
-
-        <ReviewRail diag={selected} onDone={() => setSelected(null)} />
-      </div>
-    </div>
+  const docs = useAsync(() => data.users.doctors(), []);
+  const queue = useAsync(
+    () =>
+      data.triage.queue({
+        doctorId: doctor,
+        deferredOnly: deferred,
+        cursor,
+        q: dq,
+        size: 25,
+      }),
+    [doctor, deferred, dq, cursor],
   );
-}
 
-function TriageTable({
-  rows,
-  selectedId,
-  onSelect,
-}: {
-  rows: AiDiagnosis[];
-  selectedId?: number;
-  onSelect: (d: AiDiagnosis) => void;
-}) {
-  return (
-    <table className="w-full text-dense">
-      <thead className="sticky top-0 bg-canvas text-ink-faint text-micro uppercase tracking-wide">
-        <tr className="[&>th]:text-left [&>th]:font-medium [&>th]:px-3 [&>th]:h-8">
-          <th>Ca (ảnh)</th>
-          <th>DR</th>
-          <th>Tin cậy</th>
-          <th>Bất đồng</th>
-          <th>Trạng thái</th>
-          <th>Chuyển tuyến</th>
-          <th>Model</th>
-          <th>Thời điểm</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((d) => (
-          <tr
-            key={d.id}
-            onClick={() => onSelect(d)}
-            className={cx(
-              "border-t border-hairline cursor-pointer hover:bg-canvas [&>td]:px-3 [&>td]:h-9 [&>td]:align-middle",
-              selectedId === d.id && "bg-primary/5",
-            )}
-          >
-            <td className="font-mono text-ink-muted tabular-nums">#{d.fundusImageId}</td>
-            <td>
-              <GradeChip grade={d.drGrade} />
-            </td>
-            <td className="w-32">
-              <MeterBar value={d.confidence} tone={d.confidence < 0.65 ? "alert" : "primary"} />
-            </td>
-            <td className="w-32">
-              <MeterBar value={d.crossTaskDisagreement} tone="defer" />
-            </td>
-            <td>{d.deferred ? <DeferBadge /> : <span className="text-ink-faint text-micro">—</span>}</td>
-            <td>
-              <ReferableTag referable={d.referable} />
-            </td>
-            <td className="font-mono text-micro text-ink-faint">{d.modelVersion}</td>
-            <td className="text-micro text-ink-faint tabular-nums">{fmtDateTime(d.createdAt)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function ReviewRail({ diag, onDone }: { diag: AiDiagnosis | null; onDone: () => void }) {
-  const { submitReview, loading, error } = useData();
-  const { hasRole } = useAuth();
-  const navigate = useNavigate();
-  const [override, setOverride] = useState(false);
-  const [finalGrade, setFinalGrade] = useState<DrGrade>("Normal");
-  const [note, setNote] = useState("");
-
+  // Bỏ chọn nếu ca đang chọn không còn trong danh sách sau khi tải lại.
   useEffect(() => {
-    if (diag) {
-      setOverride(false);
-      setFinalGrade(diag.drGrade);
-      setNote("");
+    if (
+      selected &&
+      !queue.data?.items.some((x) => x.aiDiagnosisId === selected.aiDiagnosisId)
+    ) {
+      setSelected(null);
     }
-  }, [diag]);
+  }, [queue.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!diag) {
-    return (
-      <Panel className="w-[340px] shrink-0 hidden lg:flex items-center justify-center">
-        <span className="text-ink-faint text-dense">Chọn một ca để xem chi tiết</span>
-      </Panel>
-    );
-  }
-
-  const canReview = hasRole("Doctor");
-
-  async function decide(action: "Approve" | "Override") {
-    if (!diag) return;
-    await submitReview(diag.id, {
-      action,
-      finalGrade: action === "Approve" ? diag.drGrade : finalGrade,
-      note: note || undefined,
-    });
-    onDone();
-  }
+  const resetPaging = () => {
+    setCursor(undefined);
+    setHistory([]);
+  };
+  const next = () => {
+    if (queue.data?.nextCursor) {
+      setHistory((h) => [...h, cursor]);
+      setCursor(queue.data.nextCursor!);
+    }
+  };
+  const prev = () => {
+    const h = [...history];
+    const c = h.pop();
+    setHistory(h);
+    setCursor(c);
+  };
 
   return (
-    <Panel className="w-[340px] shrink-0 flex flex-col">
-      <PanelHeader title="Kết quả AI" />
-      <div className="p-4 space-y-3 text-dense">
-        <Button
-          variant="outline"
-          className="w-full justify-center"
-          onClick={() => navigate(`/fundus/${diag.fundusImageId}`)}
-        >
-          Xem ảnh đáy mắt
-        </Button>
-        <div className="flex items-center justify-between">
-          <span className="text-ink-faint">Ảnh</span>
-          <span className="font-mono text-ink tabular-nums">#{diag.fundusImageId}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-ink-faint">Phân độ AI</span>
-          <GradeChip grade={diag.drGrade} />
-        </div>
-        <Row label="Độ tin cậy" value={pct(diag.confidence)} warn={diag.confidence < 0.65} />
-        <Row label="Bất đồng chéo" value={diag.crossTaskDisagreement.toFixed(3)} />
-        <Row label="Fractal dimension" value={diag.fractalDimension?.toFixed(4) ?? "—"} />
-        <div className="flex items-center justify-between">
-          <span className="text-ink-faint">Đề xuất</span>
-          {diag.deferred ? <DeferBadge /> : <span className="text-risk-ok text-micro">Tự tin</span>}
-        </div>
-
-        {/* clinical safety: AI is decision support, human sets final grade */}
-        <div className="pt-2 border-t border-hairline">
-          <div className="text-micro text-ink-faint mb-2">
-            Kết quả AI là hỗ trợ quyết định — chưa xác nhận cho tới khi bác sĩ duyệt.
-          </div>
-
-          {!canReview ? (
-            <div className="text-micro text-ink-faint">Chỉ bác sĩ được phê duyệt/ghi đè.</div>
-          ) : !override ? (
-            <div className="flex gap-2">
-              <Button variant="primary" className="flex-1 justify-center" onClick={() => decide("Approve")}>
-                Phê duyệt
-              </Button>
-              <Button variant="outline" className="flex-1 justify-center" onClick={() => setOverride(true)}>
-                Ghi đè
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Select value={finalGrade} onChange={(e) => setFinalGrade(e.target.value as DrGrade)}>
-                {GRADE_ORDER.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
+    <>
+      <PageHeader
+        title="Hàng đợi triage"
+        subtitle="Ưu tiên ca chuyển bác sĩ, cần chuyển tuyến và bất đồng cao."
+        actions={<Button onClick={queue.reload}>Tải lại</Button>}
+      />
+      <div className="two-pane">
+        <Panel title="Ca chờ xử lý">
+          <div className="toolbar">
+            <Field labelText="Bác sĩ" className="inline">
+              <select
+                value={doctor}
+                onChange={(e) => {
+                  setDoctor(e.target.value);
+                  resetPaging();
+                }}
+              >
+                <option value="">Tất cả bác sĩ</option>
+                {docs.data?.map((d) => (
+                  <option value={d.id} key={d.id}>
+                    {d.fullName}
                   </option>
                 ))}
-              </Select>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Ghi chú lý do ghi đè…"
-                className="w-full h-16 p-2 rounded-sm border border-hairline text-dense resize-none"
+              </select>
+            </Field>
+            <Field labelText="Phạm vi" className="inline">
+              <select
+                value={deferred}
+                onChange={(e) => {
+                  setDeferred(e.target.value);
+                  resetPaging();
+                }}
+              >
+                <option value="">Tất cả ca</option>
+                <option value="true">Chỉ ca defer</option>
+              </select>
+            </Field>
+            <Field labelText="Tìm ca" className="inline">
+              <input
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  resetPaging();
+                }}
+                placeholder="Mã hoặc tên bệnh nhân"
               />
-              <div className="flex gap-2">
-                <Button variant="primary" className="flex-1 justify-center" onClick={() => decide("Override")}>
-                  Lưu ghi đè
+            </Field>
+          </div>
+          <LoadState
+            loading={queue.loading}
+            error={queue.error}
+            empty={!queue.data?.items.length}
+            onRetry={queue.reload}
+          >
+            <DataTable
+              headers={[
+                "Ca",
+                "Bệnh nhân",
+                "Mắt",
+                "DR",
+                "Tin cậy",
+                "Bất đồng",
+                "Defer",
+                "Chuyển tuyến",
+                "Bác sĩ",
+                "Thời điểm",
+              ]}
+            >
+              {queue.data?.items.map((x) => (
+                <tr
+                  key={x.aiDiagnosisId}
+                  className={
+                    selected?.aiDiagnosisId === x.aiDiagnosisId
+                      ? "sel clickable"
+                      : "clickable"
+                  }
+                  onClick={() => setSelected(x)}
+                >
+                  <td className="mono">#{x.aiDiagnosisId}</td>
+                  <td>
+                    <b>{x.patientName}</b>
+                    <div className="mono faint">{x.patientCode}</div>
+                  </td>
+                  <td>
+                    <EyeBadge eye={x.eye} />
+                  </td>
+                  <td>
+                    <GradeBadge grade={x.drGrade} />
+                  </td>
+                  <td>
+                    <Meter value={x.confidence} />
+                  </td>
+                  <td>
+                    <Meter value={x.disagreement} kind="defer" />
+                  </td>
+                  <td>
+                    {x.isDeferred ? (
+                      <StatusBadge text="Chuyển bác sĩ" kind="defer" />
+                    ) : (
+                      <span className="faint">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {x.needsReferral ? (
+                      <StatusBadge text="Cần" kind="alert" />
+                    ) : (
+                      <StatusBadge text="Không" kind="ok" />
+                    )}
+                  </td>
+                  <td>{x.doctorName || "—"}</td>
+                  <td className="mono">{fmtDate(x.createdAt, true)}</td>
+                </tr>
+              ))}
+            </DataTable>
+            <div className="pagination">
+              <span className="faint">
+                Phân trang keyset — tránh bỏ sót ca mới.
+              </span>
+              <div className="actions">
+                <Button disabled={!history.length} onClick={prev}>
+                  Trước
                 </Button>
-                <Button variant="ghost" onClick={() => setOverride(false)}>
-                  Hủy
+                <Button disabled={!queue.data?.nextCursor} onClick={next}>
+                  Tải tiếp
                 </Button>
               </div>
             </div>
-          )}
-          {(loading.review || error.review) && (
-            <div className={cx("mt-2 text-micro", error.review ? "text-risk-alert" : "text-ink-faint")}>
-              {error.review ?? "Đang lưu…"}
-            </div>
+          </LoadState>
+        </Panel>
+
+        <div className="sticky-rail">
+          {selected ? (
+            <ReviewRail
+              item={selected}
+              onDone={() => {
+                setSelected(null);
+                queue.reload();
+              }}
+            />
+          ) : (
+            <Panel title="Duyệt kết quả">
+              <div className="empty">
+                <b>Chọn một ca</b>Bảng vẫn giữ nguyên khi panel duyệt mở bên
+                phải.
+              </div>
+            </Panel>
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+function ReviewRail({
+  item,
+  onDone,
+}: {
+  item: TriageItemDto;
+  onDone: () => void;
+}) {
+  const { user } = useAuth();
+  const data = useData();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const detail = useAsync(
+    () => data.diagnoses.get(item.aiDiagnosisId),
+    [item.aiDiagnosisId],
+  );
+  const [mode, setMode] = useState<"approve" | "override">("approve");
+  const [grade, setGrade] = useState(item.drGrade);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Chỉ Bác sĩ được phê duyệt/ghi đè (đặt FinalGrade). Admin/Điều dưỡng chỉ xem.
+  const canReview = user?.role === "Doctor";
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      if (mode === "approve")
+        await data.triage.approve(item.aiDiagnosisId, item.rowVersion);
+      else
+        await data.triage.override(item.aiDiagnosisId, {
+          rowVersion: item.rowVersion,
+          finalGrade: grade,
+          reason,
+        });
+      toast.push(
+        mode === "approve"
+          ? "Đã phê duyệt kết quả AI."
+          : "Đã lưu phân độ ghi đè.",
+        "success",
+      );
+      onDone();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel
+      title={`Duyệt ca #${item.aiDiagnosisId}`}
+      action={
+        <Button
+          onClick={() =>
+            navigate(
+              `/fundus/${detail.data?.fundusImageId || ""}?diagnosis=${item.aiDiagnosisId}`,
+            )
+          }
+          disabled={!detail.data}
+        >
+          Xem ảnh
+        </Button>
+      }
+    >
+      <LoadState
+        loading={detail.loading}
+        error={detail.error}
+        empty={!detail.data}
+        onRetry={detail.reload}
+      >
+        {detail.data && (
+          <>
+            <div className="detail-grid">
+              <div>
+                <small>AI grade</small>
+                <div>
+                  <GradeBadge grade={detail.data.drGrade} />
+                </div>
+              </div>
+              <Info
+                k="Tin cậy"
+                v={`${Math.round(detail.data.confidence * 100)}%`}
+              />
+              <Info k="Bất đồng" v={num(detail.data.disagreement, 3)} />
+              <Info k="Fractal" v={num(detail.data.fractalDimension, 4)} />
+              <Info k="Model" v={detail.data.modelVersion} />
+              <Info k="Thời điểm" v={fmtDate(detail.data.createdAt, true)} />
+            </div>
+            {detail.data.isDeferred && (
+              <div
+                className="state"
+                style={{
+                  borderColor: "var(--defer)",
+                  background: "var(--defer-bg)",
+                  marginTop: 10,
+                }}
+              >
+                <b>Ca được chuyển bác sĩ</b>
+                <div>
+                  {detail.data.deferReasonLabel || "Tín hiệu không chắc chắn"}
+                </div>
+              </div>
+            )}
+
+            {canReview ? (
+              <>
+                <div className="pill" style={{ margin: "12px 0" }}>
+                  <button
+                    className={mode === "approve" ? "on" : ""}
+                    onClick={() => setMode("approve")}
+                  >
+                    Phê duyệt
+                  </button>
+                  <button
+                    className={mode === "override" ? "on" : ""}
+                    onClick={() => setMode("override")}
+                  >
+                    Ghi đè
+                  </button>
+                </div>
+                {mode === "override" && (
+                  <>
+                    <Field labelText="Phân độ cuối" required>
+                      <select
+                        value={grade}
+                        onChange={(e) => setGrade(Number(e.target.value))}
+                      >
+                        {grades.map((x, i) => (
+                          <option key={i} value={i}>
+                            {x}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field labelText="Lý do ghi đè" required>
+                      <textarea
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        placeholder="Lý do lâm sàng và quan sát trên ảnh"
+                      />
+                    </Field>
+                  </>
+                )}
+                <Button
+                  kind="primary"
+                  busy={busy}
+                  disabled={mode === "override" && !reason.trim()}
+                  onClick={submit}
+                >
+                  {mode === "approve" ? "Phê duyệt kết quả" : "Lưu ghi đè"}
+                </Button>
+              </>
+            ) : (
+              <div className="help" style={{ marginTop: 12 }}>
+                Chỉ tài khoản Bác sĩ được phê duyệt hoặc ghi đè kết quả AI.
+              </div>
+            )}
+          </>
+        )}
+      </LoadState>
     </Panel>
   );
 }
 
-function Row({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+function Info({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-ink-faint">{label}</span>
-      <span className={cx("font-mono tabular-nums", warn ? "text-risk-alert" : "text-ink")}>{value}</span>
+    <div>
+      <small>{k}</small>
+      <div className="mono">{v ?? "—"}</div>
     </div>
   );
 }

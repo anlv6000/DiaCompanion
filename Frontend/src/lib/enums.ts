@@ -1,0 +1,36 @@
+export const roles = [
+  { value: 0, label: "Admin", key: "Admin" },
+  { value: 1, label: "Bác sĩ", key: "Doctor" },
+  { value: 2, label: "Điều dưỡng", key: "Nurse" },
+] as const;
+export const grades = ["Bình thường", "Nhẹ", "Trung bình", "Nặng", "PDR"];
+export const gradeCodes = ["Normal", "Mild", "Moderate", "Severe", "PDR"];
+export const eyes = ["OD", "OS"];
+export const genders = ["Nam", "Nữ", "Khác"];
+export const diabetesTypes = ["Không xác định", "Type 1", "Type 2", "Thai kỳ"];
+export const visitStatuses = ["Đang khám", "Đã đóng"];
+export const referralTypes = [
+  "Không",
+  "Tái khám",
+  "Chuyên khoa mắt",
+  "Khẩn cấp",
+];
+export const qualityStatuses = ["Chờ duyệt", "Đạt", "Không đạt"];
+export const appointmentStatuses = ["Đã đặt", "Hoàn tất", "Đã hủy", "Vắng mặt"];
+export const metricTypes = [
+  "",
+  "Glucose",
+  "HbA1c",
+  "Huyết áp tâm thu",
+  "Huyết áp tâm trương",
+];
+export const metricContexts = ["", "Trước ăn", "Sau ăn", "Trước ngủ"];
+export const symptomSeverities = ["", "Nhẹ", "Trung bình", "Nặng"];
+export const blogCategories = ["", "Kiến thức", "Dinh dưỡng", "Cảnh báo"];
+export function label(
+  list: string[],
+  value: number | null | undefined,
+  fallback = "—",
+) {
+  return value == null ? fallback : (list[value] ?? String(value));
+}

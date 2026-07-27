@@ -1,84 +1,144 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { api, setAuthToken } from "@/lib/apiClient";
-import { API_ROUTES } from "@/config/api";
-import type { AuthUser, LoginResponse, Role } from "@/types/models";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { authApi } from "@/api/services";
+import { tokenStore } from "@/api/client";
+import { STORAGE_KEYS, DEFAULT_ROUTE } from "@/config";
+import type { LoginResponse, Role, ChangePasswordRequest } from "@/types/api";
 
-/**
- * Drop-in replacement for src/contexts/AuthContext.tsx.
- * Difference: the token + user are persisted in sessionStorage, so a page refresh
- * keeps the doctor signed in, but fully closing the browser clears it.
- *
- * To use: replace the contents of src/contexts/AuthContext.tsx with this file
- * (same exports: AuthProvider, useAuth) — no other change needed in the app.
- */
+/* Phiên đăng nhập. Console bệnh viện: chỉ nhân viên, đăng nhập bằng email.
+   Token + user giữ trong sessionStorage (mất khi đóng hẳn trình duyệt). */
 
-interface AuthContextValue {
-  user: AuthUser | null;
-  token: string | null;
+interface AuthValue {
+  user: LoginResponse | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  checking: boolean;
+  login: (email: string, password: string) => Promise<LoginResponse>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+  changePassword: (body: ChangePasswordRequest) => Promise<void>;
+  clearMustChange: () => void;
   hasRole: (...roles: Role[]) => boolean;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
-const TOKEN_KEY = "dia.token";
-const USER_KEY = "dia.user";
+const AuthContext = createContext<AuthValue | null>(null);
 
-function readStoredToken(): string | null {
-  const t = sessionStorage.getItem(TOKEN_KEY);
-  if (t) setAuthToken(t); // prime apiClient on first load
-  return t;
-}
-function readStoredUser(): AuthUser | null {
-  const raw = sessionStorage.getItem(USER_KEY);
-  if (!raw) return null;
+function readUser(): LoginResponse | null {
   try {
-    return JSON.parse(raw) as AuthUser;
+    return JSON.parse(sessionStorage.getItem(STORAGE_KEYS.user) || "null");
   } catch {
     return null;
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => readStoredToken());
-  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
+export function AuthProvider({ children }: { children?: ReactNode }) {
+  const [user, setUser] = useState<LoginResponse | null>(readUser);
+  const [checking, setChecking] = useState(false);
+  const navigate = useNavigate();
 
-  async function login(email: string, password: string) {
-    const res = await api.post<LoginResponse>(API_ROUTES.login, { email, password });
-    const u: AuthUser = { id: res.userId, fullName: res.fullName, role: res.role };
-    setAuthToken(res.token);
-    sessionStorage.setItem(TOKEN_KEY, res.token);
-    sessionStorage.setItem(USER_KEY, JSON.stringify(u));
-    setToken(res.token);
+  const persist = useCallback((u: LoginResponse | null) => {
     setUser(u);
-  }
+    if (u) sessionStorage.setItem(STORAGE_KEYS.user, JSON.stringify(u));
+    else sessionStorage.removeItem(STORAGE_KEYS.user);
+  }, []);
 
-  function logout() {
-    setAuthToken(null);
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(USER_KEY);
-    setToken(null);
-    setUser(null);
-  }
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      token,
-      isAuthenticated: !!token,
-      login,
-      logout,
-      hasRole: (...roles: Role[]) => (user ? roles.includes(user.role) : false),
-    }),
-    [user, token],
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await authApi.login({ email, password });
+      tokenStore.set(res.token || null);
+      persist(res);
+      navigate(
+        res.mustChangePassword
+          ? "/change-password"
+          : res.defaultRoute || DEFAULT_ROUTE,
+        { replace: true },
+      );
+      return res;
+    },
+    [navigate, persist],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      /* vẫn xoá phiên cục bộ */
+    }
+    tokenStore.set(null);
+    persist(null);
+    navigate("/login", { replace: true });
+  }, [navigate, persist]);
+
+  const refresh = useCallback(async () => {
+    if (!tokenStore.get()) return;
+    setChecking(true);
+    try {
+      const me = await authApi.me();
+      persist({ ...me, token: tokenStore.get() || user?.token || "" });
+    } catch {
+      tokenStore.set(null);
+      persist(null);
+    } finally {
+      setChecking(false);
+    }
+  }, [persist, user?.token]);
+
+  const changePassword = useCallback(
+    async (body: ChangePasswordRequest) => {
+      await authApi.change(body);
+      if (user) persist({ ...user, mustChangePassword: false });
+    },
+    [persist, user],
+  );
+
+  const clearMustChange = useCallback(() => {
+    if (user) persist({ ...user, mustChangePassword: false });
+  }, [persist, user]);
+
+  // Token hết hạn giữa chừng → về login.
+  useEffect(() => {
+    const h = () => {
+      tokenStore.set(null);
+      persist(null);
+      navigate("/login?expired=1", { replace: true });
+    };
+    window.addEventListener("dc:unauthorized", h);
+    return () => window.removeEventListener("dc:unauthorized", h);
+  }, [navigate, persist]);
+
+  // Có token nhưng chưa có user (mở tab mới) → xác minh lại.
+  useEffect(() => {
+    if (tokenStore.get() && !user) void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        checking,
+        login,
+        logout,
+        refresh,
+        changePassword,
+        clearMustChange,
+        hasRole: (...roles: Role[]) => !!user && roles.includes(user.role),
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export function useAuth(): AuthContextValue {
+export function useAuth(): AuthValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  if (!ctx) throw new Error("useAuth phải nằm trong <AuthProvider>");
   return ctx;
 }
