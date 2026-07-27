@@ -1,98 +1,235 @@
-import { NavLink, Outlet } from "react-router-dom";
-import {
-  LayoutList,
-  Users,
-  LineChart,
-  LayoutDashboard,
-  Settings,
-  GitCompareArrows,
-  CalendarDays,
-  Newspaper,
-  UserCog,
-  MessageSquare,
-  LogOut,
-  type LucideIcon,
-} from "lucide-react";
+import { Fragment, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import type { Role } from "@/types/models";
-import { cx } from "@/components/ui/primitives";
+import { useData } from "@/contexts/DataContext";
+import { useAsync } from "@/lib/hooks";
+import { Icon, Modal, LoadState, Button, StatusBadge } from "@/components/ui";
+import { fmtDate, initials } from "@/lib/format";
+import type { Role, NotificationDto } from "@/types/api";
 
+/* Khung ứng dụng: điều hướng trái + thanh trên. AppShell là container cấp cao
+   của layout nên được phép gọi useData (nạp thông báo, chip model). Các trang
+   con render trong <main> qua <Outlet/> ở routes.
+
+   nav lọc theo vai trò — chỉ hiện mục người dùng có quyền. Đây là web bệnh
+   viện: menu chỉ gồm Bác sĩ / Điều dưỡng / Admin, không có gì của bệnh nhân. */
 interface NavItem {
   to: string;
   label: string;
-  icon: LucideIcon;
+  icon: string;
   roles: Role[];
-  end?: boolean;
 }
-
-const NAV: NavItem[] = [
-  { to: "/", label: "Triage", icon: LayoutList, roles: ["Admin", "Doctor"], end: true },
-  { to: "/patients", label: "Bệnh nhân", icon: Users, roles: ["Admin", "Doctor", "Nurse"] },
-  { to: "/clinic", label: "Lịch khám", icon: CalendarDays, roles: ["Admin", "Doctor"] },
-  { to: "/progression", label: "Diễn tiến", icon: LineChart, roles: ["Admin", "Doctor"] },
-  { to: "/conflicts", label: "Ca mâu thuẫn", icon: GitCompareArrows, roles: ["Admin"] },
-  { to: "/dashboard", label: "Thống kê", icon: LayoutDashboard, roles: ["Admin", "Doctor"] },
-  { to: "/blog", label: "Blog", icon: Newspaper, roles: ["Admin", "Doctor"] },
-  { to: "/feedback", label: "Phản hồi", icon: MessageSquare, roles: ["Admin"] },
-  { to: "/users", label: "Tài khoản", icon: UserCog, roles: ["Admin"] },
-  { to: "/admin", label: "Cấu hình", icon: Settings, roles: ["Admin"] },
+const NAV: [string, NavItem[]][] = [
+  [
+    "Lâm sàng",
+    [
+      {
+        to: "/triage",
+        label: "Triage",
+        icon: "menu",
+        roles: ["Doctor", "Admin"],
+      },
+      {
+        to: "/patients",
+        label: "Bệnh nhân",
+        icon: "users",
+        roles: ["Doctor", "Nurse", "Admin"],
+      },
+      {
+        to: "/appointments",
+        label: "Lịch khám",
+        icon: "calendar",
+        roles: ["Doctor", "Nurse", "Admin"],
+      },
+      {
+        to: "/progression",
+        label: "Diễn tiến",
+        icon: "chart",
+        roles: ["Doctor", "Nurse", "Admin"],
+      },
+      {
+        to: "/symptoms",
+        label: "Triệu chứng",
+        icon: "heart",
+        roles: ["Doctor"],
+      },
+    ],
+  ],
+  [
+    "Báo cáo",
+    [
+      {
+        to: "/conflicts",
+        label: "Ca mâu thuẫn",
+        icon: "warning",
+        roles: ["Admin"],
+      },
+      {
+        to: "/dashboard",
+        label: "Thống kê",
+        icon: "chart",
+        roles: ["Doctor", "Admin"],
+      },
+      { to: "/blog", label: "Blog", icon: "file", roles: ["Doctor", "Admin"] },
+      { to: "/feedback", label: "Phản hồi", icon: "heart", roles: ["Admin"] },
+    ],
+  ],
+  [
+    "Quản trị",
+    [
+      { to: "/users", label: "Tài khoản", icon: "users", roles: ["Admin"] },
+      { to: "/audit", label: "Nhật ký", icon: "lock", roles: ["Admin"] },
+      { to: "/configs", label: "Cấu hình", icon: "settings", roles: ["Admin"] },
+      { to: "/models", label: "Model", icon: "settings", roles: ["Admin"] },
+    ],
+  ],
 ];
 
-export function AppShell() {
-  const { user, logout, hasRole } = useAuth();
+export function AppShell({ children }: { children?: React.ReactNode }) {
+  const { user, logout } = useAuth();
+  const data = useData();
+  const { pathname } = useLocation();
+  const [notices, setNotices] = useState(false);
+
+  const unread = useAsync(() => data.engagement.unread(), [user?.userId]);
+  const dash = useAsync(
+    () =>
+      user?.role === "Admin" || user?.role === "Doctor"
+        ? data.admin.dashboard()
+        : Promise.resolve(null),
+    [user?.role],
+  );
 
   return (
-    <div className="h-full flex">
-      {/* left nav */}
-      <aside className="w-52 shrink-0 bg-surface border-r border-hairline flex flex-col">
-        <div className="h-14 flex items-center px-4 border-b border-hairline">
-          <span className="font-serif text-sub text-ink">DiaCompanion</span>
-        </div>
-        <nav className="flex-1 p-2 space-y-0.5">
-          {NAV.filter((n) => hasRole(...n.roles)).map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cx(
-                  "flex items-center gap-2.5 h-9 px-2.5 rounded-sm text-dense",
-                  isActive
-                    ? "bg-primary/8 text-primary font-medium"
-                    : "text-ink-muted hover:bg-canvas hover:text-ink",
-                )
-              }
-            >
-              <Icon size={16} strokeWidth={2} />
-              {label}
-            </NavLink>
-          ))}
+    <div className="app">
+      <aside className="side">
+        <div className="logo">DiaCompanion</div>
+        <nav>
+          {NAV.map(([group, items]) => {
+            const visible = items.filter((x) =>
+              x.roles.includes(user?.role as Role),
+            );
+            if (!visible.length) return null;
+            return (
+              <Fragment key={group}>
+                <div className="nav-group">{group}</div>
+                {visible.map((x) => (
+                  <Link
+                    key={x.to}
+                    to={x.to}
+                    className={`navlink ${pathname.startsWith(x.to) ? "on" : ""}`}
+                  >
+                    <Icon name={x.icon} />
+                    {x.label}
+                  </Link>
+                ))}
+              </Fragment>
+            );
+          })}
         </nav>
+        <div className="nav-spacer" />
+        <div className="side-footer">
+          <Link to="/change-password" className="navlink">
+            <Icon name="lock" />
+            Đổi mật khẩu
+          </Link>
+          <button className="navlink" onClick={logout}>
+            <Icon name="logout" />
+            Đăng xuất
+          </button>
+        </div>
       </aside>
 
-      {/* main column */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 shrink-0 flex items-center justify-between px-5 border-b border-hairline bg-surface">
-          <div className="text-meta text-ink-faint">Console lâm sàng — sàng lọc võng mạc ĐTĐ</div>
-          <div className="flex items-center gap-3">
-            <div className="text-right leading-tight">
-              <div className="text-dense text-ink">{user?.fullName}</div>
-              <div className="text-micro text-ink-faint uppercase tracking-wide">{user?.role}</div>
-            </div>
+      <main className="main">
+        <header className="top">
+          <small>Console lâm sàng — sàng lọc võng mạc ĐTĐ</small>
+          <div className="top-actions">
+            {dash.data?.activeModel && (
+              <StatusBadge text={dash.data.activeModel} />
+            )}
             <button
-              onClick={logout}
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-sm text-dense text-ink-muted border border-hairline hover:bg-canvas"
+              className="notification-button"
+              title="Thông báo"
+              onClick={() => setNotices(true)}
             >
-              <LogOut size={14} />
-              Đăng xuất
+              <Icon name="bell" />
+              {(unread.data?.count || 0) > 0 && (
+                <span className="notification-dot" />
+              )}
             </button>
+            <div className="user-menu">
+              <span className="avatar">{initials(user?.fullName)}</span>
+              <span>
+                {user?.fullName}
+                <small style={{ display: "block" }}>
+                  {user?.role?.toUpperCase()}
+                </small>
+              </span>
+            </div>
           </div>
         </header>
+        <div className="content">{children}</div>
+      </main>
 
-        <main className="flex-1 min-h-0 overflow-auto p-5">
-          <Outlet />
-        </main>
-      </div>
+      {notices && (
+        <NotificationsModal
+          onClose={() => {
+            setNotices(false);
+            unread.reload();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function NotificationsModal({ onClose }: { onClose: () => void }) {
+  const data = useData();
+  const list = useAsync(
+    () => data.engagement.notifications({ page: 1, pageSize: 30 }),
+    [],
+  );
+  const mark = async (id: number) => {
+    await data.engagement.read(id);
+    list.reload();
+  };
+  return (
+    <Modal
+      title="Thông báo"
+      onClose={onClose}
+      footer={
+        <Button
+          onClick={async () => {
+            await data.engagement.readAll();
+            list.reload();
+          }}
+        >
+          Đánh dấu tất cả đã đọc
+        </Button>
+      }
+    >
+      <LoadState
+        loading={list.loading}
+        error={list.error}
+        empty={!list.data?.items?.length}
+        onRetry={list.reload}
+      >
+        <div className="notice-list">
+          {list.data?.items.map((n: NotificationDto) => (
+            <div
+              key={n.id}
+              className={`notice ${n.isRead ? "" : "unread"}`}
+              onClick={() => !n.isRead && mark(n.id)}
+            >
+              <div className="split">
+                <b>{n.title}</b>
+                <span className="mono faint">{fmtDate(n.createdAt, true)}</span>
+              </div>
+              <div>{n.message}</div>
+            </div>
+          ))}
+        </div>
+      </LoadState>
+    </Modal>
   );
 }

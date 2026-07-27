@@ -1,519 +1,420 @@
-import { useEffect, useState, Fragment, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { LineChart, Plus } from "lucide-react";
+import { useState, useEffect, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
-import { useAuth } from "@/contexts/AuthContext";
-import { DataState, GradeChip } from "@/components/clinical";
-import { Badge, Button, Field, Input, Panel, PanelHeader, Select, cx } from "@/components/ui/primitives";
-import { fmtDate, fmtDateTime, pct } from "@/lib/format";
-import type { CompleteVisitPayload, PrescriptionItem } from "@/types/models";
+import { useAsync, useDebounce } from "@/lib/hooks";
+import {
+  PageHeader,
+  Panel,
+  Field,
+  Button,
+  DataTable,
+  LoadState,
+  Pagination,
+  GradeBadge,
+  StatusBadge,
+  ActionLink,
+  Modal,
+  Icon,
+} from "@/components/ui";
+import { genders, diabetesTypes, grades, label } from "@/lib/enums";
+import { fmtDate } from "@/lib/format";
+import { useToast } from "@/contexts/ToastContext";
+import type { CreatePatientRequest, TempCredentialResponse } from "@/types/api";
 
-// ---------------- list + search ----------------
 export function PatientsPage() {
-  const { patients, loading, error, loadPatients } = useData();
-  const { hasRole } = useAuth();
+  const data = useData();
   const [q, setQ] = useState("");
+  const dq = useDebounce(q);
   const [type, setType] = useState("");
+  const [grade, setGrade] = useState("");
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    loadPatients();
-  }, [loadPatients]);
-
-  function onSearch(e: FormEvent) {
-    e.preventDefault();
-    loadPatients(q || undefined, type || undefined, 1);
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="font-serif text-title text-ink">Bệnh nhân</h1>
-        {hasRole("Admin", "Doctor", "Nurse") && (
-          <Link
-            to="/patients/new"
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm bg-primary text-white text-dense hover:bg-primary-active"
-          >
-            <Plus size={14} /> Tạo bệnh nhân
-          </Link>
-        )}
-      </div>
-
-      <Panel className="p-3">
-        <form onSubmit={onSearch} className="flex items-end gap-3">
-          <div className="flex-1">
-            <Field label="Tìm theo tên / mã / SĐT">
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="vd: Anh, BN20260001…" />
-            </Field>
-          </div>
-          <div className="w-48">
-            <Field label="Loại tiểu đường">
-              <Select value={type} onChange={(e) => setType(e.target.value)}>
-                <option value="">Tất cả</option>
-                <option value="Type1">Type 1</option>
-                <option value="Type2">Type 2</option>
-                <option value="Gestational">Thai kỳ</option>
-              </Select>
-            </Field>
-          </div>
-          <Button type="submit" variant="primary">Tìm</Button>
-        </form>
-      </Panel>
-
-      <Panel className="overflow-hidden">
-        <PanelHeader
-          title="Danh sách"
-          right={<span className="text-meta text-ink-faint tabular-nums">{patients ? `${patients.total}` : ""}</span>}
-        />
-        <DataState
-          loading={loading.patients}
-          error={error.patients}
-          empty={patients?.items.length === 0}
-          emptyLabel="Không tìm thấy bệnh nhân."
-          onRetry={() => loadPatients(q || undefined, type || undefined)}
-        >
-          <table className="w-full text-dense">
-            <thead className="bg-canvas text-ink-faint text-micro uppercase tracking-wide">
-              <tr className="[&>th]:text-left [&>th]:font-medium [&>th]:px-3 [&>th]:h-8">
-                <th>Mã</th><th>Họ tên</th><th>Giới</th><th>Ngày sinh</th><th>Tiểu đường</th><th>Mắc</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(patients?.items ?? []).map((p) => (
-                <tr key={p.id} className="border-t border-hairline [&>td]:px-3 [&>td]:h-9">
-                  <td className="font-mono text-ink-muted tabular-nums">{p.code}</td>
-                  <td className="text-ink">{p.fullName}</td>
-                  <td className="text-ink-muted">{p.gender ?? "—"}</td>
-                  <td className="text-ink-muted tabular-nums">{fmtDate(p.dateOfBirth)}</td>
-                  <td className="text-ink-muted">{p.diabetesType ?? "—"}</td>
-                  <td className="text-ink-muted tabular-nums">
-                    {p.diabetesDurationYears != null ? `${p.diabetesDurationYears}n` : "—"}
-                  </td>
-                  <td className="text-right">
-                    <Link to={`/patients/${p.id}`} className="text-primary text-micro hover:underline">Hồ sơ →</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </DataState>
-      </Panel>
-    </div>
+  const list = useAsync(
+    () =>
+      data.patients.list({
+        q: dq.trim().length >= 2 ? dq : undefined,
+        diabetesType: type,
+        grade,
+        page,
+        pageSize: 25,
+        sort: "name",
+      }),
+    [dq, type, grade, page],
   );
-}
-
-// ---------------- record hub (tabs) ----------------
-type Tab = "profile" | "visits" | "imaging" | "prescriptions" | "monitoring";
-
-export function PatientRecordPage() {
-  const { id } = useParams();
-  const pid = Number(id);
-  const { patientRecord, loading, error, loadPatientRecord } = useData();
-  const [tab, setTab] = useState<Tab>("profile");
-
-  useEffect(() => {
-    loadPatientRecord(pid);
-  }, [pid, loadPatientRecord]);
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "profile", label: "Hồ sơ" },
-    { id: "visits", label: "Lượt khám" },
-    { id: "imaging", label: "Ảnh & AI" },
-    { id: "prescriptions", label: "Đơn thuốc" },
-    { id: "monitoring", label: "Theo dõi" },
-  ];
 
   return (
-    <div className="space-y-4">
-      <DataState loading={loading.patientRecord} error={error.patientRecord} onRetry={() => loadPatientRecord(pid)}>
-        {patientRecord && (
-          <>
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="font-serif text-title text-ink">{patientRecord.patient.fullName}</h1>
-                <p className="text-meta text-ink-faint font-mono">{patientRecord.patient.code}</p>
-              </div>
-              <div className="flex gap-2">
-                <Link to={`/patients/${pid}/edit`} className="h-8 px-3 grid place-items-center rounded-sm border border-hairline text-dense text-ink hover:bg-canvas">
-                  Sửa hồ sơ
-                </Link>
-                <Link to={`/progression/${pid}`} className="h-8 px-3 inline-flex items-center gap-1.5 rounded-sm border border-hairline text-dense text-ink hover:bg-canvas">
-                  <LineChart size={14} /> Diễn tiến
-                </Link>
-              </div>
-            </div>
-
-            <div className="flex gap-1 border-b border-hairline">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  className={cx(
-                    "h-9 px-3 text-dense -mb-px border-b-2",
-                    tab === t.id ? "border-primary text-primary font-medium" : "border-transparent text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {tab === "profile" && <ProfileTab />}
-            {tab === "visits" && <VisitsTab pid={pid} />}
-            {tab === "imaging" && <ImagingTab pid={pid} />}
-            {tab === "prescriptions" && <PrescriptionsTab pid={pid} />}
-            {tab === "monitoring" && <MonitoringTab pid={pid} />}
-          </>
-        )}
-      </DataState>
-    </div>
-  );
-}
-
-function ProfileTab() {
-  const { patientRecord } = useData();
-  const p = patientRecord!.patient;
-  return (
-    <Panel className="p-4 grid grid-cols-4 gap-4 text-dense">
-      <Info label="Giới tính" value={p.gender ?? "—"} />
-      <Info label="Ngày sinh" value={fmtDate(p.dateOfBirth)} />
-      <Info label="Loại tiểu đường" value={p.diabetesType ?? "—"} />
-      <Info label="Thời gian mắc" value={p.diabetesDurationYears != null ? `${p.diabetesDurationYears} năm` : "—"} />
-      <Info label="SĐT" value={p.phone ?? "—"} />
-      <Info label="Địa chỉ" value={p.address ?? "—"} />
-    </Panel>
-  );
-}
-
-function VisitsTab({ pid }: { pid: number }) {
-  const { patientRecord, createVisit, completeVisit, loadPatientRecord, loading } = useData();
-  const visits = patientRecord?.visits ?? [];
-  const [completing, setCompleting] = useState<number | null>(null);
-  const [form, setForm] = useState<CompleteVisitPayload>({ conclusion: "", referral: "" });
-
-  async function submitComplete(id: number) {
-    await completeVisit(id, form);
-    setCompleting(null);
-    setForm({ conclusion: "", referral: "" });
-    await loadPatientRecord(pid);
-  }
-
-  return (
-    <Panel className="overflow-hidden">
-      <PanelHeader
-        title="Lượt khám"
-        right={
-          <Button variant="primary" onClick={() => createVisit({ patientId: pid })} disabled={loading.createVisit}>
-            <Plus size={14} /> Tạo lượt khám
-          </Button>
+    <>
+      <PageHeader
+        title="Bệnh nhân"
+        subtitle="Tìm kiếm không phân biệt dấu theo họ tên, mã hoặc số điện thoại."
+        actions={
+          <ActionLink to="/patients/new">
+            <Button kind="primary">
+              <Icon name="plus" />
+              Tạo bệnh nhân
+            </Button>
+          </ActionLink>
         }
       />
-      {visits.length === 0 ? (
-        <div className="p-6 text-center text-ink-faint text-dense">Chưa có lượt khám.</div>
-      ) : (
-        <table className="w-full text-dense">
-          <thead className="bg-canvas text-ink-faint text-micro uppercase tracking-wide">
-            <tr className="[&>th]:text-left [&>th]:font-medium [&>th]:px-3 [&>th]:h-8">
-              <th>Ngày</th><th>Trạng thái</th><th>Kết luận</th><th>Chuyển tuyến</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {visits.map((v) => (
-              <Fragment key={v.id}>
-                <tr className="border-t border-hairline [&>td]:px-3 [&>td]:h-9">
-                  <td className="tabular-nums">{fmtDate(v.visitDate)}</td>
-                  <td><Badge tone={v.status === "Completed" ? "ok" : "neutral"}>{v.status}</Badge></td>
-                  <td className="text-ink-muted">{v.conclusion ?? "—"}</td>
-                  <td className="text-ink-muted">{v.referral ?? "—"}</td>
-                  <td className="text-right">
-                    {v.status !== "Completed" && (
-                      <Button variant="outline" onClick={() => setCompleting(completing === v.id ? null : v.id)}>
-                        Nhập kết luận
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-                {completing === v.id && (
-                  <tr key={`c-${v.id}`} className="border-t border-hairline bg-canvas">
-                    <td colSpan={5} className="p-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Kết luận">
-                          <Input value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })} />
-                        </Field>
-                        <Field label="Chuyển tuyến">
-                          <Input value={form.referral} onChange={(e) => setForm({ ...form, referral: e.target.value })} />
-                        </Field>
-                      </div>
-                      <div className="mt-2">
-                        <Button variant="primary" onClick={() => submitComplete(v.id)} disabled={loading.completeVisit}>
-                          Đóng lượt khám
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Panel>
-  );
-}
-
-function ImagingTab({ pid }: { pid: number }) {
-  const { fundusList, loading, error, loadFundusByPatient, uploadFundus, setQuality } = useData();
-  const { patientRecord } = useData();
-  const [eye, setEye] = useState("OD");
-  const [visitId, setVisitId] = useState<string>("");
-
-  useEffect(() => {
-    loadFundusByPatient(pid);
-  }, [pid, loadFundusByPatient]);
-
-  async function upload() {
-    const vid = visitId ? Number(visitId) : null;
-    await uploadFundus({
-      patientId: pid,
-      visitId: vid,
-      eye,
-      filePath: `/images/${pid}/${Date.now()}_${eye}.jpg`,
-    });
-  }
-
-  const visits = patientRecord?.visits ?? [];
-
-  return (
-    <div className="space-y-4">
-      <Panel className="p-3">
-        <div className="flex items-end gap-3">
-          <Field label="Mắt">
-            <Select value={eye} onChange={(e) => setEye(e.target.value)}>
-              <option value="OD">OD (phải)</option>
-              <option value="OS">OS (trái)</option>
-            </Select>
+      <Panel>
+        <div className="toolbar">
+          <Field labelText="Tìm kiếm" className="inline">
+            <input
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Tối thiểu 2 ký tự"
+            />
           </Field>
-          <Field label="Gắn lượt khám">
-            <Select value={visitId} onChange={(e) => setVisitId(e.target.value)}>
-              <option value="">— không —</option>
-              {visits.map((v) => (
-                <option key={v.id} value={v.id}>#{v.id} · {fmtDate(v.visitDate)}</option>
+          <Field labelText="Loại tiểu đường" className="inline">
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Tất cả</option>
+              {diabetesTypes.map(
+                (x, i) =>
+                  i > 0 && (
+                    <option key={i} value={i}>
+                      {x}
+                    </option>
+                  ),
+              )}
+            </select>
+          </Field>
+          <Field labelText="Mức DR xác nhận" className="inline">
+            <select
+              value={grade}
+              onChange={(e) => {
+                setGrade(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Tất cả</option>
+              {grades.map((x, i) => (
+                <option key={i} value={i}>
+                  {x}
+                </option>
               ))}
-            </Select>
+            </select>
           </Field>
-          <Button variant="primary" onClick={upload} disabled={loading.uploadFundus}>
-            <Plus size={14} /> Nạp ảnh
+          <Button
+            onClick={() => {
+              setQ("");
+              setType("");
+              setGrade("");
+              setPage(1);
+            }}
+          >
+            Xóa bộ lọc
           </Button>
         </div>
-        <p className="mt-2 text-micro text-ink-faint">
-          Demo dùng đường dẫn ảnh giả lập; tích hợp thật thì thay bằng upload file.
-        </p>
-      </Panel>
-
-      <Panel className="overflow-hidden">
-        <PanelHeader title="Ảnh đáy mắt" />
-        <DataState loading={loading.fundusList} error={error.fundusList} empty={fundusList?.length === 0}
-          emptyLabel="Chưa có ảnh." onRetry={() => loadFundusByPatient(pid)}>
-          <table className="w-full text-dense">
-            <thead className="bg-canvas text-ink-faint text-micro uppercase tracking-wide">
-              <tr className="[&>th]:text-left [&>th]:font-medium [&>th]:px-3 [&>th]:h-8">
-                <th>Ảnh</th><th>Mắt</th><th>Chất lượng</th><th>Tải lúc</th><th></th>
+        <LoadState
+          loading={list.loading}
+          error={list.error}
+          empty={!list.data?.items.length}
+          onRetry={list.reload}
+        >
+          <DataTable
+            headers={[
+              "Mã",
+              "Họ tên",
+              "Tuổi",
+              "Giới tính",
+              "Số điện thoại",
+              "ĐTĐ",
+              "DR gần nhất",
+              "Lần khám gần nhất",
+              "Tài khoản",
+              "Hồ sơ",
+            ]}
+          >
+            {list.data?.items.map((p) => (
+              <tr key={p.id}>
+                <td className="mono">{p.code}</td>
+                <td>
+                  <b>{p.fullName}</b>
+                </td>
+                <td className="mono">{p.age}</td>
+                <td>{label(genders, p.gender)}</td>
+                <td className="mono">{p.phone}</td>
+                <td>{label(diabetesTypes, p.diabetesType)}</td>
+                <td>
+                  <GradeBadge grade={p.latestDrGrade} />
+                </td>
+                <td className="mono">{fmtDate(p.latestVisitDate)}</td>
+                <td>
+                  <StatusBadge
+                    text={p.hasAccount ? "Đã cấp" : "Chưa cấp"}
+                    kind={p.hasAccount ? "ok" : "watch"}
+                  />
+                </td>
+                <td>
+                  <ActionLink to={`/patients/${p.id}`}>Mở hồ sơ →</ActionLink>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {(fundusList ?? []).map((f) => (
-                <tr key={f.id} className="border-t border-hairline [&>td]:px-3 [&>td]:h-9">
-                  <td className="font-mono text-ink-muted tabular-nums">#{f.id}</td>
-                  <td className="font-mono">{f.eye}</td>
-                  <td>
-                    <Select
-                      value={f.qualityStatus}
-                      onChange={(e) => setQuality(f.id, e.target.value).then(() => loadFundusByPatient(pid))}
-                      className="w-32"
-                    >
-                      <option value="Pending">Chờ duyệt</option>
-                      <option value="Gradable">Đạt</option>
-                      <option value="Ungradable">Không đạt</option>
-                    </Select>
-                  </td>
-                  <td className="text-micro text-ink-faint tabular-nums">{fmtDateTime(f.uploadedAt)}</td>
-                  <td className="text-right">
-                    <Link to={`/fundus/${f.id}`} className="text-primary text-micro hover:underline">Xem / chạy AI →</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </DataState>
+            ))}
+          </DataTable>
+          <Pagination
+            page={page}
+            pageSize={25}
+            total={list.data?.totalItems || 0}
+            onPage={setPage}
+          />
+        </LoadState>
       </Panel>
-    </div>
+    </>
   );
 }
 
-function PrescriptionsTab({ pid }: { pid: number }) {
-  const { prescriptions, loading, error, loadPrescriptions, createPrescription } = useData();
-  const [note, setNote] = useState("");
-  const [items, setItems] = useState<PrescriptionItem[]>([{ drugName: "", dose: "", frequency: "", durationDays: 30 }]);
+const EMPTY: CreatePatientRequest = {
+  fullName: "",
+  gender: 0,
+  dateOfBirth: "",
+  phone: "",
+  address: "",
+  diabetesType: 2,
+  diabetesDurationYears: null,
+  baselineHbA1c: null,
+  note: "",
+  createAccount: true,
+};
+
+export function PatientFormPage({ id }: { id?: number }) {
+  const edit = !!id;
+  const data = useData();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const detail = useAsync(
+    () => (id ? data.patients.get(id) : Promise.resolve(null)),
+    [id],
+  );
+  const [form, setForm] = useState<CreatePatientRequest>(EMPTY);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [cred, setCred] = useState<TempCredentialResponse | null>(null);
 
   useEffect(() => {
-    loadPrescriptions(pid);
-  }, [pid, loadPrescriptions]);
+    if (detail.data) {
+      const d = detail.data;
+      setForm({
+        fullName: d.fullName,
+        gender: d.gender,
+        dateOfBirth: d.dateOfBirth,
+        address: d.address || "",
+        phone: d.phone,
+        diabetesType: d.diabetesType,
+        diabetesDurationYears: d.diabetesDurationYears ?? null,
+        baselineHbA1c: d.baselineHbA1c ?? null,
+        note: d.note || "",
+        createAccount: d.hasAccount,
+      });
+    }
+  }, [detail.data]);
 
-  function setItem(i: number, patch: Partial<PrescriptionItem>) {
-    setItems((s) => s.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+  const patch = (k: keyof CreatePatientRequest, v: unknown) =>
+    setForm((x) => ({ ...x, [k]: v }));
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!form.fullName.trim() || !form.phone.trim() || !form.dateOfBirth) {
+      setError("Vui lòng nhập họ tên, ngày sinh và số điện thoại.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      if (id) {
+        const { createAccount, ...body } = form;
+        await data.patients.update(id, body);
+        toast.push("Đã cập nhật hồ sơ.", "success");
+        navigate(`/patients/${id}`);
+      } else {
+        const r = await data.patients.create(form);
+        if (r.account) setCred(r.account);
+        toast.push("Đã tạo hồ sơ bệnh nhân.", "success");
+        if (!r.account) navigate(`/patients/${r.patient.id}`);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
-  async function submit() {
-    const valid = items.filter((i) => i.drugName.trim());
-    if (valid.length === 0) return;
-    await createPrescription({ patientId: pid, note: note || undefined, items: valid });
-    setNote("");
-    setItems([{ drugName: "", dose: "", frequency: "", durationDays: 30 }]);
-  }
+
+  if (edit && detail.loading)
+    return (
+      <LoadState loading error={null}>
+        {null}
+      </LoadState>
+    );
 
   return (
-    <div className="space-y-4">
-      <Panel className="p-4 space-y-3">
-        <div className="text-sub font-serif text-ink">Kê đơn mới</div>
-        <div className="grid grid-cols-4 gap-2 font-semibold mb-2">
-          <div>Tên thuốc</div>
-          <div>Liều</div>
-          <div>Tần suất</div>
-          <div>Số ngày</div>
-        </div>
-
-        {items.map((it, i) => (
-          <div key={i} className="grid grid-cols-4 gap-2">
-            <Input
-              placeholder="Ví dụ: Metformin"
-              value={it.drugName}
-              onChange={(e) => setItem(i, { drugName: e.target.value })}
-            />
-            <Input
-              placeholder="Ví dụ: 500 mg"
-              value={it.dose}
-              onChange={(e) => setItem(i, { dose: e.target.value })}
-            />
-            <Input
-              placeholder="Ví dụ: 2 lần/ngày"
-              value={it.frequency}
-              onChange={(e) => setItem(i, { frequency: e.target.value })}
-            />
-            <Input
-              type="number"
-              placeholder="Ví dụ: 7"
-              value={it.durationDays ?? ""}
-              onChange={(e) => setItem(i, { durationDays: e.target.value ? Number(e.target.value) : null })}
-            />
+    <>
+      <PageHeader
+        title={edit ? "Cập nhật hồ sơ bệnh nhân" : "Tạo hồ sơ bệnh nhân"}
+        subtitle="Thông tin lâm sàng được lưu vết; không xóa cứng hồ sơ."
+      />
+      <Panel>
+        <form onSubmit={save}>
+          <div className="form-row three">
+            <Field labelText="Họ tên" required>
+              <input
+                value={form.fullName}
+                onChange={(e) => patch("fullName", e.target.value)}
+              />
+            </Field>
+            <Field labelText="Giới tính" required>
+              <select
+                value={form.gender}
+                onChange={(e) => patch("gender", Number(e.target.value))}
+              >
+                {genders.map((x, i) => (
+                  <option value={i} key={i}>
+                    {x}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field labelText="Ngày sinh" required>
+              <input
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={form.dateOfBirth}
+                onChange={(e) => patch("dateOfBirth", e.target.value)}
+              />
+            </Field>
+            <Field
+              labelText="Số điện thoại"
+              required
+              help="Đây là định danh đăng nhập của bệnh nhân."
+            >
+              <input
+                className="mono"
+                value={form.phone}
+                onChange={(e) => patch("phone", e.target.value)}
+              />
+            </Field>
+            <Field labelText="Loại tiểu đường">
+              <select
+                value={form.diabetesType}
+                onChange={(e) => patch("diabetesType", Number(e.target.value))}
+              >
+                {diabetesTypes.map((x, i) => (
+                  <option value={i} key={i}>
+                    {x}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field labelText="Thời gian mắc (năm)">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={form.diabetesDurationYears ?? ""}
+                onChange={(e) =>
+                  patch(
+                    "diabetesDurationYears",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
+                }
+              />
+            </Field>
+            <Field labelText="HbA1c nền (%)">
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="30"
+                value={form.baselineHbA1c ?? ""}
+                onChange={(e) =>
+                  patch(
+                    "baselineHbA1c",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
+                }
+              />
+            </Field>
+            <Field labelText="Địa chỉ">
+              <input
+                value={form.address || ""}
+                onChange={(e) => patch("address", e.target.value)}
+              />
+            </Field>
+            <Field labelText="Ghi chú">
+              <textarea
+                value={form.note || ""}
+                onChange={(e) => patch("note", e.target.value)}
+              />
+            </Field>
           </div>
-        ))}
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={() => setItems((s) => [...s, { drugName: "", dose: "", frequency: "", durationDays: 30 }])}>
-            + Thêm thuốc
-          </Button>
+          {!edit && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={form.createAccount}
+                onChange={(e) => patch("createAccount", e.target.checked)}
+              />
+              Cấp tài khoản bệnh nhân ngay khi tạo hồ sơ
+            </label>
+          )}
+          {error && <div className="state error">{error}</div>}
+          <div className="dialog-footer">
+            <Button
+              type="button"
+              onClick={() => navigate(id ? `/patients/${id}` : "/patients")}
+            >
+              Hủy
+            </Button>
+            <Button kind="primary" type="submit" busy={busy}>
+              {edit ? "Lưu thay đổi" : "Tạo hồ sơ"}
+            </Button>
+          </div>
+        </form>
+      </Panel>
+      {cred && (
+        <CredentialAfterCreate
+          cred={cred}
+          onDone={() => navigate("/patients")}
+        />
+      )}
+    </>
+  );
+}
+
+function CredentialAfterCreate({
+  cred,
+  onDone,
+}: {
+  cred: TempCredentialResponse;
+  onDone: () => void;
+}) {
+  return (
+    <Modal
+      title="Tài khoản bệnh nhân đã được cấp"
+      onClose={onDone}
+      footer={
+        <Button kind="primary" onClick={onDone}>
+          Đã in / lưu thông tin
+        </Button>
+      }
+    >
+      <div className="credential">
+        <p>Thông tin này chỉ hiển thị một lần.</p>
+        <div>
+          Đăng nhập: <code>{cred.loginId}</code>
         </div>
-        <Field label="Ghi chú đơn">
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="vd: Kiểm soát đường huyết & huyết áp" />
-        </Field>
-        <Button variant="primary" onClick={submit} disabled={loading.createPrescription}>Lưu đơn</Button>
-      </Panel>
-
-      <Panel className="overflow-hidden">
-        <PanelHeader title="Lịch sử đơn thuốc" />
-        <DataState loading={loading.prescriptions} error={error.prescriptions} empty={prescriptions?.length === 0}
-          emptyLabel="Chưa có đơn." onRetry={() => loadPrescriptions(pid)}>
-          <ul className="divide-y divide-hairline">
-            {(prescriptions ?? []).map((p) => (
-              <li key={p.id} className="px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-dense text-ink">Đơn #{p.id} · {fmtDate(p.issuedAt)}</span>
-                  <span className="text-micro text-ink-faint">{p.note}</span>
-                </div>
-                <ul className="mt-1 text-meta text-ink-muted">
-                  {p.items.map((it, idx) => (
-                    <li key={idx} className="font-mono">
-                      • {it.drugName} {it.dose} — {it.frequency} {it.durationDays ? `(${it.durationDays}n)` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </DataState>
-      </Panel>
-    </div>
-  );
-}
-
-function MonitoringTab({ pid }: { pid: number }) {
-  const { metrics, adherence, symptoms, loading, error, loadMetrics, loadAdherence, loadSymptoms } = useData();
-
-  useEffect(() => {
-    loadMetrics(pid);
-    loadAdherence(pid);
-    loadSymptoms(pid);
-  }, [pid, loadMetrics, loadAdherence, loadSymptoms]);
-
-  const latest = (type: string) => {
-    const arr = (metrics ?? []).filter((m) => m.metricType === type);
-    return arr.length ? arr[arr.length - 1] : null;
-  };
-  const glucose = latest("Glucose");
-  const hba1c = latest("HbA1c");
-  const sys = latest("SystolicBP");
-  const dia = latest("DiastolicBP");
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-4">
-        <Metric label="Glucose gần nhất" value={glucose ? `${glucose.value} ${glucose.unit ?? ""}` : "—"} />
-        <Metric label="HbA1c gần nhất" value={hba1c ? `${hba1c.value}%` : "—"} />
-        <Metric label="Huyết áp" value={sys && dia ? `${sys.value}/${dia.value}` : "—"} />
-        <Metric label="Tuân thủ thuốc" value={adherence ? pct(adherence.rate, 0) : "—"} tone="primary" />
+        <div>
+          Mật khẩu tạm: <code>{cred.tempPassword}</code>
+        </div>
+        <p>{cred.note}</p>
       </div>
-
-      <Panel className="overflow-hidden">
-        <PanelHeader title="Triệu chứng bệnh nhân báo" />
-        <DataState loading={loading.symptoms} error={error.symptoms} empty={symptoms?.length === 0}
-          emptyLabel="Chưa có báo cáo triệu chứng.">
-          <table className="w-full text-dense">
-            <thead className="bg-canvas text-ink-faint text-micro uppercase tracking-wide">
-              <tr className="[&>th]:text-left [&>th]:font-medium [&>th]:px-3 [&>th]:h-8">
-                <th>Triệu chứng</th><th>Mức độ</th><th>Khuyến cáo</th><th>Thời gian</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(symptoms ?? []).map((s) => (
-                <tr key={s.id} className="border-t border-hairline [&>td]:px-3 [&>td]:h-9">
-                  <td className="text-ink">{s.description}</td>
-                  <td>
-                    <Badge tone={s.severity === "High" ? "alert" : s.severity === "Medium" ? "watch" : "neutral"}>
-                      {s.severity}
-                    </Badge>
-                  </td>
-                  <td className="text-ink-muted">{s.adviceGiven ?? "—"}</td>
-                  <td className="text-micro text-ink-faint tabular-nums">{fmtDateTime(s.reportedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </DataState>
-      </Panel>
-    </div>
-  );
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-micro text-ink-faint">{label}</div>
-      <div className="text-ink">{value}</div>
-    </div>
-  );
-}
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "primary" }) {
-  return (
-    <Panel className="p-4">
-      <div className="text-meta text-ink-faint">{label}</div>
-      <div className={cx("mt-1 font-mono text-section tabular-nums", tone === "primary" ? "text-primary" : "text-ink")}>{value}</div>
-    </Panel>
+    </Modal>
   );
 }
