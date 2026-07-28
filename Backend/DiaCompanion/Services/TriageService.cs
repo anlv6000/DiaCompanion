@@ -219,6 +219,7 @@ public class TriageService : BaseService, ITriageService
             throw AppException.Conflict(Msg.ConcurrentEdit,
                 "Ca này vừa được một bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
 
+        //thừa
         if (!string.IsNullOrWhiteSpace(rowVersion) && d.RowVer is not null)
         {
             var seen = Convert.FromBase64String(rowVersion);
