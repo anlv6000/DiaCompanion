@@ -34,18 +34,29 @@ public class ExceptionMiddleware
         }
         catch (DbUpdateException ex)
         {
-            _log.LogError(ex, "Lỗi ghi cơ sở dữ liệu");
+            _log.LogError(ex, "Lỗi ghi cơ sở dữ liệu tại {Path}", ctx.Request.Path);
 
-            // Vi phạm unique index — thường là trùng số điện thoại hoặc
-            // hai người cùng duyệt một ca
-            if (ex.InnerException is Microsoft.Data.SqlClient.SqlException sql && sql.Number is 2601 or 2627)
+            if (ex.InnerException is Microsoft.Data.SqlClient.SqlException sql &&
+                sql.Number is 2601 or 2627)
             {
-                await WriteAsync(ctx, 409, Msg.PhoneTaken,
-                    "Dữ liệu bị trùng với một bản ghi đã có. Vui lòng kiểm tra lại.");
+                await WriteAsync(
+                    ctx,
+                    409,
+                    Msg.PhoneTaken,
+                    "Dữ liệu bị trùng với một bản ghi đã có. Vui lòng kiểm tra lại.",
+                    _env.IsDevelopment() ? sql.Message : null);
+
                 return;
             }
 
-            await WriteAsync(ctx, 500, Msg.LoadFailed, "Không lưu được dữ liệu. Vui lòng thử lại.");
+            await WriteAsync(
+                ctx,
+                500,
+                Msg.LoadFailed,
+                "Không lưu được dữ liệu. Vui lòng thử lại.",
+                _env.IsDevelopment()
+                    ? ex.InnerException?.Message ?? ex.Message
+                    : null);
         }
         catch (Exception ex)
         {

@@ -150,72 +150,126 @@ public class PatientsService : BaseService, IPatientsService
     {
         var phone = req.Phone.Trim();
 
-        // LI-6: SĐT là định danh đăng nhập nên phải duy nhất.
-        // Kiểm ở đây để trả thông điệp rõ ràng; unique index là chốt chặn cuối.
         if (await _repository.Patients.AnyAsync(p => p.Phone == phone))
-            throw AppException.Conflict(Msg.PhoneTaken,
+        {
+            throw AppException.Conflict(
+                Msg.PhoneTaken,
                 "Số điện thoại này đã được dùng cho một hồ sơ khác. " +
                 "Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
-
-        if (req.CreateAccount && await _repository.Users.AnyAsync(u => u.Phone == phone && u.IsActive))
-            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã có tài khoản đang hoạt động.");
-
-        await using var tx = await _repository.Database.BeginTransactionAsync();
-
-        var patient = new Patient
-        {
-            Code = await NextCodeAsync(),
-            FullName = req.FullName.Trim(),
-            Gender = req.Gender,
-            DateOfBirth = req.DateOfBirth,
-            Phone = phone,
-            Address = req.Address,
-            DiabetesType = req.DiabetesType,
-            DiabetesDurationYears = req.DiabetesDurationYears,
-            BaselineHbA1c = req.BaselineHbA1c,
-            Note = req.Note,
-            CreatedBy = _me.RequireId()
-        };
-
-        TempCredentialResponse? cred = null;
-
-        if (req.CreateAccount)
-        {
-            var temp = _hasher.GenerateTempPassword();
-            var user = new User
-            {
-                Phone = phone,
-                PasswordHash = _hasher.Hash(temp),
-                Role = UserRole.Patient,
-                FullName = patient.FullName,
-                // Bắt buộc đổi ở lần đăng nhập đầu — nếu không, ai nhặt được
-                // phiếu khám in mật khẩu tạm cũng vào được hồ sơ bệnh án.
-                MustChangePassword = true,
-                IsActive = true
-            };
-            _repository.Users.Add(user);
-            await _repository.SaveChangesAsync();
-
-            patient.UserId = user.Id;
-            cred = new TempCredentialResponse
-            {
-                LoginId = phone,
-                TempPassword = temp,
-                Note = "Mật khẩu tạm chỉ hiển thị một lần. In cho bệnh nhân; " +
-                       "hệ thống sẽ bắt đổi mật khẩu ở lần đăng nhập đầu tiên."
-            };
         }
 
-        _repository.Patients.Add(patient);
-        await _repository.SaveChangesAsync();
+        if (req.CreateAccount &&
+            await _repository.Users.AnyAsync(
+                u => u.Phone == phone && u.IsActive))
+        {
+            throw AppException.Conflict(
+                Msg.PhoneTaken,
+                "Số điện thoại này đã có tài khoản đang hoạt động.");
+        }
 
-        await _audit.LogAsync(AuditAction.PatientCreate, nameof(Patient), patient.Id,
-            null, new { patient.Code, patient.FullName, patient.Phone, hasAccount = req.CreateAccount });
-        await _repository.SaveChangesAsync();
-        await tx.CommitAsync();
+        if (req.BaselineHbA1c is decimal hba1c &&
+    (hba1c < 3 || hba1c > 20))
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
+        }
 
-        return CreatedAtAction(nameof(Get), new { id = patient.Id },
-            new CreatePatientResponse { Patient = await ToDetailAsync(patient), Account = cred });
+        var strategy =
+            _repository.Database.CreateExecutionStrategy();
+
+        CreatePatientResponse? response = null;
+
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx =
+                await _repository.Database.BeginTransactionAsync();
+
+            try
+            {
+                var patient = new Patient
+                {
+                    Code = await NextCodeAsync(),
+                    FullName = req.FullName.Trim(),
+                    Gender = req.Gender,
+                    DateOfBirth = req.DateOfBirth,
+                    Phone = phone,
+                    Address = req.Address,
+                    DiabetesType = req.DiabetesType,
+                    DiabetesDurationYears = req.DiabetesDurationYears,
+                    BaselineHbA1c = req.BaselineHbA1c,
+                    Note = req.Note,
+                    CreatedBy = _me.RequireId()
+                };
+
+                TempCredentialResponse? cred = null;
+
+                if (req.CreateAccount)
+                {
+                    var temp = _hasher.GenerateTempPassword();
+
+                    var user = new User
+                    {
+                        Phone = phone,
+                        PasswordHash = _hasher.Hash(temp),
+                        Role = UserRole.Patient,
+                        FullName = patient.FullName,
+                        MustChangePassword = true,
+                        IsActive = true
+                    };
+
+                    _repository.Users.Add(user);
+                    await _repository.SaveChangesAsync();
+
+                    patient.UserId = user.Id;
+
+                    cred = new TempCredentialResponse
+                    {
+                        LoginId = phone,
+                        TempPassword = temp,
+                        Note =
+                            "Mật khẩu tạm chỉ hiển thị một lần. " +
+                            "In cho bệnh nhân; hệ thống sẽ bắt đổi mật khẩu " +
+                            "ở lần đăng nhập đầu tiên."
+                    };
+                }
+
+                _repository.Patients.Add(patient);
+                await _repository.SaveChangesAsync();
+
+                await _audit.LogAsync(
+                    AuditAction.PatientCreate,
+                    nameof(Patient),
+                    patient.Id,
+                    null,
+                    new
+                    {
+                        patient.Code,
+                        patient.FullName,
+                        patient.Phone,
+                        hasAccount = req.CreateAccount
+                    });
+
+                await _repository.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                response = new CreatePatientResponse
+                {
+                    Patient = await ToDetailAsync(patient),
+                    Account = cred
+                };
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+
+        return CreatedAtAction(
+            nameof(Get),
+            new { id = response!.Patient.Id },
+            response);
     }
 
     /// <summary>UC-15 — cập nhật hồ sơ.</summary>
