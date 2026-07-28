@@ -196,6 +196,7 @@ public class RecheckService : BaseService, IRecheckService
             .Where(v => v.PatientId == patientId && v.Status == VisitStatus.Completed
                         && v.ClosedAt != null && v.RecheckMonths != null)
             .OrderByDescending(v => v.ClosedAt)
+            .OrderByDescending(v => v.ClosedAt)
             .Select(v => new
             {
                 v.Id,
@@ -215,7 +216,9 @@ public class RecheckService : BaseService, IRecheckService
         if (patient is null) return null;
 
         var grade = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visit.Id)
+            .Where(r => r.AiDiagnosis != null && 
+                        r.AiDiagnosis.FundusImage != null && 
+                        r.AiDiagnosis.FundusImage.VisitId == visit.Id)
             .Select(r => (byte?)(byte)r.FinalGrade)
             .MaxAsync();
 
