@@ -89,10 +89,10 @@ public class VisitsService : BaseService, IVisitsService
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
 
         var pendingImages = await _repository.FundusImages
-    .Where(f => f.VisitId == id)
-    .CountAsync(f =>
-        !_repository.DiagnosisReviews.Any(r =>
-            r.AiDiagnosis!.FundusImageId == f.Id));
+                .Where(f => f.VisitId == id)
+                .CountAsync(f =>
+                    !_repository.DiagnosisReviews.Any(r =>
+                        r.AiDiagnosis!.FundusImageId == f.Id));
 
         if (pendingImages > 0)
         {
