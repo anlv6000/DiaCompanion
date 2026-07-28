@@ -52,12 +52,22 @@ public class VisitsService : BaseService, IVisitsService
     {
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        var doctorExits = await _repository.Users.AnyAsync( 
+                    u => u.Id == req.DoctorId && u.Role == UserRole.Doctor && u.IsActive);
 
+        if (!doctorExits)
+            throw AppException.BadRequest(Msg.InvalidData, "Bác sĩ phụ trách không tồn tại hoặc không còn hoạt động.");
+
+        var hasOpenVisit = await _repository.Visits.AnyAsync(
+                    v => v.PatientId == req.PatientId && v.Status == VisitStatus.InProgress && !v.IsVoided);
+        
+        if (hasOpenVisit)
+            throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
+        
         var visit = new Visit
         {
             PatientId = req.PatientId,
-            // Nếu người tạo là bác sĩ thì mặc định họ phụ trách lượt khám này
-            DoctorId = req.DoctorId ?? (_me.Role == UserRole.Doctor ? _me.Id : null),
+            DoctorId = req.DoctorId ,
             VisitDate = DateTime.UtcNow,
             Status = VisitStatus.InProgress
         };
@@ -75,7 +85,7 @@ public class VisitsService : BaseService, IVisitsService
     public async Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req)
     {
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
 
         if (v.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
@@ -86,7 +96,8 @@ public class VisitsService : BaseService, IVisitsService
         // Mọi kết quả AI trong lượt khám phải được bác sĩ xử lý trước khi đóng.
         // Nếu không, hồ sơ đóng lại mà vẫn còn kết quả chưa ai xác nhận.
         var pending = await _repository.AiDiagnoses
-            .Where(d => d.FundusImage!.VisitId == id)
+            .Where(d => d.FundusImage != null && 
+                        d.FundusImage.VisitId == id)
             .CountAsync(d => !_repository.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id));
 
         if (pending > 0)
