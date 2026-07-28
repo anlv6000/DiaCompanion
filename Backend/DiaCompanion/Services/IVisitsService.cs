@@ -1,0 +1,16 @@
+using Microsoft.AspNetCore.Mvc;
+using DiaCompanion.Api.Common;
+using DiaCompanion.Api.Dtos;
+using DiaCompanion.Api.Entities;
+
+namespace DiaCompanion.Api.Services;
+
+public interface IVisitsService
+{
+    Task<ActionResult<PagedResult<VisitDto>>> List(
+        [FromQuery] int? patientId, [FromQuery] byte? status, [FromQuery] PageQuery page);
+    Task<ActionResult<VisitDto>> Get(int id);
+    Task<ActionResult<VisitDto>> Create(CreateVisitRequest req);
+    Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req);
+    Task<IActionResult> Void(int id, VoidRequest req);
+}
