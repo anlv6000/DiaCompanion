@@ -74,8 +74,22 @@ public class VisitsService : BaseService, IVisitsService
     /// </summary>
     public async Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req)
     {
+
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+        var pendingImages = await _repository.FundusImages
+    .Where(f => f.VisitId == id)
+    .CountAsync(f =>
+        !_repository.DiagnosisReviews.Any(r =>
+            r.AiDiagnosis!.FundusImageId == f.Id));
+
+        if (pendingImages > 0)
+        {
+            throw AppException.BadRequest(
+                Msg.ConclusionNeeded,
+                $"Còn {pendingImages} ảnh đáy mắt chưa được bác sĩ duyệt nên không thể đóng lượt khám.");
+        }
 
         if (v.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
