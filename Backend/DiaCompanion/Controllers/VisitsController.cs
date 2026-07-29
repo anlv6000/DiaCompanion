@@ -93,4 +93,20 @@ public class VisitsController : BaseApiController
 
         return Ok(result);
     }
+
+
+    [HttpPost("feedback")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<IActionResult> CreateFeedback(
+    [FromBody] CreateFeedbackRequest req)
+    {
+        var userId = _me.RequireId();
+
+        await _service.CreateAsync(userId, req);
+
+        return Ok(new
+        {
+            message = "Cảm ơn bạn đã gửi phản hồi."
+        });
+    }
 }
