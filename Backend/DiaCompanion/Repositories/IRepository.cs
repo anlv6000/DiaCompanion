@@ -30,7 +30,8 @@ public interface IRepository
     DbSet<Notification> Notifications { get; }
     DbSet<BlogPost> BlogPosts { get; }
     DbSet<Feedback> Feedbacks { get; }
-
+    
+    DbSet<DoctorShift> DoctorShifts { get; }
     DatabaseFacade Database { get; }
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
