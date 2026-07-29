@@ -40,7 +40,7 @@ public class VisitsController : BaseApiController
 
     /// <summary>UC-18 — tạo lượt khám.</summary>
     [HttpPost]
-    [Authorize(Roles = Roles.Doctor)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
         return await _service.Create(req);
@@ -92,5 +92,21 @@ public class VisitsController : BaseApiController
             id);
 
         return Ok(result);
+    }
+
+
+    [HttpPost("feedback")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<IActionResult> CreateFeedback(
+    [FromBody] CreateFeedbackRequest req)
+    {
+        var userId = _me.RequireId();
+
+        await _service.CreateAsync(userId, req);
+
+        return Ok(new
+        {
+            message = "Cảm ơn bạn đã gửi phản hồi."
+        });
     }
 }
