@@ -12,6 +12,7 @@ public interface IClinicClock
     DateOnly LocalToday { get; }
     DateOnly ToLocalDate(DateTime utc);
     DateTime ToUtc(DateTime local);
+    DateTime? ToLocal(DateTime? utc);
 }
 
 public class ClinicClock : IClinicClock
@@ -39,4 +40,9 @@ public class ClinicClock : IClinicClock
 
     public DateTime ToUtc(DateTime local) =>
         TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), _tz);
+
+    public DateTime? ToLocal(DateTime? utc) =>
+    TimeZoneInfo.ConvertTimeFromUtc(
+        DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc),
+        _tz);
 }

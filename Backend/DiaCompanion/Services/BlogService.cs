@@ -12,8 +12,10 @@ public class BlogService : BaseService, IBlogService
 {
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
+    private readonly IClinicClock _clock;
 
-    public BlogService(IRepository repository, ICurrentUser me) { _repository = repository; _me = me; }
+
+    public BlogService(IRepository repository, ICurrentUser me, IClinicClock clock) { _repository = repository; _me = me;_clock = clock; }
 
     /// <summary>UC-59 — bệnh nhân chỉ thấy bài ĐÃ ĐĂNG.</summary>
     public async Task<ActionResult<PagedResult<BlogPostDto>>> Published(
@@ -39,7 +41,7 @@ public class BlogService : BaseService, IBlogService
                 Summary = b.Summary,
                 Category = (byte)b.Category,
                 IsPublished = b.IsPublished,
-                PublishedAt = b.PublishedAt,
+                PublishedAt =  _clock.ToLocal(b.PublishedAt),
                 AuthorName = b.Author!.FullName,
                 CreatedAt = b.CreatedAt
             }).ToListAsync();
@@ -65,25 +67,30 @@ public class BlogService : BaseService, IBlogService
         [FromQuery] bool? published, [FromQuery] PageQuery page)
     {
         var query = _repository.BlogPosts.AsNoTracking().AsQueryable();
-        if (published is bool p) query = query.Where(b => b.IsPublished == p);
+
+        if (published is bool p)
+            query = query.Where(b => b.IsPublished == p);
 
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(b => b.UpdatedAt ?? b.CreatedAt)
-            .Skip(page.Skip).Take(page.PageSize)
-            .Select(b => new BlogPostDto
-            {
-                Id = b.Id,
-                Title = b.Title,
-                Summary = b.Summary,
-                Category = (byte)b.Category,
-                IsPublished = b.IsPublished,
-                PublishedAt = b.PublishedAt,
-                AuthorName = b.Author!.FullName,
-                CreatedAt = b.CreatedAt
-            }).ToListAsync();
+
+        // Chạy SQL lấy dữ liệu UTC từ DB trước
+        var posts = await query
+            .Include(b => b.Author)
+            .OrderByDescending(b => b.UpdatedAt ?? b.CreatedAt)
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .ToListAsync();
+
+        // Sau khi SQL xong mới đổi UTC -> giờ Việt Nam
+        var items = posts.Select(b => Map(b, includeBody: false)).ToList();
 
         return Ok(new PagedResult<BlogPostDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
+        });
     }
 
     /// <summary>UC-61 — soạn bài mới (lưu ở trạng thái nháp).</summary>
@@ -163,7 +170,7 @@ public class BlogService : BaseService, IBlogService
         return Map(b, includeBody: true);
     }
 
-    private static BlogPostDto Map(BlogPost b, bool includeBody) => new()
+    private  BlogPostDto Map(BlogPost b, bool includeBody) => new()
     {
         Id = b.Id,
         Title = b.Title,
@@ -171,8 +178,12 @@ public class BlogService : BaseService, IBlogService
         Body = includeBody ? b.Body : null,
         Category = (byte)b.Category,
         IsPublished = b.IsPublished,
-        PublishedAt = b.PublishedAt,
+        // DB lưu UTC -> response trả giờ Việt Nam
+        PublishedAt = b.PublishedAt.HasValue
+        ? _clock.ToLocal(b.PublishedAt.Value)
+        : null,
         AuthorName = b.Author?.FullName ?? "",
-        CreatedAt = b.CreatedAt
+        CreatedAt = (DateTime)_clock.ToLocal(b.CreatedAt)
+
     };
 }
