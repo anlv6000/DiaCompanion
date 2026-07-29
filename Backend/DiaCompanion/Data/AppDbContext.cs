@@ -29,7 +29,7 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
-
+    public DbSet<DoctorShift> DoctorShifts => Set<DoctorShift>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -253,6 +253,18 @@ public class AppDbContext : DbContext
             e.Property(x => x.Key).HasColumnName("Key");
             e.Property(x => x.MinValue).HasPrecision(10, 4);
             e.Property(x => x.MaxValue).HasPrecision(10, 4);
+        });
+        b.Entity<DoctorShift>(e =>
+        {
+            e.Property(x => x.Shift).HasConversion<byte>();
+
+            e.HasIndex(x => new { x.DoctorId, x.DayOfWeek, x.Shift })
+                .IsUnique();
+
+            e.HasOne(x => x.Doctor)
+                .WithMany()
+                .HasForeignKey(x => x.DoctorId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
     }
 

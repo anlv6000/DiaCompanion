@@ -14,6 +14,7 @@ public class VisitDto
     public int? DoctorId { get; set; }
     public string? DoctorName { get; set; }
     public DateTime VisitDate { get; set; }
+    public DateTime CreatedAt { get; set; }
     public byte Status { get; set; }
     public string? Conclusion { get; set; }
     public byte? Referral { get; set; }

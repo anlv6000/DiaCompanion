@@ -16,10 +16,11 @@ public class VisitsService : BaseService, IVisitsService
     private readonly IVoidService _void;
     private readonly IConfigService _cfg;
     private readonly INotificationService _notify;
+    private readonly IClinicClock _clock;
 
     public VisitsService(IRepository repository, ICurrentUser me, IAuditService audit,
-                            IVoidService voidSvc, IConfigService cfg, INotificationService notify)
-    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _notify = notify; }
+                            IVoidService voidSvc, IConfigService cfg, INotificationService notify, IClinicClock clock)
+    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _notify = notify; _clock = clock; }
 
     /// <summary>Danh sách lượt khám của một bệnh nhân.</summary>
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
@@ -50,9 +51,10 @@ public class VisitsService : BaseService, IVisitsService
     /// <summary>UC-18 — tạo lượt khám.</summary>
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
+        
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
-        var doctorExits = await _repository.Users.AnyAsync( 
+        var doctorExits = await _repository.Users.AnyAsync(
                     u => u.Id == req.DoctorId && u.Role == UserRole.Doctor && u.IsActive);
 
         if (!doctorExits)
@@ -60,22 +62,36 @@ public class VisitsService : BaseService, IVisitsService
 
         var hasOpenVisit = await _repository.Visits.AnyAsync(
                     v => v.PatientId == req.PatientId && v.Status == VisitStatus.InProgress && !v.IsVoided);
-        
+
         if (hasOpenVisit)
             throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
-        
+
+        var localNow = _clock.LocalNow;
+        var currentShift = ResolveShift(localNow);
+        var dayOfWeek = (byte)localNow.DayOfWeek;
+
+        var isDoctorOnDuty = await _repository.DoctorShifts.AnyAsync(s =>
+            s.DoctorId == req.DoctorId &&
+            s.DayOfWeek == dayOfWeek &&
+            s.Shift == currentShift &&
+            s.IsActive);
+        if (!isDoctorOnDuty)
+            throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
         var visit = new Visit
         {
             PatientId = req.PatientId,
-            DoctorId = req.DoctorId ,
-            VisitDate = DateTime.UtcNow,
+            DoctorId = req.DoctorId,
+            VisitDate = _clock.UtcNow,
             Status = VisitStatus.InProgress
         };
 
         _repository.Visits.Add(visit);
         await _repository.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(Get), new { id = visit.Id }, await GetDtoAsync(visit.Id));
+        var dto = await GetDtoAsync(visit.Id);
+        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
+        dto.CreatedAt = _clock.ToLocal(visit.CreatedAt)!.Value;
+        return CreatedAtAction(nameof(Get), new { id = visit.Id }, dto);
     }
 
     /// <summary>
@@ -84,81 +100,107 @@ public class VisitsService : BaseService, IVisitsService
     /// </summary>
     public async Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req)
     {
-
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
-
-        var pendingImages = await _repository.FundusImages
-                .Where(f => f.VisitId == id)
-                .CountAsync(f =>
-                    !_repository.DiagnosisReviews.Any(r =>
-                        r.AiDiagnosis!.FundusImageId == f.Id));
-
-        if (pendingImages > 0)
-        {
-            throw AppException.BadRequest(
-                Msg.ConclusionNeeded,
-                $"Còn {pendingImages} ảnh đáy mắt chưa được bác sĩ duyệt nên không thể đóng lượt khám.");
-        }
 
         if (v.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
 
+        var doctorId = _me.RequireId();
+        if (v.DoctorId != doctorId)
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Bạn không phải bác sĩ phụ trách lượt khám này nên không thể đóng.");
+
         if (string.IsNullOrWhiteSpace(req.Conclusion))
-            throw AppException.BadRequest(Msg.ConclusionNeeded, "Chưa nhập kết luận nên không thể đóng lượt khám.");
+            throw AppException.BadRequest(
+                Msg.ConclusionNeeded,
+                "Chưa nhập kết luận nên không thể đóng lượt khám.");
 
-        // Mọi kết quả AI trong lượt khám phải được bác sĩ xử lý trước khi đóng.
-        // Nếu không, hồ sơ đóng lại mà vẫn còn kết quả chưa ai xác nhận.
-        var pending = await _repository.AiDiagnoses
-            .Where(d => d.FundusImage != null && 
-                        d.FundusImage.VisitId == id)
-            .CountAsync(d => !_repository.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id));
+        var unapprovedImages = await _repository.FundusImages
+            .Where(f => f.VisitId == id && !f.IsVoided)
+            .CountAsync(f =>
+                f.QualityStatus == QualityStatus.Pending ||
+                (
+                    f.QualityStatus == QualityStatus.Gradable &&
+                    !_repository.AiDiagnoses.Any(d =>
+                        d.FundusImageId == f.Id &&
+                        !d.IsVoided &&
+                        _repository.DiagnosisReviews.Any(r =>
+                            r.AiDiagnosisId == d.Id &&
+                            !r.IsVoided))
+                ));
 
-        if (pending > 0)
-            throw AppException.BadRequest(Msg.ConclusionNeeded,
-                $"Còn {pending} kết quả AI chưa được duyệt hoặc ghi đè trong lượt khám này.");
+        if (unapprovedImages > 0)
+            throw AppException.BadRequest(
+                Msg.ConclusionNeeded,
+                $"Còn {unapprovedImages} ảnh đáy mắt chưa hoàn tất duyệt chất lượng hoặc chưa có kết quả AI đã được bác sĩ phê duyệt nên không thể đóng lượt khám.");
 
-        // Mức DR đã xác nhận, lấy mắt nặng hơn (BR-21)
         var worstGrade = await _repository.DiagnosisReviews
-            .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == id)
+            .Where(r =>
+                !r.IsVoided &&
+                r.AiDiagnosis != null &&
+                !r.AiDiagnosis.IsVoided &&
+                r.AiDiagnosis.FundusImage != null &&
+                r.AiDiagnosis.FundusImage.VisitId == id &&
+                !r.AiDiagnosis.FundusImage.IsVoided)
             .Select(r => (byte?)(byte)r.FinalGrade)
             .MaxAsync();
 
         v.Conclusion = req.Conclusion.Trim();
         v.Referral = req.Referral;
         v.RecheckMonths = req.RecheckMonths
-            ?? (worstGrade is byte g ? await _cfg.GetRecheckMonthsAsync((DrGrade)g) : (byte)12);
+            ?? (worstGrade is byte g
+                ? await _cfg.GetRecheckMonthsAsync((DrGrade)g)
+                : (byte)12);
+
         v.Status = VisitStatus.Completed;
-        v.ClosedAt = DateTime.UtcNow;
-        if (v.DoctorId is null) v.DoctorId = _me.Id;
+        v.ClosedAt = _clock.UtcNow;
 
         var patient = await _repository.Patients.FirstAsync(p => p.Id == v.PatientId);
 
-        _notify.PushToPatient(patient, NotificationType.Result,
+        _notify.PushToPatient(
+            patient,
+            NotificationType.Result,
             "Kết quả khám đã được xác nhận",
-            $"Kết quả lượt khám ngày {v.VisitDate:dd/MM/yyyy} đã được bác sĩ xác nhận.",
-            nameof(Visit), v.Id);
+            $"Kết quả lượt khám ngày {_clock.ToLocal(v.VisitDate):dd/MM/yyyy} đã được bác sĩ xác nhận.",
+            nameof(Visit),
+            v.Id);
 
-        // NF-11 — nhắc tái tầm soát.
-        // Không tạo bản ghi lịch hẹn: ngày tái khám được TÍNH từ ClosedAt +
-        // RecheckMonths mỗi khi cần (xem RecheckController). Ở đây chỉ gửi
-        // thông báo cho bệnh nhân biết mốc thời gian.
-        var dueDate = v.ClosedAt!.Value.AddMonths(v.RecheckMonths!.Value);
+        var dueDate = _clock.ToLocal(v.ClosedAt)!.Value.AddMonths(v.RecheckMonths.Value);
         var referralNote = v.Referral >= ReferralType.Ophthalmology
             ? " Bạn cũng cần đến Khoa Mắt theo chỉ định của bác sĩ."
             : "";
 
-        _notify.PushToPatient(patient, NotificationType.Recheck,
+        _notify.PushToPatient(
+            patient,
+            NotificationType.Recheck,
             "Lịch tái tầm soát tiếp theo",
             $"Bạn cần tái tầm soát võng mạc trước ngày {dueDate:dd/MM/yyyy} " +
             $"(sau {v.RecheckMonths} tháng). Vui lòng đến phòng khám trong giờ làm việc.{referralNote}",
-            nameof(Visit), v.Id);
+            nameof(Visit),
+            v.Id);
 
-        await _audit.LogAsync(AuditAction.VisitClose, nameof(Visit), v.Id, null,
-            new { v.Conclusion, Referral = v.Referral?.ToString(), v.RecheckMonths, worstGrade });
+        await _audit.LogAsync(
+            AuditAction.VisitClose,
+            nameof(Visit),
+            v.Id,
+            null,
+            new
+            {
+                v.Conclusion,
+                Referral = v.Referral?.ToString(),
+                v.RecheckMonths,
+                worstGrade
+            });
+
         await _repository.SaveChangesAsync();
 
-        return Ok(await GetDtoAsync(v.Id));
+        var dto = await GetDtoAsync(v.Id);
+        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
+        dto.ClosedAt = _clock.ToLocal(dto.ClosedAt);
+
+        return Ok(dto);
     }
 
     /// <summary>UC-21 — thu hồi lượt khám (lan sang ảnh, kết quả AI, review, đơn thuốc).</summary>
@@ -233,8 +275,8 @@ public class VisitsService : BaseService, IVisitsService
                 Conclusion = v.Conclusion,
                 Referral = (byte?)v.Referral,
                 RecheckMonths = v.RecheckMonths,
-                ClosedAt = v.ClosedAt
-
+                ClosedAt = v.ClosedAt,
+                CreatedAt = v.CreatedAt
                 // Thêm các trường còn lại đúng theo VisitDto của bạn.
             })
             .FirstOrDefaultAsync();
@@ -397,4 +439,18 @@ public class VisitsService : BaseService, IVisitsService
             .SelectMany(i => i.Diagnoses)
             .Count(d => !d.IsVoided && !d.Reviews.Any(r => !r.IsVoided))
     };
+    private static ShiftType ResolveShift(DateTime localNow)
+    {
+        var time = localNow.TimeOfDay;
+
+        if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
+            return ShiftType.Morning;
+
+        if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
+            return ShiftType.Afternoon;
+
+        throw AppException.BadRequest(
+            Msg.InvalidData,
+            "Hiện tại không nằm trong thời gian tiếp nhận khám.");
+    }
 }

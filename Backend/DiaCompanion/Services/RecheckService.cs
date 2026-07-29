@@ -58,14 +58,13 @@ public class RecheckService : BaseService, IRecheckService
     /// được coi là chưa quay lại khi chưa có lượt khám nào mới hơn lượt đã đóng.
     /// </summary>
     public async Task<ActionResult<PagedResult<RecheckDto>>> Due(
-        [FromQuery] bool overdueOnly = false,
-        [FromQuery] int withinDays = 30,
-        [FromQuery] PageQuery? page = null)
+    [FromQuery] bool overdueOnly = false,
+    [FromQuery] int withinDays = 30,
+    [FromQuery] PageQuery? page = null)
     {
         page ??= new PageQuery();
         var today = _clock.LocalToday;
 
-        // Lượt khám hoàn tất gần nhất của mỗi bệnh nhân, và chưa có lượt nào mới hơn
         var lastVisits = _repository.Visits.AsNoTracking()
             .Where(v => v.Status == VisitStatus.Completed
                         && v.ClosedAt != null
@@ -93,23 +92,23 @@ public class RecheckService : BaseService, IRecheckService
 
         var rows = await query.ToListAsync();
 
-        // Tính ngày đến hạn trong bộ nhớ: DATEADD theo tháng không dịch gọn sang
-        // LINQ, và số bệnh nhân có lượt khám hoàn tất ở quy mô một phòng khám
-        // vẫn nhỏ so với chi phí truy vấn.
         var computed = rows.Select(r =>
         {
-            var due = DateOnly.FromDateTime(r.ClosedAt.AddMonths(r.RecheckMonths));
+            var closedAtLocal = _clock.ToLocal(r.ClosedAt)!.Value;
+            var due = DateOnly.FromDateTime(closedAtLocal.AddMonths(r.RecheckMonths));
             var past = today.DayNumber - due.DayNumber;
+
             return new
             {
                 Row = r,
+                ClosedAtLocal = closedAtLocal,
                 Due = due,
                 PastDue = past
             };
         }).ToList();
 
-        // Đã có lượt khám mới hơn nghĩa là bệnh nhân đã quay lại — loại khỏi danh sách
         var patientIds = computed.Select(c => c.Row.Id).ToList();
+
         var returned = await _repository.Visits.AsNoTracking()
             .Where(v => patientIds.Contains(v.PatientId))
             .GroupBy(v => v.PatientId)
@@ -124,13 +123,13 @@ public class RecheckService : BaseService, IRecheckService
             ? computed.Where(c => c.PastDue > 0).ToList()
             : computed.Where(c => c.PastDue >= -withinDays).ToList();
 
-        // Quá hạn lâu nhất lên đầu — đó là người có nguy cơ mất dấu cao nhất
         computed = computed.OrderByDescending(c => c.PastDue).ToList();
 
         var total = computed.Count;
         var pageRows = computed.Skip(page.Skip).Take(page.PageSize).ToList();
 
         var ids = pageRows.Select(c => c.Row.LastVisitId).ToList();
+
         var grades = await _repository.DiagnosisReviews.AsNoTracking()
             .Where(r => ids.Contains(r.AiDiagnosis!.FundusImage!.VisitId!.Value))
             .GroupBy(r => r.AiDiagnosis!.FundusImage!.VisitId!.Value)
@@ -144,10 +143,11 @@ public class RecheckService : BaseService, IRecheckService
             PatientName = c.Row.FullName,
             PatientPhone = c.Row.Phone,
             LastVisitId = c.Row.LastVisitId,
-            LastVisitClosedAt = c.Row.ClosedAt,
+            LastVisitClosedAt = c.ClosedAtLocal,
             LastConfirmedGrade = grades.TryGetValue(c.Row.LastVisitId, out var g) ? g : null,
             LastConfirmedGradeLabel = grades.TryGetValue(c.Row.LastVisitId, out var g2)
-                ? DiagnosesService.GradeLabel(g2) : null,
+                ? DiagnosesService.GradeLabel(g2)
+                : null,
             Referral = (byte?)c.Row.Referral,
             RecheckMonths = c.Row.RecheckMonths,
             DueDate = c.Due,
@@ -157,7 +157,12 @@ public class RecheckService : BaseService, IRecheckService
         }).ToList();
 
         return Ok(new PagedResult<RecheckDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
+        });
     }
 
     /// <summary>Số bệnh nhân quá hạn, để hiện badge trên thanh điều hướng.</summary>
@@ -166,8 +171,15 @@ public class RecheckService : BaseService, IRecheckService
         var today = _clock.LocalToday;
 
         var rows = await _repository.Visits.AsNoTracking()
-            .Where(v => v.Status == VisitStatus.Completed && v.ClosedAt != null && v.RecheckMonths != null)
-            .Select(v => new { v.PatientId, ClosedAt = v.ClosedAt!.Value, Months = v.RecheckMonths!.Value })
+            .Where(v => v.Status == VisitStatus.Completed
+                        && v.ClosedAt != null
+                        && v.RecheckMonths != null)
+            .Select(v => new
+            {
+                v.PatientId,
+                ClosedAt = v.ClosedAt!.Value,
+                Months = v.RecheckMonths!.Value
+            })
             .ToListAsync();
 
         var latestPerPatient = rows
@@ -180,8 +192,13 @@ public class RecheckService : BaseService, IRecheckService
             .ToDictionaryAsync(x => x.PatientId, x => x.Latest);
 
         var overdue = latestPerPatient.Count(r =>
-            (!allVisits.TryGetValue(r.PatientId, out var latest) || latest <= r.ClosedAt) &&
-            DateOnly.FromDateTime(r.ClosedAt.AddMonths(r.Months)) < today);
+        {
+            var closedAtLocal = _clock.ToLocal(r.ClosedAt)!.Value;
+            var due = DateOnly.FromDateTime(closedAtLocal.AddMonths(r.Months));
+
+            return (!allVisits.TryGetValue(r.PatientId, out var latest) || latest <= r.ClosedAt)
+                   && due < today;
+        });
 
         return Ok(new { overdue });
     }
@@ -193,9 +210,10 @@ public class RecheckService : BaseService, IRecheckService
         EnsureCanAccessPatient(_me, patientId);
 
         var visit = await _repository.Visits.AsNoTracking()
-            .Where(v => v.PatientId == patientId && v.Status == VisitStatus.Completed
-                        && v.ClosedAt != null && v.RecheckMonths != null)
-            .OrderByDescending(v => v.ClosedAt)
+            .Where(v => v.PatientId == patientId
+                        && v.Status == VisitStatus.Completed
+                        && v.ClosedAt != null
+                        && v.RecheckMonths != null)
             .OrderByDescending(v => v.ClosedAt)
             .Select(v => new
             {
@@ -216,13 +234,14 @@ public class RecheckService : BaseService, IRecheckService
         if (patient is null) return null;
 
         var grade = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis != null && 
-                        r.AiDiagnosis.FundusImage != null && 
-                        r.AiDiagnosis.FundusImage.VisitId == visit.Id)
+            .Where(r => r.AiDiagnosis != null
+                        && r.AiDiagnosis.FundusImage != null
+                        && r.AiDiagnosis.FundusImage.VisitId == visit.Id)
             .Select(r => (byte?)(byte)r.FinalGrade)
             .MaxAsync();
 
-        var due = DateOnly.FromDateTime(visit.ClosedAt.AddMonths(visit.Months));
+        var closedAtLocal = _clock.ToLocal(visit.ClosedAt)!.Value;
+        var due = DateOnly.FromDateTime(closedAtLocal.AddMonths(visit.Months));
         var pastDue = _clock.LocalToday.DayNumber - due.DayNumber;
 
         return new RecheckDto
@@ -232,7 +251,7 @@ public class RecheckService : BaseService, IRecheckService
             PatientName = patient.FullName,
             PatientPhone = patient.Phone,
             LastVisitId = visit.Id,
-            LastVisitClosedAt = visit.ClosedAt,
+            LastVisitClosedAt = closedAtLocal,
             LastConfirmedGrade = grade,
             LastConfirmedGradeLabel = grade is byte g ? DiagnosesService.GradeLabel(g) : null,
             Referral = (byte?)visit.Referral,

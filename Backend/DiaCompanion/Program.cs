@@ -26,7 +26,7 @@ builder.Services.AddScoped<IRepository, EfRepository>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-
+builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IClinicClock, ClinicClock>();
@@ -93,8 +93,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
+
     .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081" , "app://.")
     .AllowAnyHeader().AllowAnyMethod()));
+
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
