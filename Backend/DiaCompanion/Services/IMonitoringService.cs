@@ -14,7 +14,7 @@ public interface IMonitoringService
     Task<ActionResult<HealthMetricDto>> CreateMetric(CreateMetricRequest req);
     Task<IActionResult> UpdateMetric(int id, CreateMetricRequest req);
     Task<IActionResult> DeleteMetric(int id);
-    Task<IActionResult> Summary(int patientId, [FromQuery] int days = 30);
+    Task<ActionResult<MetricSummaryDto>> Summary(int patientId, [FromQuery] int days = 30);
     Task<ActionResult<List<LifestyleLogDto>>> Lifestyle(
         [FromQuery] int? patientId, [FromQuery] int days = 14);
     Task<ActionResult<LifestyleLogDto>> CreateLifestyle(CreateLifestyleRequest req);
