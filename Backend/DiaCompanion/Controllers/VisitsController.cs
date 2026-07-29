@@ -40,7 +40,7 @@ public class VisitsController : BaseApiController
 
     /// <summary>UC-18 — tạo lượt khám.</summary>
     [HttpPost]
-    [Authorize(Roles = Roles.Doctor)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
         return await _service.Create(req);
