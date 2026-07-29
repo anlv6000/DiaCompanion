@@ -11,8 +11,12 @@ namespace DiaCompanion.Api.Controllers;
 public class VisitsController : BaseApiController
 {
     private readonly IVisitsService _service;
-
-    public VisitsController(IVisitsService service) => _service = service;
+    private readonly CurrentUser _me;
+    public VisitsController(IVisitsService service, CurrentUser me)
+    {
+        _service = service;
+        _me = me;
+    }
 
 
     /// <summary>Danh sách lượt khám của một bệnh nhân.</summary>
@@ -61,5 +65,32 @@ public class VisitsController : BaseApiController
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);
+    }
+
+    [HttpGet("me")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<ActionResult<PagedResult<VisitDto>>> Mine(
+        [FromQuery] PageQuery page)
+    {
+        var userId = _me.RequireId();
+
+        var result = await _service.GetMineAsync(
+            userId,
+            page);
+
+        return Ok(result);
+    }
+
+    [HttpGet("me/{id:int}")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<ActionResult<VisitDto>> MineById(int id)
+    {
+        var userId = _me.RequireId();
+
+        var result = await _service.GetMineByIdAsync(
+            userId,
+            id);
+
+        return Ok(result);
     }
 }

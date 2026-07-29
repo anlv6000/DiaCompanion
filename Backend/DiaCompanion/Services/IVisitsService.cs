@@ -13,4 +13,9 @@ public interface IVisitsService
     Task<ActionResult<VisitDto>> Create(CreateVisitRequest req);
     Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req);
     Task<IActionResult> Void(int id, VoidRequest req);
+
+    Task<PagedResult<VisitDto>> GetMineAsync(int userId,PageQuery page);
+
+    Task<VisitDto> GetMineByIdAsync(int userId,int visitId);
+    Task CreateAsync(int userId, CreateFeedbackRequest req);
 }

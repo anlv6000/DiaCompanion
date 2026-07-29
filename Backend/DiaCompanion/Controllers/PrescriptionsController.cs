@@ -1,9 +1,10 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Services;
+using DiaCompanion.Dtos;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DiaCompanion.Api.Controllers;
 
@@ -48,7 +49,7 @@ public class PrescriptionsController : BaseApiController
     /// </summary>
     [HttpPut("{id:int}")]
     [Authorize(Roles = Roles.DoctorOnly)]
-    public async Task<ActionResult<PrescriptionDto>> Update(int id, CreatePrescriptionRequest req)
+    public async Task<ActionResult<PrescriptionDto>> Update(int id, UpdatePrescriptionRequest req)
     {
         return await _service.Update(id, req);
     }
