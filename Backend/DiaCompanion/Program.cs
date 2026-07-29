@@ -93,8 +93,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
-    .WithOrigins("http://localhost:5173", "http://localhost:9001", "app://.")
-    .AllowAnyHeader().AllowAnyMethod()));
+    .WithOrigins(
+        "http://localhost:5173",
+        "http://localhost:9001",
+        "http://localhost:8081",
+        "app://.")
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

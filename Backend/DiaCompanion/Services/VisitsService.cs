@@ -52,7 +52,7 @@ public class VisitsService : BaseService, IVisitsService
     {
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
-        var doctorExits = await _repository.Users.AnyAsync( 
+        var doctorExits = await _repository.Users.AnyAsync(
                     u => u.Id == req.DoctorId && u.Role == UserRole.Doctor && u.IsActive);
 
         if (!doctorExits)
@@ -60,14 +60,15 @@ public class VisitsService : BaseService, IVisitsService
 
         var hasOpenVisit = await _repository.Visits.AnyAsync(
                     v => v.PatientId == req.PatientId && v.Status == VisitStatus.InProgress && !v.IsVoided);
-        
+
         if (hasOpenVisit)
             throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
-        
+
+
         var visit = new Visit
         {
             PatientId = req.PatientId,
-            DoctorId = req.DoctorId ,
+            DoctorId = req.DoctorId,
             VisitDate = DateTime.UtcNow,
             Status = VisitStatus.InProgress
         };
@@ -110,7 +111,7 @@ public class VisitsService : BaseService, IVisitsService
         // Mọi kết quả AI trong lượt khám phải được bác sĩ xử lý trước khi đóng.
         // Nếu không, hồ sơ đóng lại mà vẫn còn kết quả chưa ai xác nhận.
         var pending = await _repository.AiDiagnoses
-            .Where(d => d.FundusImage != null && 
+            .Where(d => d.FundusImage != null &&
                         d.FundusImage.VisitId == id)
             .CountAsync(d => !_repository.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id));
 
