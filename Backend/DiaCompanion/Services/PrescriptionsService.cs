@@ -4,6 +4,7 @@ using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
 
 namespace DiaCompanion.Api.Services;
 
@@ -136,50 +137,158 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
     /// Sinh lại lịch nhắc cho các liều CHƯA tới hạn; liều đã xác nhận giữ nguyên
     /// vì đó là sự kiện đã xảy ra ngoài đời.
     /// </summary>
-    public async Task<ActionResult<PrescriptionDto>> Update(int id, CreatePrescriptionRequest req)
+    public async Task<ActionResult<PrescriptionDto>> Update(
+    int id,
+    UpdatePrescriptionRequest req)
     {
-        if (req.Items.Count == 0)
-            throw AppException.BadRequest(Msg.EmptyPrescription, "Đơn thuốc phải có ít nhất một dòng thuốc.");
-
-        var presc = await _repository.Prescriptions.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
-
-        await using var tx = await _repository.Database.BeginTransactionAsync();
-
-        var before = presc.Items.Select(i => new { i.DrugName, i.Dose, i.TimesPerDay, i.DurationDays }).ToList();
-        var oldItemIds = presc.Items.Select(i => i.Id).ToList();
-
-        // Huỷ liều chưa tới hạn của đơn cũ
-        var pending = await _repository.MedicationLogs
-            .Where(m => oldItemIds.Contains(m.PrescriptionItemId) && m.Status == MedicationStatus.Pending)
-            .ToListAsync();
-        foreach (var m in pending) m.Status = MedicationStatus.Cancelled;
-
-        // Dòng thuốc cũ KHÔNG xoá cứng: MedicationLogs đã ghi nhận vẫn tham chiếu
-        // tới chúng (QT-6). Thêm dòng mới, đánh dấu dòng cũ hết hiệu lực bằng
-        // việc huỷ lịch nhắc ở trên.
-        var newItems = req.Items.Select(i => new PrescriptionItem
+        if (req.Items == null || req.Items.Count == 0)
         {
-            PrescriptionId = presc.Id,
-            DrugName = i.DrugName.Trim(),
-            Dose = i.Dose.Trim(),
-            TimesPerDay = i.TimesPerDay,
-            DurationDays = i.DurationDays,
-            Instruction = i.Instruction
-        }).ToList();
+            throw AppException.BadRequest(
+                Msg.EmptyPrescription,
+                "Đơn thuốc phải có ít nhất một dòng thuốc.");
+        }
 
-        _repository.PrescriptionItems.AddRange(newItems);
-        presc.Note = req.Note;
-        await _repository.SaveChangesAsync();
+        var strategy = _repository.Database.CreateExecutionStrategy();
 
-        _adherence.GenerateSchedule(presc, newItems);
+        var prescriptionId = await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx =
+                await _repository.Database.BeginTransactionAsync();
 
-        await _audit.LogAsync("PRESCRIPTION_UPDATE", nameof(Prescription), presc.Id,
-            new { items = before }, new { items = req.Items });
-        await _repository.SaveChangesAsync();
-        await tx.CommitAsync();
+            try
+            {
+                var presc = await _repository.Prescriptions
+                    .Include(p => p.Items)
+                    .FirstOrDefaultAsync(p => p.Id == id)
+                    ?? throw AppException.NotFound(
+                        Msg.LoadFailed,
+                        "Không tìm thấy đơn thuốc.");
 
-        return Ok(await GetDtoAsync(presc.Id));
+                var before = presc.Items
+                    .Select(i => new
+                    {
+                        i.Id,
+                        i.DrugName,
+                        i.Dose,
+                        i.TimesPerDay,
+                        i.DurationDays,
+                        i.Instruction
+                    })
+                    .ToList();
+
+                
+
+
+
+                var missingIds = req.Items
+    .Where(i => i.Id <= 0)
+    .ToList();
+
+                if (missingIds.Count > 0)
+                {
+                    throw AppException.BadRequest(
+                        Msg.LoadFailed,
+                        "Dữ liệu cập nhật thiếu ID của dòng thuốc. Frontend phải gửi PrescriptionItem.Id.");
+                }
+                /*
+                 * Kiểm tra tất cả ID gửi lên có thật sự thuộc đơn thuốc này không.
+                 */
+
+
+                var oldItemIds = presc.Items
+                    .Select(i => i.Id)
+                    .ToHashSet();
+
+
+                var invalidItemIds = req.Items
+                    .Where(i => !oldItemIds.Contains(i.Id))
+                    .Select(i => i.Id)
+                    .ToList();
+
+                if (invalidItemIds.Count > 0)
+                {
+                    throw AppException.BadRequest(
+                        Msg.LoadFailed,
+                        $"Có dòng thuốc không thuộc đơn này: {string.Join(", ", invalidItemIds)}.");
+                }
+
+                /*
+                 * Hủy các lịch nhắc cũ đang Pending.
+                 * Vì liều lượng, số lần uống hoặc số ngày có thể đã thay đổi.
+                 */
+                var pendingLogs = await _repository.MedicationLogs
+                    .Where(m =>
+                        oldItemIds.Contains(m.PrescriptionItemId) &&
+                        m.Status == MedicationStatus.Pending)
+                    .ToListAsync();
+
+                foreach (var log in pendingLogs)
+                {
+                    log.Status = MedicationStatus.Cancelled;
+                }
+
+                /*
+                 * Cập nhật trực tiếp các PrescriptionItem đang tồn tại.
+                 * Không dùng Add hoặc AddRange.
+                 */
+                foreach (var requestItem in req.Items)
+                {
+                    var existingItem = presc.Items
+                        .First(i => i.Id == requestItem.Id);
+
+                    existingItem.DrugName = requestItem.DrugName.Trim();
+                    existingItem.Dose = requestItem.Dose.Trim();
+                    existingItem.TimesPerDay = requestItem.TimesPerDay;
+                    existingItem.DurationDays = (short)requestItem.DurationDays;
+                    existingItem.Instruction = requestItem.Instruction?.Trim();
+                }
+
+                presc.Note = req.Note?.Trim();
+
+                /*
+                 * Các item này đã có ID sẵn vì đang tồn tại trong database.
+                 * Không cần SaveChanges trước khi GenerateSchedule.
+                 */
+                var updatedItems = presc.Items
+                    .Where(i => req.Items.Any(x => x.Id == i.Id))
+                    .ToList();
+
+                _adherence.GenerateSchedule(presc, updatedItems);
+
+                await _audit.LogAsync(
+                    "PRESCRIPTION_UPDATE",
+                    nameof(Prescription),
+                    presc.Id,
+                    new
+                    {
+                        items = before
+                    },
+                    new
+                    {
+                        items = updatedItems.Select(i => new
+                        {
+                            i.Id,
+                            i.DrugName,
+                            i.Dose,
+                            i.TimesPerDay,
+                            i.DurationDays,
+                            i.Instruction
+                        }).ToList()
+                    });
+
+                await _repository.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return presc.Id;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+
+        return Ok(await GetDtoAsync(prescriptionId));
     }
 
     /// <summary>UC-39 — thu hồi đơn thuốc.</summary>

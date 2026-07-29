@@ -171,6 +171,208 @@ public class VisitsService : BaseService, IVisitsService
     private async Task<VisitDto> GetDtoAsync(int id) =>
         await _repository.Visits.AsNoTracking().Where(v => v.Id == id).Select(MapVisit).FirstAsync();
 
+    public async Task<PagedResult<VisitDto>> GetMineAsync(int userId, PageQuery page)
+    {
+        var patientId = await GetPatientIdByUserIdAsync(userId);
+
+        var query = _repository.Visits
+            .AsNoTracking()
+            .Where(v =>
+                v.PatientId == patientId &&
+                v.Status == VisitStatus.Completed);
+
+        var totalItems = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(v => v.VisitDate)
+            .ThenByDescending(v => v.Id)
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .Select(v => new VisitDto
+            {
+                Id = v.Id,
+                PatientId = v.PatientId,
+                DoctorId = v.DoctorId,
+                VisitDate = v.VisitDate,
+                Status = (byte)v.Status,
+                Conclusion = v.Conclusion,
+                Referral = (byte?)v.Referral,
+                RecheckMonths = v.RecheckMonths,
+                ClosedAt = v.ClosedAt
+
+                // Thêm các trường còn lại đúng theo VisitDto của bạn.
+            })
+            .ToListAsync();
+
+        return new PagedResult<VisitDto>
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = totalItems
+        };
+    }
+
+    public async Task<VisitDto> GetMineByIdAsync(int userId, int visitId)
+    {
+        var patientId = await GetPatientIdByUserIdAsync(userId);
+
+        var visit = await _repository.Visits
+            .AsNoTracking()
+            .Where(v =>
+                v.Id == visitId &&
+                v.PatientId == patientId &&
+                v.Status == VisitStatus.Completed)
+            .Select(v => new VisitDto
+            {
+                Id = v.Id,
+                PatientId = v.PatientId,
+                DoctorId = v.DoctorId,
+                VisitDate = v.VisitDate,
+                Status = (byte)v.Status,
+                Conclusion = v.Conclusion,
+                Referral = (byte?)v.Referral,
+                RecheckMonths = v.RecheckMonths,
+                ClosedAt = v.ClosedAt
+
+                // Thêm các trường còn lại đúng theo VisitDto của bạn.
+            })
+            .FirstOrDefaultAsync();
+
+        if (visit is null)
+        {
+            throw AppException.NotFound(
+                Msg.LoadFailed,
+                "Không tìm thấy lượt khám.");
+        }
+
+        return visit;
+    }
+
+
+    private async Task<int> GetPatientIdByUserIdAsync(int userId)
+    {
+        var patientId = await _repository.Patients
+            .AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => (int?)p.Id)
+            .FirstOrDefaultAsync();
+
+        if (patientId is null)
+        {
+            throw AppException.NotFound(
+                Msg.PatientNotFound,
+                "Tài khoản chưa được liên kết với hồ sơ bệnh nhân.");
+        }
+
+        return patientId.Value;
+    }
+
+    public async Task CreateAsync(int userId, CreateFeedbackRequest req)
+    {
+        var patientId = await GetPatientIdAsync(userId);
+
+        ValidateRequest(req);
+
+        if (req.VisitId is int visitId)
+        {
+            await ValidateVisitAsync(
+                patientId,
+                visitId);
+
+            await CheckDuplicateAsync(
+                patientId,
+                visitId);
+        }
+
+        var feedback = new Feedback
+        {
+            PatientId = patientId,
+            VisitId = req.VisitId,
+            Rating = req.Rating,
+            Tags = req.Tags,
+            Comment = req.Comment.Trim()
+        };
+
+        _repository.Feedbacks.Add(feedback);
+
+        await _repository.SaveChangesAsync();
+    }
+
+
+    private static void ValidateRequest(
+        CreateFeedbackRequest req)
+    {
+        if (req.Rating is < 1 or > 5)
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Đánh giá phải từ 1 đến 5 sao.");
+        }
+
+        if (string.IsNullOrWhiteSpace(req.Comment))
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Vui lòng nhập nội dung phản hồi.");
+        }
+    }
+
+    private async Task ValidateVisitAsync(
+        int patientId,
+        int visitId)
+    {
+        var ownsVisit = await _repository.Visits
+            .AsNoTracking()
+            .AnyAsync(v =>
+                v.Id == visitId &&
+                v.PatientId == patientId &&
+                v.Status == VisitStatus.Completed);
+
+        if (!ownsVisit)
+        {
+            throw AppException.NotFound(
+                Msg.LoadFailed,
+                "Không tìm thấy lượt khám phù hợp.");
+        }
+    }
+
+    private async Task CheckDuplicateAsync(
+        int patientId,
+        int visitId)
+    {
+        var existed = await _repository.Feedbacks
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.PatientId == patientId &&
+                f.VisitId == visitId);
+
+        if (existed)
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Bạn đã gửi phản hồi cho lượt khám này.");
+        }
+    }
+
+    private async Task<int> GetPatientIdAsync(int userId)
+    {
+        var patientId = await _repository.Patients
+            .AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => (int?)p.Id)
+            .FirstOrDefaultAsync();
+
+        if (patientId is null)
+        {
+            throw AppException.NotFound(
+                Msg.PatientNotFound,
+                "Không tìm thấy hồ sơ bệnh nhân.");
+        }
+
+        return patientId.Value;
+    }
+
     /// <summary>
     /// Dùng Expression chứ không phải method thường: EF Core chỉ dịch được
     /// Expression sang SQL. Gọi một static method trong Select sẽ khiến EF

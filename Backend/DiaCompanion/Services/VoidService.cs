@@ -168,7 +168,7 @@ public class VoidService : IVoidService
         var itemIds = await _repository.PrescriptionItems
             .Where(i => i.PrescriptionId == p.Id).Select(i => i.Id).ToListAsync();
 
-        var pending = await _repository.MedicationLogs
+        var pending = await _repository.MedicationLogs  
             .Where(m => itemIds.Contains(m.PrescriptionItemId) && m.Status == MedicationStatus.Pending)
             .ToListAsync();
 
