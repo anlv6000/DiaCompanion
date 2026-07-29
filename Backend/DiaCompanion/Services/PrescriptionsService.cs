@@ -78,41 +78,57 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
-        await using var tx = await _repository.Database.BeginTransactionAsync();
 
-        var presc = new Prescription
+        var strategy = _repository.Database.CreateExecutionStrategy();
+
+        var prescriptionId = await strategy.ExecuteAsync(async () =>
         {
-            PatientId = req.PatientId,
-            VisitId = req.VisitId,
-            DoctorId = _me.RequireId(),
-            IssuedAt = DateTime.UtcNow,
-            Note = req.Note
-        };
-        _repository.Prescriptions.Add(presc);
-        await _repository.SaveChangesAsync();
+            await using var tx = await _repository.Database.BeginTransactionAsync();
 
-        var items = req.Items.Select(i => new PrescriptionItem
-        {
-            PrescriptionId = presc.Id,
-            DrugName = i.DrugName.Trim(),
-            Dose = i.Dose.Trim(),
-            TimesPerDay = i.TimesPerDay,
-            DurationDays = i.DurationDays,
-            Instruction = i.Instruction
-        }).ToList();
+            try
+            {
+                var presc = new Prescription
+                {
+                    PatientId = req.PatientId,
+                    VisitId = req.VisitId,
+                    DoctorId = _me.RequireId(),
+                    IssuedAt = DateTime.UtcNow,
+                    Note = req.Note
+                };
+                _repository.Prescriptions.Add(presc);
+                await _repository.SaveChangesAsync();
 
-        _repository.PrescriptionItems.AddRange(items);
-        await _repository.SaveChangesAsync();
+                var items = req.Items.Select(i => new PrescriptionItem
+                {
+                    PrescriptionId = presc.Id,
+                    DrugName = i.DrugName.Trim(),
+                    Dose = i.Dose.Trim(),
+                    TimesPerDay = i.TimesPerDay,
+                    DurationDays = i.DurationDays,
+                    Instruction = i.Instruction?.Trim()
+                }).ToList();
 
-        // NF-10: sinh lịch nhắc từ tần suất và số ngày
-        _adherence.GenerateSchedule(presc, items);
+                _repository.PrescriptionItems.AddRange(items);
+                await _repository.SaveChangesAsync();
 
-        await _audit.LogAsync(AuditAction.PrescriptionIssue, nameof(Prescription), presc.Id,
-            null, new { req.PatientId, itemCount = items.Count, drugs = items.Select(i => i.DrugName) });
-        await _repository.SaveChangesAsync();
-        await tx.CommitAsync();
+                // NF-10: sinh lịch nhắc từ tần suất và số ngày
+                // Sinh lịch nhắc uống thuốc.
+                _adherence.GenerateSchedule(presc, items);
 
-        return Ok(await GetDtoAsync(presc.Id));
+                await _audit.LogAsync(AuditAction.PrescriptionIssue, nameof(Prescription), presc.Id,
+                    null, new { req.PatientId, itemCount = items.Count, drugs = items.Select(i => i.DrugName) });
+                await _repository.SaveChangesAsync();
+                await tx.CommitAsync();
+                return presc.Id;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+        
+        return Ok(await GetDtoAsync(prescriptionId));
     }
 
     /// <summary>
