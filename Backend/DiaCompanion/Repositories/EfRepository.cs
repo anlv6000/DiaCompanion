@@ -32,8 +32,11 @@ public sealed class EfRepository : IRepository
     public DbSet<Notification> Notifications => _db.Notifications;
     public DbSet<BlogPost> BlogPosts => _db.BlogPosts;
     public DbSet<Feedback> Feedbacks => _db.Feedbacks;
-
+    public DbSet<DoctorShift> DoctorShifts => _db.DoctorShifts;
     public DatabaseFacade Database => _db.Database;
+
+    
+
     public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class => _db.Entry(entity);
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
         _db.SaveChangesAsync(cancellationToken);

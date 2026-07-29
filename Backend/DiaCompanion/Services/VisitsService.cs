@@ -16,10 +16,11 @@ public class VisitsService : BaseService, IVisitsService
     private readonly IVoidService _void;
     private readonly IConfigService _cfg;
     private readonly INotificationService _notify;
+    private readonly IClinicClock _clock;
 
     public VisitsService(IRepository repository, ICurrentUser me, IAuditService audit,
-                            IVoidService voidSvc, IConfigService cfg, INotificationService notify)
-    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _notify = notify; }
+                            IVoidService voidSvc, IConfigService cfg, INotificationService notify, IClinicClock clock)
+    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _notify = notify; _clock = clock; }
 
     /// <summary>Danh sách lượt khám của một bệnh nhân.</summary>
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
@@ -64,19 +65,32 @@ public class VisitsService : BaseService, IVisitsService
         if (hasOpenVisit)
             throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
 
+        var localNow = _clock.LocalNow;
+        var currentShift = ResolveShift(localNow);
+        var dayOfWeek = (byte)localNow.DayOfWeek;
 
+        var isDoctorOnDuty = await _repository.DoctorShifts.AnyAsync(s =>
+            s.DoctorId == req.DoctorId &&
+            s.DayOfWeek == dayOfWeek &&
+            s.Shift == currentShift &&
+            s.IsActive);
+        if (!isDoctorOnDuty)
+            throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
         var visit = new Visit
         {
             PatientId = req.PatientId,
             DoctorId = req.DoctorId,
-            VisitDate = DateTime.UtcNow,
+            VisitDate = _clock.UtcNow,
             Status = VisitStatus.InProgress
         };
 
         _repository.Visits.Add(visit);
         await _repository.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(Get), new { id = visit.Id }, await GetDtoAsync(visit.Id));
+        var dto = await GetDtoAsync(visit.Id);
+        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
+
+        return CreatedAtAction(nameof(Get), new { id = visit.Id }, dto);
     }
 
     /// <summary>
@@ -398,4 +412,18 @@ public class VisitsService : BaseService, IVisitsService
             .SelectMany(i => i.Diagnoses)
             .Count(d => !d.IsVoided && !d.Reviews.Any(r => !r.IsVoided))
     };
+    private static ShiftType ResolveShift(DateTime localNow)
+    {
+        var time = localNow.TimeOfDay;
+
+        if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
+            return ShiftType.Morning;
+
+        if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
+            return ShiftType.Afternoon;
+
+        throw AppException.BadRequest(
+            Msg.InvalidData,
+            "Hiện tại không nằm trong thời gian tiếp nhận khám.");
+    }
 }
