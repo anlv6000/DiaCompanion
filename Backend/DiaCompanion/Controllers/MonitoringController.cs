@@ -61,7 +61,7 @@ public class MonitoringController : BaseApiController
 
     /// <summary>UC-48 — tóm tắt để vẽ biểu đồ xu hướng.</summary>
     [HttpGet("metrics/summary/{patientId:int}")]
-    public async Task<IActionResult> Summary(int patientId, [FromQuery] int days = 30)
+    public async Task<ActionResult<MetricSummaryDto>> Summary(int patientId, [FromQuery] int days = 30)
     {
         return await _service.Summary(patientId, days);
     }

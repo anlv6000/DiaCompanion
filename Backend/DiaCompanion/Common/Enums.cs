@@ -26,7 +26,7 @@ public enum DeferReason : byte
 
 public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Cancelled = 3 }
 public enum MetricType : byte { Glucose = 1, HbA1c = 2, SystolicBp = 3, DiastolicBp = 4 }
-public enum MetricContext : byte { BeforeMeal = 1, AfterMeal = 2, BeforeSleep = 3 }
+public enum MetricContext : byte { BeforeMeal = 1, AfterMeal = 2}
 public enum SymptomSeverity : byte { Mild = 1, Moderate = 2, Severe = 3 }
 public enum NotificationType : byte { Recheck = 1, Medication = 2, Result = 3, Metric = 4, Blog = 5 }
 public enum BlogCategory : byte { Knowledge = 1, Nutrition = 2, Warning = 3 }
@@ -72,5 +72,6 @@ public static class ConfigKeys
     public const string OtpMaxAttempts        = "otp.max_attempts";
     public const string GlucoseFastingMax     = "metric.glucose_fasting_max";
     public const string GlucosePostMealMax    = "metric.glucose_postmeal_max";
+    public const string GlucoseMin = "metric.glucose_min";
     public static string RecheckMonths(byte grade) => $"recheck.months_grade_{grade}";
 }

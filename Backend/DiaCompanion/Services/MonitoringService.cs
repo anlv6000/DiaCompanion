@@ -75,35 +75,106 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = ResolvePatientId(null);
         var recordedUtc = req.RecordedAtUtc ?? DateTime.UtcNow;
 
-        if (recordedUtc > DateTime.UtcNow.AddMinutes(5))
+        if (recordedUtc > DateTime.UtcNow)
             throw AppException.BadRequest(Msg.RequiredFields, "Không thể ghi chỉ số ở thời điểm tương lai.");
 
-        var (unit, min, max) = req.MetricType switch
-        {
-            MetricType.Glucose => ("mmol/L", 1m, 40m),
-            MetricType.HbA1c => ("%", 3m, 20m),
-            MetricType.SystolicBp => ("mmHg", 60m, 260m),
-            MetricType.DiastolicBp => ("mmHg", 30m, 160m),
-            _ => ("", 0m, 1000m)
-        };
-
-        if (req.Value < min || req.Value > max)
+        if (req.MetricType == MetricType.HbA1c)
             throw AppException.BadRequest(Msg.RequiredFields,
-                $"Giá trị phải nằm trong khoảng {min}–{max} {unit}.");
+                "HbA1c chỉ được ghi nhận trong lượt khám, không thể tự nhập tại nhà.");
+
+        if (req.MetricType == MetricType.DiastolicBp)
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Huyết áp phải được nhập đồng thời cả tâm thu và tâm trương.");
+
+        if (req.MetricType == MetricType.SystolicBp)
+        {
+            if (req.SystolicValue is null || req.DiastolicValue is null)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Vui lòng nhập đầy đủ huyết áp tâm thu và tâm trương.");
+
+            var systolicValue = req.SystolicValue.Value;
+            var diastolicValue = req.DiastolicValue.Value;
+
+            if (systolicValue is < 40m or > 300m)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm thu phải nằm trong khoảng 40–300 mmHg.");
+
+            if (diastolicValue is < 20m or > 200m)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm trương phải nằm trong khoảng 20–200 mmHg.");
+
+            if (systolicValue <= diastolicValue)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm thu phải lớn hơn huyết áp tâm trương.");
+
+            var recordedLocalDate = _clock.ToLocalDate(recordedUtc);
+
+            var systolicMetric = new HealthMetric
+            {
+                PatientId = pid,
+                MetricType = MetricType.SystolicBp,
+                Value = systolicValue,
+                Unit = "mmHg",
+                Context = null,
+                RecordedAtUtc = recordedUtc,
+                RecordedLocalDate = recordedLocalDate,
+                Note = req.Note,
+                IsAbnormal = systolicValue >= 140m
+            };
+
+            var diastolicMetric = new HealthMetric
+            {
+                PatientId = pid,
+                MetricType = MetricType.DiastolicBp,
+                Value = diastolicValue,
+                Unit = "mmHg",
+                Context = null,
+                RecordedAtUtc = recordedUtc,
+                RecordedLocalDate = recordedLocalDate,
+                Note = req.Note,
+                IsAbnormal = diastolicValue >= 90m
+            };
+
+            _repository.HealthMetrics.Add(systolicMetric);
+            _repository.HealthMetrics.Add(diastolicMetric);
+            await _repository.SaveChangesAsync();
+
+            return Ok(new HealthMetricDto
+            {
+                Id = systolicMetric.Id,
+                MetricType = (byte)systolicMetric.MetricType,
+                Value = systolicMetric.Value,
+                Unit = systolicMetric.Unit,
+                Context = null,
+                RecordedAtUtc = systolicMetric.RecordedAtUtc,
+                RecordedLocalDate = systolicMetric.RecordedLocalDate,
+                Note = systolicMetric.Note,
+                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal
+            });
+        }
+
+        if (req.MetricType != MetricType.Glucose)
+            throw AppException.BadRequest(Msg.RequiredFields, "Loại chỉ số không hợp lệ.");
+
+        if (req.Context is not (MetricContext.BeforeMeal or MetricContext.AfterMeal))
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Thời điểm đo đường huyết phải là trước ăn hoặc sau ăn.");
+
+        if (req.Value is < 1m or > 40m)
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Giá trị phải nằm trong khoảng 1–40 mmol/L.");
 
         var metric = new HealthMetric
         {
             PatientId = pid,
-            MetricType = req.MetricType,
+            MetricType = MetricType.Glucose,
             Value = req.Value,
-            Unit = unit,
+            Unit = "mmol/L",
             Context = req.Context,
             RecordedAtUtc = recordedUtc,
-            // QT-10: ngày ĐỊA PHƯƠNG. Chỉ số đo 06:45 giờ VN là 23:45 UTC hôm trước;
-            // gom theo ngày UTC sẽ đẩy nó sang sai ngày trên biểu đồ.
             RecordedLocalDate = _clock.ToLocalDate(recordedUtc),
             Note = req.Note,
-            IsAbnormal = await IsAbnormalAsync(req.MetricType, req.Value, req.Context)
+            IsAbnormal = await IsAbnormalAsync(MetricType.Glucose, req.Value, req.Context)
         };
 
         _repository.HealthMetrics.Add(metric);
@@ -122,7 +193,6 @@ public class MonitoringService : BaseService, IMonitoringService
             IsAbnormal = metric.IsAbnormal
         });
     }
-
     /// <summary>UC-47 — sửa chỉ số đã nhập.</summary>
     public async Task<IActionResult> UpdateMetric(int id, CreateMetricRequest req)
     {
@@ -130,13 +200,123 @@ public class MonitoringService : BaseService, IMonitoringService
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
 
+        if (m.MetricType == MetricType.HbA1c)
+            throw AppException.BadRequest(Msg.Forbidden,
+                "HbA1c chỉ được ghi nhận trong lượt khám, không thể sửa như chỉ số tự nhập tại nhà.");
+
+        if (m.MetricType is MetricType.SystolicBp or MetricType.DiastolicBp)
+        {
+            if (req.MetricType != MetricType.SystolicBp)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp phải được sửa bằng metricType tâm thu và nhập đủ tâm thu, tâm trương.");
+
+            if (req.SystolicValue is null || req.DiastolicValue is null)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Vui lòng nhập đầy đủ huyết áp tâm thu và tâm trương.");
+
+            var systolicValue = req.SystolicValue.Value;
+            var diastolicValue = req.DiastolicValue.Value;
+
+            if (systolicValue is < 40m or > 300m)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm thu phải nằm trong khoảng 40–300 mmHg.");
+
+            if (diastolicValue is < 20m or > 200m)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm trương phải nằm trong khoảng 20–200 mmHg.");
+
+            if (systolicValue <= diastolicValue)
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Huyết áp tâm thu phải lớn hơn huyết áp tâm trương.");
+
+            var systolicMetric = m.MetricType == MetricType.SystolicBp
+                ? m
+                : await FindBloodPressurePairAsync(m, MetricType.SystolicBp);
+
+            var diastolicMetric = m.MetricType == MetricType.DiastolicBp
+                ? m
+                : await FindBloodPressurePairAsync(m, MetricType.DiastolicBp);
+
+            var recordedUtc = m.RecordedAtUtc;
+            var recordedLocalDate = m.RecordedLocalDate;
+
+            if (req.RecordedAtUtc.HasValue)
+            {
+                recordedUtc = DateTime.SpecifyKind(req.RecordedAtUtc.Value, DateTimeKind.Utc);
+                if (recordedUtc > _clock.UtcNow)
+                    throw AppException.BadRequest(Msg.RequiredFields, "Không thể ghi chỉ số ở thời điểm tương lai.");
+
+                recordedLocalDate = _clock.ToLocalDate(recordedUtc);
+            }
+
+            systolicMetric.Value = systolicValue;
+            systolicMetric.Note = req.Note;
+            systolicMetric.RecordedAtUtc = recordedUtc;
+            systolicMetric.RecordedLocalDate = recordedLocalDate;
+            systolicMetric.IsAbnormal = systolicValue >= 140m;
+
+            diastolicMetric.Value = diastolicValue;
+            diastolicMetric.Note = req.Note;
+            diastolicMetric.RecordedAtUtc = recordedUtc;
+            diastolicMetric.RecordedLocalDate = recordedLocalDate;
+            diastolicMetric.IsAbnormal = diastolicValue >= 90m;
+
+            await _repository.SaveChangesAsync();
+
+            return Ok(new HealthMetricDto
+            {
+                Id = systolicMetric.Id,
+                MetricType = (byte)systolicMetric.MetricType,
+                Value = systolicMetric.Value,
+                Unit = systolicMetric.Unit,
+                Context = null,
+                RecordedAtUtc = systolicMetric.RecordedAtUtc,
+                RecordedLocalDate = systolicMetric.RecordedLocalDate,
+                Note = systolicMetric.Note,
+                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal
+            });
+        }
+
+        if (req.MetricType != MetricType.Glucose)
+            throw AppException.BadRequest(Msg.RequiredFields, "Loại chỉ số không hợp lệ.");
+
+        if (req.Context is not (MetricContext.BeforeMeal or MetricContext.AfterMeal))
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Thời điểm đo đường huyết phải là trước ăn hoặc sau ăn.");
+
+        if (req.Value is < 1m or > 40m)
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Giá trị phải nằm trong khoảng 1–40 mmol/L.");
+
+        if (req.RecordedAtUtc.HasValue)
+        {
+            var recordedUtc = DateTime.SpecifyKind(req.RecordedAtUtc.Value, DateTimeKind.Utc);
+            if (recordedUtc > _clock.UtcNow)
+                throw AppException.BadRequest(Msg.RequiredFields, "Không thể ghi chỉ số ở thời điểm tương lai.");
+
+            m.RecordedAtUtc = recordedUtc;
+            m.RecordedLocalDate = _clock.ToLocalDate(recordedUtc);
+        }
+
         m.Value = req.Value;
         m.Context = req.Context;
         m.Note = req.Note;
         m.IsAbnormal = await IsAbnormalAsync(m.MetricType, req.Value, req.Context);
 
         await _repository.SaveChangesAsync();
-        return Ok(new { message = "Đã lưu thay đổi." });
+
+        return Ok(new HealthMetricDto
+        {
+            Id = m.Id,
+            MetricType = (byte)m.MetricType,
+            Value = m.Value,
+            Unit = m.Unit,
+            Context = (byte?)m.Context,
+            RecordedAtUtc = m.RecordedAtUtc,
+            RecordedLocalDate = m.RecordedLocalDate,
+            Note = m.Note,
+            IsAbnormal = m.IsAbnormal
+        });
     }
 
     /// <summary>
@@ -149,42 +329,178 @@ public class MonitoringService : BaseService, IMonitoringService
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
 
+        if (m.MetricType == MetricType.HbA1c)
+            throw AppException.BadRequest(Msg.Forbidden,
+                "HbA1c chỉ được ghi nhận trong lượt khám, không thể xóa như chỉ số tự nhập tại nhà.");
+
+        var deletedAt = _clock.UtcNow;
         m.IsDeleted = true;
-        m.DeletedAt = DateTime.UtcNow;
+        m.DeletedAt = deletedAt;
+
+        if (m.MetricType is MetricType.SystolicBp or MetricType.DiastolicBp)
+        {
+            var oppositeType = m.MetricType == MetricType.SystolicBp
+                ? MetricType.DiastolicBp
+                : MetricType.SystolicBp;
+
+            var pair = await FindBloodPressurePairAsync(m, oppositeType);
+            pair.IsDeleted = true;
+            pair.DeletedAt = deletedAt;
+        }
+
         await _repository.SaveChangesAsync();
 
         return Ok(new { message = "Đã ẩn bản ghi. Dữ liệu vẫn được lưu cho bác sĩ đối chiếu." });
     }
+    private async Task<HealthMetric> FindBloodPressurePairAsync(HealthMetric metric, MetricType pairType)
+    {
+        return await _repository.HealthMetrics.FirstOrDefaultAsync(x =>
+                   x.PatientId == metric.PatientId &&
+                   x.RecordedAtUtc == metric.RecordedAtUtc &&
+                   x.MetricType == pairType)
+               ?? throw AppException.BadRequest(Msg.LoadFailed,
+                   "Không tìm thấy đủ cặp huyết áp tâm thu và tâm trương.");
+    }
+
 
     /// <summary>UC-48 — tóm tắt để vẽ biểu đồ xu hướng.</summary>
-    public async Task<IActionResult> Summary(int patientId, [FromQuery] int days = 30)
+    public async Task<ActionResult<MetricSummaryDto>> Summary(int patientId, [FromQuery] int days = 30)
     {
         EnsureCanAccessPatient(_me, patientId);
-        var from = _clock.LocalToday.AddDays(-days);
+
+        if (days is < 1 or > 365)
+            throw AppException.BadRequest(Msg.RequiredFields, "Khoảng thời gian xem biểu đồ phải từ 1 đến 365 ngày.");
+
+        var today = _clock.LocalToday;
+        var from = today.AddDays(-(days - 1));
 
         var metrics = await _repository.HealthMetrics.AsNoTracking()
-            .Where(m => m.PatientId == patientId && m.RecordedLocalDate >= from)
+            .Where(m => m.PatientId == patientId
+                        && m.RecordedLocalDate >= from
+                        && m.RecordedLocalDate <= today)
             .ToListAsync();
 
         var glucose = metrics.Where(m => m.MetricType == MetricType.Glucose).ToList();
+        var hba1c = metrics.Where(m => m.MetricType == MetricType.HbA1c).ToList();
+        var bloodPressure = metrics
+            .Where(m => m.MetricType is MetricType.SystolicBp or MetricType.DiastolicBp)
+            .GroupBy(m => m.RecordedAtUtc)
+            .Select(g =>
+            {
+                var systolic = g.OrderByDescending(m => m.Id)
+                    .FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
+                var diastolic = g.OrderByDescending(m => m.Id)
+                    .FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
 
-        return Ok(new
+                return systolic is null || diastolic is null
+                    ? null
+                    : new BloodPressurePair(
+                        systolic,
+                        diastolic,
+                        systolic.IsAbnormal || diastolic.IsAbnormal);
+            })
+            .Where(p => p is not null)
+            .Select(p => p!)
+            .ToList();
+
+        var glucoseAbnormalCount = glucose.Count(m => m.IsAbnormal);
+        var hba1cAbnormalCount = hba1c.Count(m => m.IsAbnormal);
+        var bloodPressureAbnormalCount = bloodPressure.Count(p => p.IsAbnormal);
+
+        return Ok(new MetricSummaryDto
         {
-            days,
-            glucoseAvg = glucose.Count > 0 ? Math.Round(glucose.Average(m => m.Value), 1) : (decimal?)null,
-            glucoseAbnormalCount = glucose.Count(m => m.IsAbnormal),
-            latestHbA1c = metrics.Where(m => m.MetricType == MetricType.HbA1c)
-                .OrderByDescending(m => m.RecordedAtUtc).Select(m => (decimal?)m.Value).FirstOrDefault(),
-            latestSystolic = metrics.Where(m => m.MetricType == MetricType.SystolicBp)
-                .OrderByDescending(m => m.RecordedAtUtc).Select(m => (decimal?)m.Value).FirstOrDefault(),
-            latestDiastolic = metrics.Where(m => m.MetricType == MetricType.DiastolicBp)
-                .OrderByDescending(m => m.RecordedAtUtc).Select(m => (decimal?)m.Value).FirstOrDefault(),
-            // Gom theo ngày ĐỊA PHƯƠNG để trục hoành biểu đồ đúng ngày bệnh nhân đo
-            byDay = glucose.GroupBy(m => m.RecordedLocalDate)
-                .OrderBy(g => g.Key)
-                .Select(g => new { date = g.Key, avg = Math.Round(g.Average(x => x.Value), 1), count = g.Count() })
+            Days = days,
+            From = from,
+            To = today,
+            TotalAbnormalCount = glucoseAbnormalCount + hba1cAbnormalCount + bloodPressureAbnormalCount,
+            Glucose = new MetricTrendDto
+            {
+                Average = glucose.Count > 0 ? Math.Round(glucose.Average(m => m.Value), 1) : (decimal?)null,
+                Latest = ToLatest(glucose.OrderByDescending(m => m.RecordedAtUtc).FirstOrDefault()),
+                AbnormalCount = glucoseAbnormalCount,
+                // Gom theo ngày ĐỊA PHƯƠNG để trục hoành biểu đồ đúng ngày bệnh nhân đo.
+                Chart = glucose.GroupBy(m => m.RecordedLocalDate)
+                    .OrderBy(g => g.Key)
+                    .Select(g => new MetricChartPointDto
+                    {
+                        Date = g.Key,
+                        Value = Math.Round(g.Average(m => m.Value), 1),
+                        Count = g.Count(),
+                        AbnormalCount = g.Count(m => m.IsAbnormal),
+                        IsAbnormal = g.Any(m => m.IsAbnormal)
+                    })
+                    .ToList()
+            },
+            HbA1c = new MetricTrendDto
+            {
+                Average = hba1c.Count > 0 ? Math.Round(hba1c.Average(m => m.Value), 1) : (decimal?)null,
+                Latest = ToLatest(hba1c.OrderByDescending(m => m.RecordedAtUtc).FirstOrDefault()),
+                AbnormalCount = hba1cAbnormalCount,
+                Chart = hba1c.OrderBy(m => m.RecordedAtUtc)
+                    .Select(m => new MetricChartPointDto
+                    {
+                        Date = m.RecordedLocalDate,
+                        RecordedAtUtc = m.RecordedAtUtc,
+                        Value = m.Value,
+                        Count = 1,
+                        AbnormalCount = m.IsAbnormal ? 1 : 0,
+                        IsAbnormal = m.IsAbnormal
+                    })
+                    .ToList()
+            },
+            BloodPressure = new BloodPressureTrendDto
+            {
+                AverageSystolic = bloodPressure.Count > 0
+                    ? Math.Round(bloodPressure.Average(p => p.Systolic.Value), 1)
+                    : (decimal?)null,
+                AverageDiastolic = bloodPressure.Count > 0
+                    ? Math.Round(bloodPressure.Average(p => p.Diastolic.Value), 1)
+                    : (decimal?)null,
+                Latest = bloodPressure.OrderByDescending(p => p.Systolic.RecordedAtUtc)
+                    .Select(p => new BloodPressureLatestDto
+                    {
+                        SystolicId = p.Systolic.Id,
+                        DiastolicId = p.Diastolic.Id,
+                        Systolic = p.Systolic.Value,
+                        Diastolic = p.Diastolic.Value,
+                        Unit = "mmHg",
+                        RecordedAtUtc = p.Systolic.RecordedAtUtc,
+                        RecordedLocalDate = p.Systolic.RecordedLocalDate,
+                        IsAbnormal = p.IsAbnormal
+                    })
+                    .FirstOrDefault(),
+                AbnormalCount = bloodPressureAbnormalCount,
+                Chart = bloodPressure.OrderBy(p => p.Systolic.RecordedAtUtc)
+                    .Select(p => new BloodPressureChartPointDto
+                    {
+                        Date = p.Systolic.RecordedLocalDate,
+                        RecordedAtUtc = p.Systolic.RecordedAtUtc,
+                        Systolic = p.Systolic.Value,
+                        Diastolic = p.Diastolic.Value,
+                        IsAbnormal = p.IsAbnormal
+                    })
+                    .ToList()
+            }
         });
+
+        static MetricLatestDto? ToLatest(HealthMetric? m) => m is null
+            ? null
+            : new MetricLatestDto
+            {
+                Id = m.Id,
+                MetricType = (byte)m.MetricType,
+                Value = m.Value,
+                Unit = m.Unit,
+                Context = (byte?)m.Context,
+                RecordedAtUtc = m.RecordedAtUtc,
+                RecordedLocalDate = m.RecordedLocalDate,
+                IsAbnormal = m.IsAbnormal
+            };
     }
+    private sealed record BloodPressurePair(
+    HealthMetric Systolic,
+    HealthMetric Diastolic,
+    bool IsAbnormal);
 
     /* ---------------------------- LỐI SỐNG ---------------------------- */
 
@@ -312,15 +628,35 @@ public class MonitoringService : BaseService, IMonitoringService
 
     private async Task<bool> IsAbnormalAsync(MetricType type, decimal value, MetricContext? ctx)
     {
-        return type switch
+        switch (type)
         {
-            MetricType.Glucose => ctx == MetricContext.AfterMeal
-                ? value > await _cfg.GetDecimalAsync(ConfigKeys.GlucosePostMealMax, 10.0m)
-                : value > await _cfg.GetDecimalAsync(ConfigKeys.GlucoseFastingMax, 7.2m),
-            MetricType.HbA1c => value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m),
-            MetricType.SystolicBp => value >= 140,
-            MetricType.DiastolicBp => value >= 90,
-            _ => false
-        };
+            case MetricType.Glucose:
+                {
+                    var glucoseMin = await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m);
+                    var fastingMax = await _cfg.GetDecimalAsync(ConfigKeys.GlucoseFastingMax, 7.2m);
+                    var postMealMax = await _cfg.GetDecimalAsync(ConfigKeys.GlucosePostMealMax, 10.0m);
+
+                    return ctx switch
+                    {
+                        MetricContext.BeforeMeal => value < glucoseMin || value > fastingMax,
+                        MetricContext.AfterMeal => value < glucoseMin || value > postMealMax,
+                        _ => false
+                    };
+                }
+
+            case MetricType.HbA1c:
+                return value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m);
+
+            case MetricType.SystolicBp:
+                return value >= 140;
+
+            case MetricType.DiastolicBp:
+                return value >= 90;
+
+            default:
+                return false;
+        }
+
     }
+    
 }
