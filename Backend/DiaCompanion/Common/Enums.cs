@@ -10,7 +10,7 @@ public enum UserRole : byte { Admin = 0, Doctor = 1, Nurse = 2, Patient = 3, Rec
 public enum DrGrade : byte { Normal = 0, Mild = 1, Moderate = 2, Severe = 3, Pdr = 4 }
 
 public enum Eye : byte { Od = 0, Os = 1 }
-public enum QualityStatus : byte { Pending = 0, Gradable = 1, Ungradable = 2 }
+public enum QualityStatus : byte { Pending = 0,     Gradable = 1, Ungradable = 2 }
 public enum VisitStatus : byte { InProgress = 0, Completed = 1 }
 public enum ReferralType : byte { None = 0, FollowUp = 1, Ophthalmology = 2, Urgent = 3 }
 public enum ReviewAction : byte { Approve = 0, Override = 1 }
