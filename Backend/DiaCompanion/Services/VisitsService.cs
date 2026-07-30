@@ -117,24 +117,76 @@ public class VisitsService : BaseService, IVisitsService
                 Msg.ConclusionNeeded,
                 "Chưa nhập kết luận nên không thể đóng lượt khám.");
 
-        var unapprovedImages = await _repository.FundusImages
-            .Where(f => f.VisitId == id && !f.IsVoided)
-            .CountAsync(f =>
-                f.QualityStatus == QualityStatus.Pending ||
-                (
-                    f.QualityStatus == QualityStatus.Gradable &&
-                    !_repository.AiDiagnoses.Any(d =>
-                        d.FundusImageId == f.Id &&
-                        !d.IsVoided &&
-                        _repository.DiagnosisReviews.Any(r =>
-                            r.AiDiagnosisId == d.Id &&
-                            !r.IsVoided))
-                ));
 
-        if (unapprovedImages > 0)
+        var gradableImageIds = _repository.FundusImages
+    .Where(f =>
+        f.VisitId == id &&
+        !f.IsVoided &&
+        f.QualityStatus == QualityStatus.Gradable)
+    .Select(f => f.Id);
+
+        // 1. Đếm ảnh vẫn đang chờ duyệt chất lượng.
+        var pendingQualityImages = await _repository.FundusImages
+            .CountAsync(f =>
+                f.VisitId == id &&
+                !f.IsVoided &&
+                f.QualityStatus == QualityStatus.Pending);
+
+        if (pendingQualityImages > 0)
+        {
             throw AppException.BadRequest(
                 Msg.ConclusionNeeded,
-                $"Còn {unapprovedImages} ảnh đáy mắt chưa hoàn tất duyệt chất lượng hoặc chưa có kết quả AI đã được bác sĩ phê duyệt nên không thể đóng lượt khám.");
+                $"Còn {pendingQualityImages} ảnh đáy mắt chưa được duyệt chất lượng.");
+        }
+
+        // 2. Ảnh đã đạt chất lượng nhưng chưa chạy AI,
+        // tức là chưa có AiDiagnosis hợp lệ nào.
+        var imagesWithoutAiDiagnosis = await _repository.FundusImages
+            .CountAsync(f =>
+                f.VisitId == id &&
+                !f.IsVoided &&
+                f.QualityStatus == QualityStatus.Gradable &&
+                !_repository.AiDiagnoses.Any(d =>
+                    d.FundusImageId == f.Id &&
+                    !d.IsVoided));
+
+        if (imagesWithoutAiDiagnosis > 0)
+        {
+            throw AppException.BadRequest(
+                Msg.ConclusionNeeded,
+                $"Còn {imagesWithoutAiDiagnosis} ảnh đáy mắt đã đạt chất lượng nhưng chưa được chạy AI.");
+        }
+
+        // 3. Lấy tất cả các lần chạy AI hợp lệ
+        // của các ảnh đạt chất lượng trong lượt khám.
+        var aiDiagnosesOfVisit = _repository.AiDiagnoses
+            .Where(d =>
+                !d.IsVoided &&
+                gradableImageIds.Contains(d.FundusImageId));
+
+
+        // Tổng số lần chạy AI.
+        var totalAiDiagnoses = await aiDiagnosesOfVisit.CountAsync();
+
+
+        // Đếm số lần chạy AI đã có ít nhất một review hợp lệ.
+        var reviewedAiDiagnoses = await aiDiagnosesOfVisit
+            .CountAsync(d =>
+                _repository.DiagnosisReviews.Any(r =>
+                    r.AiDiagnosisId == d.Id &&
+                    !r.IsVoided));
+
+
+        // Số lần chạy AI còn thiếu review.
+        var aiDiagnosesWithoutReview =
+            totalAiDiagnoses - reviewedAiDiagnoses;
+
+        if (aiDiagnosesWithoutReview > 0)
+        {
+            throw AppException.BadRequest(
+                Msg.ConclusionNeeded,
+                $"Còn {aiDiagnosesWithoutReview}/{totalAiDiagnoses} kết quả AI chưa được bác sĩ phê duyệt.");
+        }
 
         var worstGrade = await _repository.DiagnosisReviews
             .Where(r =>
