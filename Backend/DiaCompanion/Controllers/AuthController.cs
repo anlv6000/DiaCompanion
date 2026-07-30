@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Services;
-
+using Microsoft.AspNetCore.RateLimiting;
 namespace DiaCompanion.Api.Controllers;
 
 /// <summary>UC-01, UC-04, UC-05.</summary>
@@ -20,6 +20,7 @@ public class AuthController : BaseApiController
     /// </summary>
     [AllowAnonymous]
     [HttpPost("login")]
+    [EnableRateLimiting("login-limit")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req)
     {
         return await _service.Login(req);
@@ -35,6 +36,7 @@ public class AuthController : BaseApiController
     /// </summary>
     [AllowAnonymous]
     [HttpPost("request-otp")]
+    [EnableRateLimiting("otp-request-limit")]
     public async Task<IActionResult> RequestOtp(RequestOtpRequest req, [FromServices] IWebHostEnvironment env)
     {
         return await _service.RequestOtp(req, env);

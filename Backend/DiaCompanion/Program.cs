@@ -8,6 +8,9 @@ using DiaCompanion.Api.Data;
 using DiaCompanion.Api.Middleware;
 using DiaCompanion.Api.Services;
 using DiaCompanion.Api.Repositories;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -70,6 +73,64 @@ builder.Services.AddControllers()
         o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         o.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
     });
+
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode =
+        StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new
+            {
+                code = "TOO_MANY_REQUESTS",
+                message = "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau 1 phút."
+            },
+            cancellationToken);
+    };
+
+    options.AddPolicy("login-limit", context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString()
+                 ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            ip,
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0,
+                QueueProcessingOrder =
+                    QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy("otp-request-limit", context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString()
+                 ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            ip,
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0,
+                QueueProcessingOrder =
+                    QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            });
+    });
+});
 
 /* --------------------------------------------------------------------- JWT */
 var jwtService = new JwtTokenService(builder.Configuration);
@@ -138,6 +199,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("app");
 app.UseAuthentication();
 app.UseMiddleware<MustChangePasswordMiddleware>();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 
