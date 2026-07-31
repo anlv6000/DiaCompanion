@@ -12,9 +12,11 @@ import { fmtDate, num } from "../lib/format";
 import { metricTypes, metricContexts, metricTypeOptions, contextOptions } from "../lib/enums";
 
 /**
- * Chỉ số sức khỏe: đường huyết, HbA1c, huyết áp.
- * - Biểu đồ đường huyết 30 ngày (tóm tắt).
- * - Danh sách bản ghi, thêm/sửa/xoá (xoá là ẩn mềm phía backend).
+ * Chỉ số sức khỏe tự theo dõi tại nhà.
+ * - Đường huyết: tự đo, có thời điểm (trước/sau ăn).
+ * - Huyết áp: nhập gộp tâm thu + tâm trương.
+ * - HbA1c: KHÔNG nhập tay — chỉ hiển thị giá trị gần nhất do bác sĩ ghi.
+ * Biểu đồ đường huyết 30 ngày; danh sách bản ghi thêm/sửa/xoá (xoá là ẩn mềm).
  */
 export default function MetricsScreen({ route }) {
   const data = useData();
@@ -96,7 +98,7 @@ export default function MetricsScreen({ route }) {
               </View>
               {m.note ? <Text style={styles.metricNote}>{m.note}</Text> : null}
               <View style={styles.metricActions}>
-                <TouchableOpacity onPress={() => setEditing(m)} style={styles.actionBtn}>
+                <TouchableOpacity onPress={() => setEditing(withBpPair(m, list.data?.items))} style={styles.actionBtn}>
                   <Ionicons name="create-outline" size={18} color={colors.muted} />
                   <Text style={styles.actionText}>Sửa</Text>
                 </TouchableOpacity>
@@ -120,28 +122,94 @@ export default function MetricsScreen({ route }) {
   );
 }
 
+/**
+ * Khi sửa một bản ghi huyết áp (tâm thu hoặc tâm trương), tìm bản ghi cặp cùng
+ * thời điểm để form nạp đủ cả hai giá trị (backend yêu cầu gửi đồng thời).
+ * Trả về object bản ghi kèm _systolic/_diastolic nếu là huyết áp.
+ */
+function withBpPair(m, items) {
+  if (m.metricType !== 3 && m.metricType !== 4) return m;
+  const pairType = m.metricType === 3 ? 4 : 3;
+  const pair = (items || []).find(
+    (x) => x.metricType === pairType && x.recordedAtUtc === m.recordedAtUtc,
+  );
+  const systolic = m.metricType === 3 ? m : pair;
+  const diastolic = m.metricType === 4 ? m : pair;
+  return {
+    ...m,
+    _systolic: systolic ? String(systolic.value) : "",
+    _diastolic: diastolic ? String(diastolic.value) : "",
+    // id để cập nhật: dùng id của bản ghi tâm thu nếu có, không thì bản ghi hiện tại.
+    _updateId: (systolic || m).id,
+  };
+}
+
 function MetricForm({ value, onClose, onSaved }) {
   const data = useData();
   const toast = useToast();
   const isNew = value === "new";
-  const [type, setType] = useState(isNew ? 1 : value.metricType);
+
+  // Khi sửa bản ghi huyết áp cũ (type 3 hoặc 4), coi như đang ở nhóm "Huyết áp".
+  const initialType = isNew ? 1 : value.metricType;
+  const isBpType = (t) => t === 3 || t === 4;
+
+  const [type, setType] = useState(isBpType(initialType) ? 3 : initialType);
   const [val, setVal] = useState(isNew ? "" : String(value.value));
+  // Hai ô cho huyết áp (tạo mới, hoặc sửa — nạp từ cặp bản ghi).
+  const [systolic, setSystolic] = useState(isNew ? "" : value._systolic || "");
+  const [diastolic, setDiastolic] = useState(isNew ? "" : value._diastolic || "");
   const [context, setContext] = useState(isNew ? null : value.context ?? null);
   const [note, setNote] = useState(isNew ? "" : value.note || "");
   const [busy, setBusy] = useState(false);
 
   const isGlucose = type === 1;
+  const isBp = type === 3;
 
   const save = async () => {
-    const numVal = Number(val);
-    if (!val || isNaN(numVal)) { toast.push("Nhập giá trị hợp lệ.", "error"); return; }
     setBusy(true);
     try {
-      if (isNew) {
-        await data.metrics.create({ metricType: type, value: numVal, context: isGlucose ? context : null, note: note || null });
-      } else {
-        await data.metrics.update(value.id, { metricType: type, value: numVal, context: isGlucose ? context : null, note: note || null });
+      // HUYẾT ÁP (tạo mới hoặc sửa): luôn gửi metricType=3 + cả systolic + diastolic.
+      if (isBp) {
+        const s = Number(systolic);
+        const d = Number(diastolic);
+        if (!systolic || !diastolic || isNaN(s) || isNaN(d)) {
+          toast.push("Nhập cả huyết áp tâm thu và tâm trương.", "error");
+          setBusy(false);
+          return;
+        }
+        if (s <= d) {
+          toast.push("Tâm thu phải lớn hơn tâm trương.", "error");
+          setBusy(false);
+          return;
+        }
+        const bpPayload = {
+          metricType: 3,
+          systolicValue: s,
+          diastolicValue: d,
+          note: note || null,
+        };
+        if (isNew) await data.metrics.create(bpPayload);
+        else await data.metrics.update(value._updateId || value.id, bpPayload);
+        toast.push("Đã lưu huyết áp.", "success");
+        onSaved();
+        return;
       }
+
+      // Đường huyết (tạo/sửa).
+      const numVal = Number(val);
+      if (!val || isNaN(numVal)) {
+        toast.push("Nhập giá trị hợp lệ.", "error");
+        setBusy(false);
+        return;
+      }
+      const payload = {
+        metricType: type,
+        value: numVal,
+        context: isGlucose ? context : null,
+        note: note || null,
+      };
+      if (isNew) await data.metrics.create(payload);
+      else await data.metrics.update(value.id, payload);
       toast.push("Đã lưu chỉ số.", "success");
       onSaved();
     } catch (e) {
@@ -168,9 +236,26 @@ function MetricForm({ value, onClose, onSaved }) {
             </View>
           </Field>
 
-          <Field label={`Giá trị (${metricTypes[type]?.unit || ""})`} required>
-            <Input value={val} onChangeText={setVal} placeholder="Nhập số" keyboardType="decimal-pad" />
-          </Field>
+          {isBp ? (
+            // Huyết áp: nhập gộp tâm thu + tâm trương (cả khi tạo và sửa).
+            <View style={styles.bpRow}>
+              <View style={{ flex: 1 }}>
+                <Field label="Tâm thu (mmHg)" required>
+                  <Input value={systolic} onChangeText={setSystolic} placeholder="VD 120" keyboardType="number-pad" />
+                </Field>
+              </View>
+              <Text style={styles.bpSlash}>/</Text>
+              <View style={{ flex: 1 }}>
+                <Field label="Tâm trương (mmHg)" required>
+                  <Input value={diastolic} onChangeText={setDiastolic} placeholder="VD 80" keyboardType="number-pad" />
+                </Field>
+              </View>
+            </View>
+          ) : (
+            <Field label={`Giá trị (${metricTypes[type]?.unit || ""})`} required>
+              <Input value={val} onChangeText={setVal} placeholder="Nhập số" keyboardType="decimal-pad" />
+            </Field>
+          )}
 
           {isGlucose && (
             <Field label="Thời điểm đo">
@@ -225,6 +310,8 @@ const styles = StyleSheet.create({
 
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.md },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  bpRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  bpSlash: { ...font.h2, color: colors.muted, marginBottom: 14 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { ...font.small, color: colors.muted, fontWeight: "600" },

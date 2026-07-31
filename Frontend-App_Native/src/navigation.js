@@ -22,6 +22,9 @@ import SymptomsScreen from "./screens/SymptomsScreen";
 import NotificationsScreen from "./screens/NotificationsScreen";
 import BlogScreen from "./screens/BlogScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import VisitHistoryScreen from "./screens/VisitHistoryScreen";
+import VisitFeedbackScreen from "./screens/VisitFeedbackScreen";
+import VisitDetailScreen from "./screens/VisitDetailScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -100,6 +103,9 @@ function MainStack() {
       <Stack.Screen name="Symptoms" component={SymptomsScreen} options={{ title: "Triệu chứng" }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: "Thông báo" }} />
       <Stack.Screen name="Blog" component={BlogScreen} options={{ title: "Bài viết sức khỏe" }} />
+      <Stack.Screen name="VisitHistory" component={VisitHistoryScreen} options={{ title: "Lịch sử khám" }} />
+      <Stack.Screen name="VisitDetail" component={VisitDetailScreen} options={{ title: "Kết quả khám" }} />
+      <Stack.Screen name="VisitFeedback" component={VisitFeedbackScreen} options={{ title: "Phản hồi lượt khám" }} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: "Đổi mật khẩu" }} />
     </Stack.Navigator>
   );

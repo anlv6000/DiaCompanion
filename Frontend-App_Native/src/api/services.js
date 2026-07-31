@@ -55,6 +55,13 @@ export const recheckApi = {
   mine: () => http.get("/api/recheck/me"),
 };
 
+// Lịch sử lượt khám CỦA BỆNH NHÂN. Backend có endpoint riêng /me để bệnh nhân
+// chỉ thấy lượt khám của chính mình (endpoint /api/visits gốc là cho nhân viên).
+export const visitsApi = {
+  list: (params) => http.get("/api/visits/me" + query(params)),
+  get: (id) => http.get(`/api/visits/me/${id}`),
+};
+
 // Diễn tiến bệnh (biểu đồ DR + fractal + HbA1c của bản thân).
 export const progressionApi = {
   mine: (patientId, months) =>
@@ -81,7 +88,8 @@ export const blogApi = {
   get: (id) => http.get(`/api/blog/${id}`),
 };
 
-// Phản hồi dịch vụ.
+// Phản hồi lượt khám. Backend nhận tại /api/visits/feedback
+// (body: { visitId, rating 1..5, tags?, comment? }).
 export const feedbackApi = {
-  create: (body) => http.post("/api/engagement/feedback", body),
+  create: (body) => http.post("/api/visits/feedback", body),
 };

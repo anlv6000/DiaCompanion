@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -24,19 +24,33 @@ export default function HomeScreen({ navigation }) {
   const recheck = useAsync(() => data.recheck.mine(), []);
   const meds = useAsync(() => data.medication.today(), []);
 
-  // Làm mới chấm đỏ thông báo mỗi khi quay lại màn này.
-  useFocusEffect(useCallback(() => { data.refreshUnread(); }, [data]));
+  const refreshUnread = data.refreshUnread;
+  const refreshRecheck = recheck.reload;
+  const refreshMeds = meds.reload;
+  const refreshingRef = useRef(false);
 
   const recheckData = recheck.data && recheck.data.hasRecheck !== false ? recheck.data : null;
   const medList = meds.data || [];
   const takenCount = medList.filter((m) => m.status === 1).length;
 
   const [refreshing, setRefreshing] = useState(false);
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+
+    refreshingRef.current = true;
     setRefreshing(true);
-    await Promise.all([recheck.reload(), meds.reload(), data.refreshUnread()]);
-    setRefreshing(false);
-  };
+    try {
+      await Promise.all([refreshRecheck(), refreshMeds(), refreshUnread()]);
+    } finally {
+      setRefreshing(false);
+      refreshingRef.current = false;
+    }
+  }, [refreshRecheck, refreshMeds, refreshUnread]);
+
+  useFocusEffect(useCallback(() => {
+    void onRefresh();
+    return undefined;
+  }, [onRefresh]));
 
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
@@ -114,6 +128,7 @@ export default function HomeScreen({ navigation }) {
         <Shortcut icon="add-circle-outline" label="Ghi chỉ số" onPress={() => navigation.navigate("Metrics", { openCreate: true })} />
         <Shortcut icon="restaurant-outline" label="Nhật ký" onPress={() => navigation.navigate("Lifestyle")} />
         <Shortcut icon="warning-outline" label="Báo triệu chứng" onPress={() => navigation.navigate("Symptoms", { openCreate: true })} />
+        <Shortcut icon="document-text-outline" label="Lịch sử khám" onPress={() => navigation.navigate("VisitHistory")} />
         <Shortcut icon="book-outline" label="Bài viết sức khỏe" onPress={() => navigation.navigate("Blog")} />
       </View>
     </Screen>

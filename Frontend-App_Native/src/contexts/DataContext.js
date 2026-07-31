@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useMemo, useState, useCallback } from "react";
 import {
   profileApi, metricsApi, lifestyleApi, medicationApi, recheckApi,
-  progressionApi, symptomApi, notificationApi, blogApi, feedbackApi,
+  progressionApi, symptomApi, notificationApi, blogApi, feedbackApi, visitsApi,
 } from "../api/services";
 import { useAuth } from "./AuthContext";
 
@@ -93,6 +93,11 @@ export function DataProvider({ children }) {
 
     feedback: {
       create: (body) => feedbackApi.create(body),
+    },
+
+    visits: {
+      list: (params) => visitsApi.list(params),
+      get: (id) => visitsApi.get(id),
     },
   }), [patientId, unreadCount, refreshUnread]);
 

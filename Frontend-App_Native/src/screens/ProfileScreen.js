@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
@@ -22,10 +22,18 @@ export default function ProfileScreen({ navigation }) {
   const profile = useAsync(() => data.profile.me(), []);
 
   const confirmLogout = () => {
-    Alert.alert("Đăng xuất", "Bạn chắc chắn muốn đăng xuất?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Đăng xuất", style: "destructive", onPress: logout },
-    ]);
+    if (Platform.OS === "web") {
+      logout();
+      return;
+    }
+
+    // Code cũ dùng alert trên native:
+    // Alert.alert("Đăng xuất", "Bạn chắc chắn muốn đăng xuất?", [
+    //   { text: "Hủy", style: "cancel" },
+    //   { text: "Đăng xuất", style: "destructive", onPress: logout },
+    // ]);
+
+    logout();
   };
 
   const p = profile.data;

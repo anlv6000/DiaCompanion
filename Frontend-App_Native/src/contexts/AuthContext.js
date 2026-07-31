@@ -78,8 +78,13 @@ export function AuthProvider({ children }) {
 
   const changePassword = useCallback(async (current, next) => {
     await authApi.changePassword(current, next);
-    if (user) await persist({ ...user, mustChangePassword: false });
-  }, [persist, user]);
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, mustChangePassword: false };
+      AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
 
   return (
     <AuthContext.Provider

@@ -11,7 +11,6 @@ export const metricTypes = {
 export const metricContexts = {
   1: "Trước ăn",
   2: "Sau ăn",
-  3: "Trước khi ngủ",
 };
 
 export const symptomSeverities = {
@@ -34,6 +33,12 @@ export const referralTypes = {
   3: "Chuyển khẩn cấp",
 };
 
+// Trạng thái lượt khám (khớp VisitStatus backend: InProgress=0, Closed=1).
+export const visitStatuses = {
+  0: { label: "Đang khám", kind: "warn" },
+  1: { label: "Đã đóng", kind: "ok" },
+};
+
 export const notificationTypes = {
   1: { label: "Tái khám", icon: "calendar-outline" },
   2: { label: "Thuốc", icon: "medkit-outline" },
@@ -48,18 +53,19 @@ export const blogCategories = {
   3: "Cảnh báo",
 };
 
-// Lựa chọn loại chỉ số khi nhập (dropdown).
+// Lựa chọn loại chỉ số khi NHẬP (bệnh nhân tự đo tại nhà).
+// - Đường huyết: tự đo bằng máy tại nhà.
+// - Huyết áp: nhập gộp cả tâm thu + tâm trương trong một form (value=0 ảo, xử lý
+//   riêng ở màn nhập → lưu thành 2 bản ghi type 3 và 4).
+// HbA1c KHÔNG cho nhập tay (chỉ bác sĩ ghi tại phòng khám) → không có ở đây.
 export const metricTypeOptions = [
   { value: 1, label: "Đường huyết", unit: "mmol/L" },
-  { value: 2, label: "HbA1c", unit: "%" },
-  { value: 3, label: "Huyết áp tâm thu", unit: "mmHg" },
-  { value: 4, label: "Huyết áp tâm trương", unit: "mmHg" },
+  { value: 3, label: "Huyết áp", unit: "mmHg" },
 ];
 
 export const contextOptions = [
   { value: 1, label: "Trước ăn" },
   { value: 2, label: "Sau ăn" },
-  { value: 3, label: "Trước khi ngủ" },
 ];
 
 export const severityOptions = [
