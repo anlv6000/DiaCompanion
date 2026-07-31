@@ -1,0 +1,87 @@
+import { http, query } from "./client";
+
+/**
+ * Toàn bộ endpoint mà BỆNH NHÂN được phép gọi, gom theo nhóm nghiệp vụ.
+ * Mỗi hàm chỉ dựng URL + method; không xử lý state ở đây.
+ * Tên và tham số bám sát controller backend.
+ */
+
+// Xác thực — bệnh nhân đăng nhập bằng SỐ ĐIỆN THOẠI.
+export const authApi = {
+  loginPassword: (phone, password) => http.post("/api/auth/login", { phone, password }),
+  requestOtp: (phone) => http.post("/api/auth/request-otp", { phone }),
+  loginOtp: (phone, code) => http.post("/api/auth/login-otp", { phone, code }),
+  forgotPassword: (phone) => http.post("/api/auth/forgot-password", { phone }),
+  resetPassword: (phone, code, newPassword) =>
+    http.post("/api/auth/reset-password", { phone, code, newPassword }),
+  changePassword: (currentPassword, newPassword) =>
+    http.post("/api/auth/change-password", { currentPassword, newPassword }),
+  logout: () => http.post("/api/auth/logout"),
+  me: () => http.get("/api/auth/me"),
+};
+
+// Hồ sơ bản thân.
+export const profileApi = {
+  me: () => http.get("/api/patients/me"),
+  updateAddress: (address) => http.put("/api/patients/me", { address }),
+};
+
+// Chỉ số sức khỏe (glucose, HbA1c, huyết áp).
+export const metricsApi = {
+  list: (params) => http.get("/api/monitoring/metrics" + query(params)),
+  create: (body) => http.post("/api/monitoring/metrics", body),
+  update: (id, body) => http.put(`/api/monitoring/metrics/${id}`, body),
+  remove: (id) => http.del(`/api/monitoring/metrics/${id}`),
+  summary: (patientId, days) =>
+    http.get(`/api/monitoring/metrics/summary/${patientId}` + query({ days })),
+};
+
+// Nhật ký lối sống (ăn uống + vận động).
+export const lifestyleApi = {
+  list: (days) => http.get("/api/monitoring/lifestyle" + query({ days })),
+  save: (body) => http.post("/api/monitoring/lifestyle", body),
+  remove: (id) => http.del(`/api/monitoring/lifestyle/${id}`),
+};
+
+// Thuốc hôm nay.
+export const medicationApi = {
+  today: () => http.get("/api/monitoring/medications/today"),
+  setTaken: (id, taken) =>
+    http.put(`/api/monitoring/medications/${id}/taken` + query({ taken })),
+};
+
+// Tái tầm soát (ngày tái khám kế tiếp).
+export const recheckApi = {
+  mine: () => http.get("/api/recheck/me"),
+};
+
+// Diễn tiến bệnh (biểu đồ DR + fractal + HbA1c của bản thân).
+export const progressionApi = {
+  mine: (patientId, months) =>
+    http.get(`/api/diagnoses/progression/${patientId}` + query({ months })),
+};
+
+// Triệu chứng.
+export const symptomApi = {
+  report: (body) => http.post("/api/engagement/symptoms", body),
+  list: (params) => http.get("/api/engagement/symptoms" + query(params)),
+};
+
+// Thông báo.
+export const notificationApi = {
+  list: (params) => http.get("/api/engagement/notifications" + query(params)),
+  unreadCount: () => http.get("/api/engagement/notifications/unread-count"),
+  markRead: (id) => http.put(`/api/engagement/notifications/${id}/read`),
+  markAllRead: () => http.put("/api/engagement/notifications/read-all"),
+};
+
+// Blog sức khỏe (đọc bài đã xuất bản — không cần đăng nhập nhưng vẫn đính token nếu có).
+export const blogApi = {
+  published: (params) => http.get("/api/blog/published" + query(params)),
+  get: (id) => http.get(`/api/blog/${id}`),
+};
+
+// Phản hồi dịch vụ.
+export const feedbackApi = {
+  create: (body) => http.post("/api/engagement/feedback", body),
+};
