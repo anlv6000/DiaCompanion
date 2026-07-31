@@ -1,4 +1,4 @@
-export type Role = "Admin" | "Doctor" | "Nurse" | "Patient";
+export type Role = "Admin" | "Doctor" | "Nurse" | "Patient" | "Receptionist";
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
   items: T[];
@@ -285,26 +285,41 @@ export interface CreatePrescriptionRequest {
   note?: string | null;
   items: PrescriptionItemDto[];
 }
-export interface AppointmentDto {
+// ===== Lễ tân: ca trực + bác sĩ đang trực =====
+export interface DoctorShiftDto {
   id: number;
-  patientId: number;
-  patientName: string;
-  doctorId?: number | null;
-  doctorName?: string | null;
-  scheduledAt: string;
-  reason?: string | null;
-  status: number;
-  cancelReason?: string | null;
+  doctorId: number;
+  doctorName: string;
+  licenseNo?: string | null;
+  dayOfWeek: number; // 0=CN … 6=T7
+  dayLabel: string;
+  shift: number; // 1=Sáng, 2=Chiều
+  shiftLabel: string;
+  isActive: boolean;
 }
-export interface CreateAppointmentRequest {
-  patientId?: number | null;
-  doctorId?: number | null;
-  scheduledAt: string;
-  reason?: string | null;
+export interface CreateDoctorShiftRequest {
+  doctorId: number;
+  dayOfWeek: number;
+  shift: number;
 }
-export interface SlotDto {
-  time: string;
-  available: boolean;
+export interface CreateDoctorShiftsBatchRequest {
+  doctorId: number;
+  daysOfWeek: number[];
+  shift: number;
+}
+export interface OnDutyDoctorDto {
+  doctorId: number;
+  doctorName: string;
+  licenseNo?: string | null;
+  shift: number;
+  shiftLabel: string;
+  openVisitCount: number;
+}
+export interface OnDutyResponse {
+  date: string;
+  dayLabel: string;
+  currentShift?: number | null;
+  doctors: OnDutyDoctorDto[];
 }
 export interface HealthMetricDto {
   id: number;
@@ -324,14 +339,50 @@ export interface CreateMetricRequest {
   recordedAtUtc?: string | null;
   note?: string | null;
 }
+export interface MetricChartPoint {
+  date: string;
+  value: number;
+  count: number;
+  abnormalCount: number;
+  isAbnormal: boolean;
+}
+export interface MetricTrend {
+  average?: number | null;
+  latest?: {
+    value: number;
+    unit: string;
+    recordedAtUtc: string;
+    isAbnormal: boolean;
+  } | null;
+  abnormalCount: number;
+  chart: MetricChartPoint[];
+}
+export interface BloodPressureTrend {
+  averageSystolic?: number | null;
+  averageDiastolic?: number | null;
+  latest?: {
+    systolic: number;
+    diastolic: number;
+    unit: string;
+    recordedAtUtc: string;
+    isAbnormal: boolean;
+  } | null;
+  abnormalCount: number;
+  chart: {
+    date: string;
+    systolic: number;
+    diastolic: number;
+    isAbnormal: boolean;
+  }[];
+}
 export interface MetricSummary {
   days: number;
-  glucoseAvg?: number | null;
-  glucoseAbnormalCount: number;
-  latestHbA1c?: number | null;
-  latestSystolic?: number | null;
-  latestDiastolic?: number | null;
-  byDay: { date: string; avg: number; count: number }[];
+  from: string;
+  to: string;
+  totalAbnormalCount: number;
+  glucose: MetricTrend;
+  hba1c: MetricTrend;
+  bloodPressure: BloodPressureTrend;
 }
 export interface LifestyleLogDto {
   id: number;

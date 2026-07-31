@@ -2,6 +2,7 @@ export const roles = [
   { value: 0, label: "Admin", key: "Admin" },
   { value: 1, label: "Bác sĩ", key: "Doctor" },
   { value: 2, label: "Điều dưỡng", key: "Nurse" },
+  { value: 4, label: "Lễ tân", key: "Receptionist" },
 ] as const;
 export const grades = ["Bình thường", "Nhẹ", "Trung bình", "Nặng", "PDR"];
 export const gradeCodes = ["Normal", "Mild", "Moderate", "Severe", "PDR"];
@@ -16,7 +17,6 @@ export const referralTypes = [
   "Khẩn cấp",
 ];
 export const qualityStatuses = ["Chờ duyệt", "Đạt", "Không đạt"];
-export const appointmentStatuses = ["Đã đặt", "Hoàn tất", "Đã hủy", "Vắng mặt"];
 export const metricTypes = [
   "",
   "Glucose",

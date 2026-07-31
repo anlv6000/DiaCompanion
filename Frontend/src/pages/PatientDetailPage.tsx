@@ -20,6 +20,7 @@ import {
   ConfirmDialog,
   Icon,
   Meter,
+  ActionLink,
 } from "@/components/ui";
 import {
   genders,
@@ -282,10 +283,16 @@ function VisitsTab({ patientId }: { patientId: number }) {
       <Panel
         title="Lượt khám"
         action={
-          <Button kind="primary" onClick={() => setCreate(true)}>
-            <Icon name="plus" />
-            Tạo lượt khám
-          </Button>
+          /* Tạo lượt khám thực hiện ở màn "Tiếp đón" riêng của lễ tân, không tạo
+             tại trang bệnh nhân. Lễ tân thấy lối tắt sang đó; vai trò khác không. */
+          can.createVisit(user?.role) ? (
+            <ActionLink to="/reception/visits/new">
+              <Button kind="primary">
+                <Icon name="plus" />
+                Tạo lượt khám
+              </Button>
+            </ActionLink>
+          ) : undefined
         }
       >
         <LoadState
@@ -329,12 +336,15 @@ function VisitsTab({ patientId }: { patientId: number }) {
                     <Button onClick={() => navigate(`/reports/visit/${v.id}`)}>
                       Báo cáo
                     </Button>
-                    <Button
-                      disabled={v.status === 1}
-                      onClick={() => setClosing(v)}
-                    >
-                      Đóng
-                    </Button>
+                    {/* Đóng lượt (nhập kết luận): CHỈ Bác sĩ. Backend chặn 403. */}
+                    {can.closeVisit(user?.role) && (
+                      <Button
+                        disabled={v.status === 1}
+                        onClick={() => setClosing(v)}
+                      >
+                        Đóng
+                      </Button>
+                    )}
                     {/* Void lượt khám: CHỈ Bác sĩ. Admin/Điều dưỡng không thấy nút. */}
                     {can.voidVisit(user?.role) && (
                       <Button kind="danger" onClick={() => setVoiding(v)}>
@@ -555,12 +565,9 @@ function ImagesTab({ patientId }: { patientId: number }) {
       <Panel
         title="Ảnh đáy mắt"
         action={
-          can.manageImages(user?.role) && (
-            <Button kind="primary" onClick={() => setUpload(true)}>
-              <Icon name="plus" />
-              Nạp ảnh
-            </Button>
-          )
+          /* Nạp ảnh mới gắn với LƯỢT KHÁM — thực hiện ở trang lượt khám của
+             bác sĩ. Ở trang bệnh nhân chỉ xem lại ảnh và kết quả AI đã có. */
+          undefined
         }
       >
         <LoadState
@@ -899,15 +906,12 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
           <p className="muted">
             Mỗi dòng thuốc gồm tên, liều, số lần/ngày, số ngày và hướng dẫn.
           </p>
-          {/* Kê đơn: chỉ Bác sĩ. */}
-          {can.prescribe(user?.role) ? (
-            <Button kind="primary" onClick={() => setEditor("new")}>
-              <Icon name="plus" />
-              Tạo đơn thuốc
-            </Button>
-          ) : (
-            <p className="help">Chỉ Bác sĩ được kê đơn thuốc.</p>
-          )}
+          {/* Tạo đơn thuốc mới gắn với LƯỢT KHÁM — thực hiện ở trang lượt khám
+              của bác sĩ. Tại đây chỉ xem lại và SỬA đơn đã có (nút Sửa bên dưới). */}
+          <p className="help">
+            Kê đơn mới được thực hiện trong lượt khám. Tại đây có thể xem và sửa
+            các đơn thuốc đã có.
+          </p>
         </Panel>
       </div>
       <Panel title="Lịch sử đơn thuốc">
@@ -1033,11 +1037,16 @@ function PrescriptionEditor({
     }
     setBusy(true);
     try {
+      // Khi TẠO mới: bỏ id (chưa có, để backend sinh).
+      // Khi SỬA: GIỮ id của từng dòng thuốc — backend cần PrescriptionItem.Id
+      // để biết dòng nào cập nhật, dòng nào thêm mới (id rỗng), dòng nào đã xoá.
       const body = {
         patientId,
         visitId: visit ? Number(visit) : null,
         note: note || null,
-        items: items.map(({ id, ...x }) => x),
+        items: isNew
+          ? items.map(({ id, ...x }) => x)
+          : items.map((x) => ({ ...x })),
       };
       if (isNew) await data.prescriptions.create(body);
       else await data.prescriptions.update(value.id, body);
@@ -1164,32 +1173,34 @@ function MonitoringTab({ patientId }: { patientId: number }) {
     () => data.monitoring.summary(patientId),
     [patientId],
   );
+  const glucose = summary.data?.glucose;
+  const hba1c = summary.data?.hba1c;
+  const bloodPressure = summary.data?.bloodPressure;
+
   return (
     <>
       <div className="stats">
         <div className="stat">
           <span>Glucose bất thường</span>
-          <b className="mono">{summary.data?.glucoseAbnormalCount ?? "—"}</b>
+          <b className="mono">{glucose?.abnormalCount ?? "—"}</b>
         </div>
         <div className="stat">
           <span>Glucose trung bình</span>
-          <b className="mono">{num(summary.data?.glucoseAvg)}</b>
+          <b className="mono">{num(glucose?.average)}</b>
         </div>
         <div className="stat">
           <span>HbA1c gần nhất</span>
           <b className="mono">
-            {summary.data?.latestHbA1c == null
-              ? "—"
-              : `${summary.data.latestHbA1c}%`}
+            {hba1c?.latest?.value == null ? "—" : `${hba1c.latest.value}%`}
           </b>
         </div>
         <div className="stat">
           <span>HA tâm thu</span>
-          <b className="mono">{num(summary.data?.latestSystolic)}</b>
+          <b className="mono">{num(bloodPressure?.latest?.systolic)}</b>
         </div>
         <div className="stat">
           <span>HA tâm trương</span>
-          <b className="mono">{num(summary.data?.latestDiastolic)}</b>
+          <b className="mono">{num(bloodPressure?.latest?.diastolic)}</b>
         </div>
       </div>
       <Panel

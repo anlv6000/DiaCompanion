@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { grades, eyes, label } from "@/lib/enums";
+import { normalizeText } from "@/lib/format";
 export function Icon({ name }: { name: string }) {
   const paths: Record<string, any> = {
     menu: (
@@ -131,8 +132,8 @@ export function PageHeader({
   return (
     <div className="title">
       <div>
-        <h1>{title}</h1>
-        {subtitle && <p>{subtitle}</p>}
+        <h1>{normalizeText(title)}</h1>
+        {subtitle && <p>{normalizeText(subtitle)}</p>}
       </div>
       <div className="page-actions">{actions}</div>
     </div>
@@ -153,7 +154,7 @@ export function Panel({
     <section className={`panel ${className}`}>
       {title !== undefined && (
         <div className="panel-h">
-          <span>{title}</span>
+          <span>{typeof title === "string" ? normalizeText(title) : title}</span>
           <span>{action}</span>
         </div>
       )}
@@ -232,11 +233,13 @@ export function Modal({
   children,
   onClose,
   footer,
+  width,
 }: {
   title: string;
   children?: any;
   onClose: () => void;
   footer?: any;
+  width?: string;
 }) {
   useEffect(() => {
     const h = (e: any) => {
@@ -252,9 +255,9 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true">
+      <div className="modal" role="dialog" aria-modal="true" style={width ? { width } : undefined}>
         <div className="modal-h">
-          <span>{title}</span>
+          <span>{normalizeText(title)}</span>
           <button className="close" onClick={onClose} aria-label="Đóng">
             ×
           </button>

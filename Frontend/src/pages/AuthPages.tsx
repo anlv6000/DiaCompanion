@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { resolveLandingRoute } from "@/lib/permissions";
 import { Field, Button, Panel, PageHeader, StatusBadge } from "@/components/ui";
 
 /* Đăng nhập — CHỈ nhân viên bằng email. Web bệnh viện không có luồng bệnh nhân
@@ -113,7 +114,11 @@ export function ChangePasswordPage() {
       setCurrent("");
       setNext("");
       setConfirm("");
-      navigate("/triage", { replace: true });
+      // Điều hướng theo vai trò về trang chủ an toàn (không hardcode /triage,
+      // không rơi vào /home vốn không tồn tại trên web console).
+      navigate(resolveLandingRoute(user?.role, user?.defaultRoute), {
+        replace: true,
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {

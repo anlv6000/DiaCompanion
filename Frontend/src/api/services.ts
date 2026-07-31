@@ -45,6 +45,8 @@ export const patientsApi = {
 export const visitsApi = {
   list: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.VisitDto>>("/api/visits" + query(p)),
+  assignedToMe: (p: Record<string, unknown>) =>
+    http.get<T.PagedResult<T.VisitDto>>("/api/visits/assigned-to-me" + query(p)),
   get: (id: number) => http.get<T.VisitDto>(`/api/visits/${id}`),
   create: (b: T.CreateVisitRequest) => http.post<T.VisitDto>("/api/visits", b),
   close: (id: number, b: T.CloseVisitRequest) =>
@@ -113,24 +115,6 @@ export const prescriptionsApi = {
       `/api/prescriptions/adherence/${patientId}?days=${days}`,
     ),
 };
-export const appointmentsApi = {
-  list: (p: Record<string, unknown>) =>
-    http.get<T.PagedResult<T.AppointmentDto>>("/api/appointments" + query(p)),
-  slots: (date: string, doctorId?: number | null) =>
-    http.get<T.SlotDto[]>(
-      "/api/appointments/slots" + query({ date, doctorId }),
-    ),
-  create: (b: T.CreateAppointmentRequest) =>
-    http.post<T.AppointmentDto>("/api/appointments", b),
-  reschedule: (id: number, scheduledAt: string) =>
-    http.put<T.AppointmentDto>(`/api/appointments/${id}/reschedule`, {
-      scheduledAt,
-    }),
-  cancel: (id: number, reason?: string) =>
-    http.put<T.ApiMessage>(`/api/appointments/${id}/cancel`, { reason }),
-  status: (id: number, status: number) =>
-    http.put<T.ApiMessage>(`/api/appointments/${id}/status?status=${status}`),
-};
 export const recheckApi = {
   me: () => http.get<T.RecheckDto>("/api/recheck/me"),
   patient: (patientId: number) =>
@@ -138,6 +122,26 @@ export const recheckApi = {
   due: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.RecheckDto>>("/api/recheck/due" + query(p)),
   overdueCount: () => http.get<{ overdue: number }>("/api/recheck/overdue-count"),
+};
+
+// Nghiệp vụ lễ tân: bác sĩ đang trực + quản lý ca trực cố định theo tuần.
+export const receptionApi = {
+  onDuty: (date?: string, shift?: number) =>
+    http.get<T.OnDutyResponse>("/api/reception/on-duty" + query({ date, shift })),
+  listShifts: (doctorId?: number) =>
+    http.get<T.DoctorShiftDto[]>(
+      "/api/reception/shifts" + query({ doctorId }),
+    ),
+  createShift: (b: T.CreateDoctorShiftRequest) =>
+    http.post<T.DoctorShiftDto>("/api/reception/shifts", b),
+  createShiftsBatch: (b: T.CreateDoctorShiftsBatchRequest) =>
+    http.post<T.DoctorShiftDto[]>("/api/reception/shifts/batch", b),
+  setShiftActive: (id: number, active: boolean) =>
+    http.put<T.DoctorShiftDto>(
+      `/api/reception/shifts/${id}/active?active=${active}`,
+    ),
+  deleteShift: (id: number) =>
+    http.delete<void>(`/api/reception/shifts/${id}`),
 };
 export const monitoringApi = {
   metrics: (p: Record<string, unknown>) =>

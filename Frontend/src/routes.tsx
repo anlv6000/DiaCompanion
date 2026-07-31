@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveLandingRoute } from "@/lib/permissions";
 import { AppShell } from "@/components/AppShell";
 import type { Role } from "@/types/api";
 
@@ -15,7 +16,13 @@ import { TriagePage } from "@/pages/TriagePage";
 import { PatientsPage, PatientFormPage } from "@/pages/PatientsPage";
 import { PatientDetailPage } from "@/pages/PatientDetailPage";
 import { FundusPage } from "@/pages/FundusPage";
-import { AppointmentsPage } from "@/pages/AppointmentsPage";
+import { RecheckPage } from "@/pages/RecheckPage";
+import { DoctorVisitsPage } from "@/pages/DoctorVisitsPage";
+import {
+  ReceptionNewVisitPage,
+  ReceptionVisitsPage,
+  ReceptionShiftsPage,
+} from "@/pages/ReceptionPages";
 import { ProgressionPage } from "@/pages/ProgressionPage";
 import { VisitReportPage } from "@/pages/VisitReportPage";
 import { UsersPage } from "@/pages/UsersPage";
@@ -93,7 +100,7 @@ export function AppRoutes() {
         path="/login"
         element={
           user ? (
-            <Navigate to={user.defaultRoute || "/triage"} replace />
+            <Navigate to={resolveLandingRoute(user.role, user.defaultRoute)} replace />
           ) : (
             <LoginPage />
           )
@@ -126,7 +133,7 @@ export function AppRoutes() {
       <Route
         path="/patients"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
             <PatientsPage />
           </RequireAuth>
         }
@@ -150,7 +157,7 @@ export function AppRoutes() {
       <Route
         path="/patients/:id"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
             <PatientDetailRoute />
           </RequireAuth>
         }
@@ -164,10 +171,51 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/appointments"
+        path="/recheck"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
-            <AppointmentsPage />
+          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
+            <RecheckPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/my-visits"
+        element={
+          <RequireAuth roles={["Doctor"]}>
+            <DoctorVisitsPage />
+          </RequireAuth>
+        }
+      />
+      {/* ===== Tiếp đón (lễ tân) ===== */}
+      <Route
+        path="/reception/patients/new"
+        element={
+          <RequireAuth roles={["Receptionist"]}>
+            <PatientFormPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/reception/visits/new"
+        element={
+          <RequireAuth roles={["Receptionist"]}>
+            <ReceptionNewVisitPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/reception/visits"
+        element={
+          <RequireAuth roles={["Receptionist", "Admin"]}>
+            <ReceptionVisitsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/reception/shifts"
+        element={
+          <RequireAuth roles={["Receptionist", "Admin"]}>
+            <ReceptionShiftsPage />
           </RequireAuth>
         }
       />
@@ -275,13 +323,13 @@ export function AppRoutes() {
       {/* Mặc định */}
       <Route
         path="/"
-        element={<Navigate to={user?.defaultRoute || "/triage"} replace />}
+        element={<Navigate to={resolveLandingRoute(user?.role, user?.defaultRoute)} replace />}
       />
       <Route
         path="*"
         element={
           <Navigate
-            to={user ? user.defaultRoute || "/triage" : "/login"}
+            to={user ? resolveLandingRoute(user.role, user.defaultRoute) : "/login"}
             replace
           />
         }

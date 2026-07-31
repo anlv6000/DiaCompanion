@@ -15,7 +15,7 @@ import {
   diagnosesApi,
   triageApi,
   prescriptionsApi,
-  appointmentsApi,
+  receptionApi,
   recheckApi,
   monitoringApi,
   engagementApi,
@@ -56,7 +56,7 @@ interface DataValue {
   diagnoses: ReturnType<typeof buildDiagnoses>;
   triage: ReturnType<typeof buildTriage>;
   prescriptions: ReturnType<typeof buildPrescriptions>;
-  appointments: ReturnType<typeof buildAppointments>;
+  reception: ReturnType<typeof buildReception>;
   recheck: ReturnType<typeof buildRecheck>;
   monitoring: ReturnType<typeof buildMonitoring>;
   engagement: ReturnType<typeof buildEngagement>;
@@ -88,6 +88,7 @@ const buildPatients = () => ({
 });
 const buildVisits = () => ({
   list: (p: Record<string, unknown>) => visitsApi.list(p),
+  assignedToMe: (p: Record<string, unknown>) => visitsApi.assignedToMe(p),
   get: (id: number) => visitsApi.get(id),
   create: (b: T.CreateVisitRequest) => visitsApi.create(b),
   close: (id: number, b: T.CloseVisitRequest) => visitsApi.close(id, b),
@@ -132,15 +133,15 @@ const buildPrescriptions = () => ({
   adherence: (patientId: number, days?: number) =>
     prescriptionsApi.adherence(patientId, days),
 });
-const buildAppointments = () => ({
-  list: (p: Record<string, unknown>) => appointmentsApi.list(p),
-  slots: (date: string, doctorId?: number | null) =>
-    appointmentsApi.slots(date, doctorId),
-  create: (b: T.CreateAppointmentRequest) => appointmentsApi.create(b),
-  reschedule: (id: number, scheduledAt: string) =>
-    appointmentsApi.reschedule(id, scheduledAt),
-  cancel: (id: number, reason?: string) => appointmentsApi.cancel(id, reason),
-  status: (id: number, status: number) => appointmentsApi.status(id, status),
+const buildReception = () => ({
+  onDuty: (date?: string, shift?: number) => receptionApi.onDuty(date, shift),
+  listShifts: (doctorId?: number) => receptionApi.listShifts(doctorId),
+  createShift: (b: T.CreateDoctorShiftRequest) => receptionApi.createShift(b),
+  createShiftsBatch: (b: T.CreateDoctorShiftsBatchRequest) =>
+    receptionApi.createShiftsBatch(b),
+  setShiftActive: (id: number, active: boolean) =>
+    receptionApi.setShiftActive(id, active),
+  deleteShift: (id: number) => receptionApi.deleteShift(id),
 });
 const buildRecheck = () => ({
   me: () => recheckApi.me(),
@@ -242,7 +243,7 @@ export function DataProvider({ children }: { children?: ReactNode }) {
       diagnoses: buildDiagnoses(),
       triage: buildTriage(),
       prescriptions: buildPrescriptions(),
-      appointments: buildAppointments(),
+      reception: buildReception(),
       recheck: buildRecheck(),
       monitoring: buildMonitoring(),
       engagement: buildEngagement(),
