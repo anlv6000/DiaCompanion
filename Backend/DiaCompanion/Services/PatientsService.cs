@@ -316,11 +316,55 @@ public class PatientsService : BaseService, IPatientsService
         var pid = RequireMyPatientId(_me);
         var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
 
-        // Bệnh nhân KHÔNG được sửa tên, ngày sinh, loại đái tháo đường hay
-        // số điện thoại: đó là dữ liệu định danh và lâm sàng do phòng khám quản lý.
+        if (await _repository.Patients.AnyAsync(p => p.Phone == req.Phone.Trim()))
+        {
+            throw AppException.Conflict(
+                Msg.PhoneTaken,
+                "Số điện thoại này đã được dùng cho một hồ sơ khác. " +
+                "Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
+        }
+
+        if (
+            await _repository.Users.AnyAsync(
+                u => u.Phone == req.Phone.Trim() && u.IsActive))
+        {
+            throw AppException.Conflict(
+                Msg.PhoneTaken,
+                "Số điện thoại này đã có tài khoản đang hoạt động.");
+        }
+
+        if (req.BaselineHbA1c is decimal hba1c &&
+    (hba1c < 3 || hba1c > 20))
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
+        }
+
+        var phone = req.Phone.Trim();
+
+        var before = new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c };
+
+        p.FullName = req.FullName.Trim();
+        p.Gender = req.Gender;
+        p.DateOfBirth = req.DateOfBirth;
+        p.Phone = phone;
         p.Address = req.Address;
+        p.DiabetesType = req.DiabetesType;
+        p.DiabetesDurationYears = req.DiabetesDurationYears;
+        p.BaselineHbA1c = req.BaselineHbA1c;
         p.UpdatedAt = DateTime.UtcNow;
 
+        // Tài khoản đăng nhập phải đi theo, nếu không bệnh nhân đổi số xong
+        // sẽ không đăng nhập được nữa.
+        if (p.UserId is int uid)
+        {
+            var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
+            if (u is not null) { u.Phone = phone; u.FullName = p.FullName; u.UpdatedAt = DateTime.UtcNow; }
+        }
+
+        await _audit.LogAsync(AuditAction.PatientUpdate, nameof(Patient), p.Id, before,
+          new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
         await _repository.SaveChangesAsync();
         return Ok(new { message = "Cập nhật thông tin thành công." });
     }
