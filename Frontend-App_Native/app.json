@@ -30,7 +30,7 @@
       ]
     },
     "extra": {
-      "apiBase": "https://localhost:53060"
+      "apiBase": "https://localhost:55403"
     },
     "icon": "./assets/icon.png",
     "web": {
