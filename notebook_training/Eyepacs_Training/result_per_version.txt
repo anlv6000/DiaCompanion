@@ -1,3 +1,4 @@
 version 1: qwk on kaggle: 0.55905
 version 2: qwk on kaggle: 0.47660
 version 3: qwk on kaggle: 0.68273
+version 4: qwk on kaggle: 0.83778

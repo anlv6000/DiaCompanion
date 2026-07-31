@@ -12,6 +12,7 @@ public static class Roles
     public const string DoctorOnly = "Doctor";
     public const string DoctorOrAdmin = "Admin,Doctor";
     public const string DoctorOrReception = "Doctor,Receptionist";
+
     public const string Staff = "Admin,Doctor,Nurse";
     public const string FrontDesk = "Admin,Doctor,Nurse,Receptionist";
     public const string FrontDeskOrAdmin = "Admin,Receptionist";
