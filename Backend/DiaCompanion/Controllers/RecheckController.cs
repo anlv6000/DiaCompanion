@@ -49,7 +49,7 @@ public class RecheckController : BaseApiController
     /// được coi là chưa quay lại khi chưa có lượt khám nào mới hơn lượt đã đóng.
     /// </summary>
     [HttpGet("due")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PagedResult<RecheckDto>>> Due(
     [FromQuery] bool overdueOnly = false,
     [FromQuery] int withinDays = 30,

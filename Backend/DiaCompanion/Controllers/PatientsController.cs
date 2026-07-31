@@ -20,7 +20,7 @@ public class PatientsController : BaseApiController
     /// Tìm bỏ dấu: "nguyen van an" khớp "Nguyễn Văn Ấn" (QT-15).
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PagedResult<PatientListItemDto>>> Search(
     [FromQuery] string? q,
     [FromQuery] byte? diabetesType,
@@ -33,7 +33,7 @@ public class PatientsController : BaseApiController
 
     /// <summary>UC-13 — chi tiết hồ sơ.</summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PatientDetailDto>> Get(int id)
     {
         return await _service.Get(id);
@@ -57,7 +57,7 @@ public class PatientsController : BaseApiController
     /// bài toán liên kết nhầm hồ sơ.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<CreatePatientResponse>> Create(CreatePatientRequest req)
     {
         return await _service.Create(req);
@@ -87,7 +87,7 @@ public class PatientsController : BaseApiController
     /// Dùng khi bệnh nhân quên mật khẩu và không nhận được OTP.
     /// </summary>
     [HttpPost("{id:int}/reissue-credentials")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<TempCredentialResponse>> ReissueCredentials(int id)
     {
         return await _service.ReissueCredentials(id);

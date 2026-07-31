@@ -8,7 +8,8 @@ namespace DiaCompanion.Api.Services;
 public interface IVisitsService
 {
     Task<ActionResult<PagedResult<VisitDto>>> List(
-        [FromQuery] int? patientId, [FromQuery] byte? status, [FromQuery] PageQuery page);
+        int? patientId, int? doctorId, DateOnly? from, DateOnly? to,
+        byte? status, PageQuery page);
     Task<ActionResult<VisitDto>> Get(int id);
     Task<ActionResult<VisitDto>> Create(CreateVisitRequest req);
     Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req);

@@ -22,16 +22,51 @@ public class VisitsService : BaseService, IVisitsService
                             IVoidService voidSvc, IConfigService cfg, INotificationService notify, IClinicClock clock)
     { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _notify = notify; _clock = clock; }
 
-    /// <summary>Danh sách lượt khám của một bệnh nhân.</summary>
+    /// <summary>
+    /// Danh sách lượt khám dùng chung cho danh sách toàn quầy và lịch sử bệnh nhân.
+    /// Chỉ lọc theo bác sĩ khi doctorId được truyền rõ ràng. Trang "Lượt khám của tôi"
+    /// dùng endpoint riêng, nơi controller lấy doctorId từ JWT.
+    /// </summary>
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
-        [FromQuery] int? patientId, [FromQuery] byte? status, [FromQuery] PageQuery page)
+        int? patientId, int? doctorId, DateOnly? from, DateOnly? to,
+        byte? status, PageQuery page)
     {
+        if (from is DateOnly fromDate && to is DateOnly toDate && fromDate > toDate)
+            throw AppException.BadRequest(Msg.InvalidData,
+                "Ngày bắt đầu không được lớn hơn ngày kết thúc.");
+
         var query = _repository.Visits.AsNoTracking();
-        if (patientId is int pid) query = query.Where(v => v.PatientId == pid);
-        if (status is byte st) query = query.Where(v => (byte)v.Status == st);
+
+        if (patientId is int pid)
+            query = query.Where(v => v.PatientId == pid);
+
+        // Chỉ lọc bác sĩ khi client/endpoint chuyên biệt truyền doctorId.
+        // Vì vậy tab lịch sử của bệnh nhân (chỉ truyền patientId) luôn thấy đầy đủ
+        // các lượt, kể cả do nhiều bác sĩ khác nhau phụ trách.
+        if (doctorId is int did)
+            query = query.Where(v => v.DoctorId == did);
+
+        if (status is byte st)
+            query = query.Where(v => (byte)v.Status == st);
+
+        // VisitDate lưu UTC. Chuyển biên ngày địa phương sang UTC trước khi lọc.
+        if (from is DateOnly f)
+        {
+            var fromUtc = _clock.ToUtc(f.ToDateTime(TimeOnly.MinValue));
+            query = query.Where(v => v.VisitDate >= fromUtc);
+        }
+
+        if (to is DateOnly t)
+        {
+            // Dùng mốc đầu ngày kế tiếp và toán tử < để không phụ thuộc độ chính
+            // xác phần thập phân của SQL Server DateTime/DateTime2.
+            var toExclusiveUtc = _clock.ToUtc(t.AddDays(1).ToDateTime(TimeOnly.MinValue));
+            query = query.Where(v => v.VisitDate < toExclusiveUtc);
+        }
 
         var total = await query.CountAsync();
         var items = await query.OrderByDescending(v => v.VisitDate)
+            .ThenByDescending(v => v.Id)
             .Skip(page.Skip).Take(page.PageSize)
             .Select(MapVisit).ToListAsync();
 
@@ -87,6 +122,26 @@ public class VisitsService : BaseService, IVisitsService
 
         _repository.Visits.Add(visit);
         await _repository.SaveChangesAsync();
+
+        // Sau lần SaveChanges đầu tiên visit đã có Id, lúc này mới tạo thông báo
+        // để linkEntityId trỏ chính xác tới lượt khám vừa được giao.
+        if (visit.DoctorId is int assignedDoctorId)
+        {
+            var patientName = await _repository.Patients.AsNoTracking()
+                .Where(p => p.Id == visit.PatientId)
+                .Select(p => p.FullName)
+                .FirstOrDefaultAsync() ?? "bệnh nhân";
+
+            _notify.Push(
+                assignedDoctorId,
+                NotificationType.Visit,
+                "Lượt khám mới được giao",
+                $"Bạn được giao lượt khám cho {patientName}.",
+                linkEntity: nameof(Visit),
+                linkEntityId: visit.Id);
+
+            await _repository.SaveChangesAsync();
+        }
 
         var dto = await GetDtoAsync(visit.Id);
         dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
@@ -258,6 +313,41 @@ public class VisitsService : BaseService, IVisitsService
     /// <summary>UC-21 — thu hồi lượt khám (lan sang ảnh, kết quả AI, review, đơn thuốc).</summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
+        var visit = await _repository.Visits.AsNoTracking()
+            .FirstOrDefaultAsync(v => v.Id == id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+        if (_me.Role == UserRole.Doctor)
+        {
+            // Bác sĩ chỉ được thu hồi lượt do chính mình phụ trách.
+            if (visit.DoctorId != _me.RequireId())
+                throw AppException.Forbidden(Msg.Forbidden,
+                    "Bạn không phải bác sĩ phụ trách lượt khám này nên không thể thu hồi.");
+        }
+        else if (_me.Role == UserRole.Receptionist)
+        {
+            // Lễ tân chỉ được hủy lượt tạo nhầm khi lượt còn đang mở và chưa phát
+            // sinh dữ liệu lâm sàng. Khi đã có ảnh hoặc đơn thuốc, chỉ bác sĩ phụ
+            // trách mới được phép thực hiện thao tác lan truyền này.
+            if (visit.Status != VisitStatus.InProgress)
+                throw AppException.Forbidden(Msg.Forbidden,
+                    "Lượt khám đã hoàn tất, chỉ bác sĩ phụ trách mới được thu hồi.");
+
+            var hasClinicalData = await _repository.FundusImages
+                .AnyAsync(i => i.VisitId == id)
+                || await _repository.Prescriptions
+                    .AnyAsync(p => p.VisitId == id);
+
+            if (hasClinicalData)
+                throw AppException.Forbidden(Msg.Forbidden,
+                    "Lượt khám đã có dữ liệu lâm sàng, chỉ bác sĩ phụ trách mới được thu hồi.");
+        }
+        else
+        {
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Bạn không có quyền thu hồi lượt khám.");
+        }
+
         await _void.VoidVisitAsync(id, req.Reason);
         return Ok(new { message = "Đã thu hồi lượt khám và các bản ghi liên quan." });
     }
@@ -384,8 +474,8 @@ public class VisitsService : BaseService, IVisitsService
             PatientId = patientId,
             VisitId = req.VisitId,
             Rating = req.Rating,
-            Tags = req.Tags,
-            Comment = req.Comment.Trim()
+            Tags = string.IsNullOrWhiteSpace(req.Tags) ? null : req.Tags.Trim(),
+            Comment = string.IsNullOrWhiteSpace(req.Comment) ? null : req.Comment.Trim()
         };
 
         _repository.Feedbacks.Add(feedback);

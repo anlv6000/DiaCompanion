@@ -28,7 +28,9 @@ public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Cancel
 public enum MetricType : byte { Glucose = 1, HbA1c = 2, SystolicBp = 3, DiastolicBp = 4 }
 public enum MetricContext : byte { BeforeMeal = 1, AfterMeal = 2}
 public enum SymptomSeverity : byte { Mild = 1, Moderate = 2, Severe = 3 }
-public enum NotificationType : byte { Recheck = 1, Medication = 2, Result = 3, Metric = 4, Blog = 5 }
+
+public enum NotificationType : byte { Recheck = 1, Medication = 2, Result = 3, Metric = 4, Blog = 5, Visit = 6 }
+
 public enum BlogCategory : byte { Knowledge = 1, Nutrition = 2, Warning = 3 }
 public enum OtpPurpose : byte { Login = 1, ResetPassword = 2 }
 

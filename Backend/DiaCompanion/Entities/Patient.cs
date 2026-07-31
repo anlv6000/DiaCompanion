@@ -14,7 +14,7 @@ public class Patient : IVoidable
     /// <summary>QT-15: bản bỏ dấu, sinh tự động khi lưu. Có index riêng.</summary>
     [MaxLength(200)] public string? FullNameSearch { get; set; }
 
-    public byte? Gender { get; set; }
+    public byte Gender { get; set; }
     public DateOnly DateOfBirth { get; set; }
     [Required, MaxLength(20)] public string Phone { get; set; } = "";
     [MaxLength(300)] public string? Address { get; set; }

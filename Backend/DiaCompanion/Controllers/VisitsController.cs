@@ -19,19 +19,39 @@ public class VisitsController : BaseApiController
     }
 
 
-    /// <summary>Danh sách lượt khám của một bệnh nhân.</summary>
+    /// <summary>
+    /// Danh sách lượt khám dùng cho danh sách toàn quầy và tab lịch sử của hồ sơ bệnh nhân.
+    /// Không tự giới hạn theo bác sĩ đang đăng nhập; bộ lọc doctorId chỉ áp dụng khi client gửi.
+    /// </summary>
     [HttpGet]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
-    [FromQuery] int? patientId, [FromQuery] byte? status, [FromQuery] PageQuery page)
+        [FromQuery] int? patientId, [FromQuery] int? doctorId,
+        [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromQuery] byte? status, [FromQuery] PageQuery page)
     {
-        return await _service.List(patientId, status, page);
+        return await _service.List(patientId, doctorId, from, to, status, page);
+    }
+
+
+    /// <summary>
+    /// Danh sách lượt khám được giao cho chính bác sĩ đang đăng nhập.
+    /// Endpoint riêng để không làm ảnh hưởng danh sách toàn quầy và lịch sử đầy đủ của bệnh nhân.
+    /// </summary>
+    [HttpGet("assigned-to-me")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<PagedResult<VisitDto>>> AssignedToMe(
+        [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromQuery] byte? status, [FromQuery] PageQuery page)
+    {
+        var doctorId = _me.RequireId();
+        return await _service.List(null, doctorId, from, to, status, page);
     }
 
 
     /// <summary>UC-19 — chi tiết lượt khám kèm ảnh, kết quả AI và review.</summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<VisitDto>> Get(int id)
     {
         return await _service.Get(id);
@@ -61,7 +81,7 @@ public class VisitsController : BaseApiController
 
     /// <summary>UC-21 — thu hồi lượt khám (lan sang ảnh, kết quả AI, review, đơn thuốc).</summary>
     [HttpPut("{id:int}/void")]
-    [Authorize(Roles = Roles.DoctorOnly)]
+    [Authorize(Roles = Roles.DoctorOrReception)]
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);
@@ -95,18 +115,18 @@ public class VisitsController : BaseApiController
     }
 
 
-    [HttpPost("feedback")]
-    [Authorize(Roles = Roles.Patient)]
-    public async Task<IActionResult> CreateFeedback(
-    [FromBody] CreateFeedbackRequest req)
-    {
-        var userId = _me.RequireId();
-
-        await _service.CreateAsync(userId, req);
-
-        return Ok(new
+        [HttpPost("feedback")]
+        [Authorize(Roles = Roles.Patient)]
+        public async Task<IActionResult> CreateFeedback(
+        [FromBody] CreateFeedbackRequest req)
         {
-            message = "Cảm ơn bạn đã gửi phản hồi."
-        });
-    }
+            var userId = _me.RequireId();
+
+            await _service.CreateAsync(userId, req);
+
+            return Ok(new
+            {
+                message = "Cảm ơn bạn đã gửi phản hồi."
+            });
+        }
 }
