@@ -19,10 +19,14 @@ import {
 import { genders, diabetesTypes, grades, label } from "@/lib/enums";
 import { fmtDate } from "@/lib/format";
 import { useToast } from "@/contexts/ToastContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { can } from "@/lib/permissions";
 import type { CreatePatientRequest, TempCredentialResponse } from "@/types/api";
 
 export function PatientsPage() {
   const data = useData();
+  const { user } = useAuth();
+  const isReceptionist = user?.role === "Receptionist";
   const [q, setQ] = useState("");
   const dq = useDebounce(q);
   const [type, setType] = useState("");
@@ -46,14 +50,21 @@ export function PatientsPage() {
     <>
       <PageHeader
         title="Bệnh nhân"
-        subtitle="Tìm kiếm không phân biệt dấu theo họ tên, mã hoặc số điện thoại."
+        subtitle={
+          isReceptionist
+            ? "Chỉ hiển thị thông tin cơ bản để hỗ trợ tiếp đón và tạo lượt khám."
+            : "Tìm kiếm không phân biệt dấu theo họ tên, mã hoặc số điện thoại."
+        }
         actions={
-          <ActionLink to="/patients/new">
-            <Button kind="primary">
-              <Icon name="plus" />
-              Tạo bệnh nhân
-            </Button>
-          </ActionLink>
+          /* Tạo hồ sơ bệnh nhân là nghiệp vụ LỄ TÂN. Staff không thấy nút. */
+          can.createPatient(user?.role) ? (
+            <ActionLink to="/reception/patients/new">
+              <Button kind="primary">
+                <Icon name="plus" />
+                Tạo bệnh nhân
+              </Button>
+            </ActionLink>
+          ) : undefined
         }
       />
       <Panel>
@@ -121,18 +132,30 @@ export function PatientsPage() {
           onRetry={list.reload}
         >
           <DataTable
-            headers={[
-              "Mã",
-              "Họ tên",
-              "Tuổi",
-              "Giới tính",
-              "Số điện thoại",
-              "ĐTĐ",
-              "DR gần nhất",
-              "Lần khám gần nhất",
-              "Tài khoản",
-              "Hồ sơ",
-            ]}
+            headers={
+              isReceptionist
+                ? [
+                    "Mã",
+                    "Họ tên",
+                    "Tuổi",
+                    "Giới tính",
+                    "Số điện thoại",
+                    "Lần khám gần nhất",
+                    "Hồ sơ",
+                  ]
+                : [
+                    "Mã",
+                    "Họ tên",
+                    "Tuổi",
+                    "Giới tính",
+                    "Số điện thoại",
+                    "ĐTĐ",
+                    "DR gần nhất",
+                    "Lần khám gần nhất",
+                    "Tài khoản",
+                    "Hồ sơ",
+                  ]
+            }
           >
             {list.data?.items.map((p) => (
               <tr key={p.id}>
@@ -143,17 +166,21 @@ export function PatientsPage() {
                 <td className="mono">{p.age}</td>
                 <td>{label(genders, p.gender)}</td>
                 <td className="mono">{p.phone}</td>
-                <td>{label(diabetesTypes, p.diabetesType)}</td>
-                <td>
-                  <GradeBadge grade={p.latestDrGrade} />
-                </td>
+                {!isReceptionist && <td>{label(diabetesTypes, p.diabetesType)}</td>}
+                {!isReceptionist && (
+                  <td>
+                    <GradeBadge grade={p.latestDrGrade} />
+                  </td>
+                )}
                 <td className="mono">{fmtDate(p.latestVisitDate)}</td>
-                <td>
-                  <StatusBadge
-                    text={p.hasAccount ? "Đã cấp" : "Chưa cấp"}
-                    kind={p.hasAccount ? "ok" : "watch"}
-                  />
-                </td>
+                {!isReceptionist && (
+                  <td>
+                    <StatusBadge
+                      text={p.hasAccount ? "Đã cấp" : "Chưa cấp"}
+                      kind={p.hasAccount ? "ok" : "watch"}
+                    />
+                  </td>
+                )}
                 <td>
                   <ActionLink to={`/patients/${p.id}`}>Mở hồ sơ →</ActionLink>
                 </td>

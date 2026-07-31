@@ -37,6 +37,10 @@ export const query = (params: Record<string, unknown>) => {
   const s = p.toString();
   return s ? `?${s}` : "";
 };
+export function normalizeText(value?: string | null) {
+  return value == null ? value : value.normalize("NFD");
+}
+
 export const initials = (name?: string | null) =>
   (name || "DC")
     .split(/\s+/)

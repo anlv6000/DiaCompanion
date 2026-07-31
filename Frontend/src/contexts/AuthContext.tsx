@@ -9,7 +9,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { authApi } from "@/api/services";
 import { tokenStore } from "@/api/client";
-import { STORAGE_KEYS, DEFAULT_ROUTE } from "@/config";
+import { STORAGE_KEYS } from "@/config";
+import { resolveLandingRoute } from "@/lib/permissions";
 import type { LoginResponse, Role, ChangePasswordRequest } from "@/types/api";
 
 /* Phiên đăng nhập. Console bệnh viện: chỉ nhân viên, đăng nhập bằng email.
@@ -56,7 +57,7 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
       navigate(
         res.mustChangePassword
           ? "/change-password"
-          : res.defaultRoute || DEFAULT_ROUTE,
+          : resolveLandingRoute(res.role, res.defaultRoute),
         { replace: true },
       );
       return res;

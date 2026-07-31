@@ -31,6 +31,20 @@ export class ApiError extends Error {
   }
 }
 
+function normalizeJson(value: unknown): unknown {
+  if (typeof value === "string") return value.normalize("NFC");
+  if (Array.isArray(value)) return value.map(normalizeJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        normalizeJson(v),
+      ]),
+    );
+  }
+  return value;
+}
+
 async function parseError(res: Response): Promise<never> {
   let body: ApiMessage | undefined;
   try {
@@ -52,17 +66,19 @@ export async function request<T>(
   const headers = new Headers(init.headers || {});
   const token = tokenStore.get();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (
-    init.body &&
-    !(init.body instanceof FormData) &&
-    !headers.has("Content-Type")
-  ) {
+
+  let body: BodyInit | null | undefined = init.body;
+  if (body && !(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  if (body && !(body instanceof FormData) && typeof body !== "string") {
+    body = JSON.stringify(normalizeJson(body));
   }
 
   let res: Response;
   try {
-    res = await fetch(API_BASE + path, { ...init, headers });
+    res = await fetch(API_BASE + path, { ...init, headers, body });
   } catch {
     throw new ApiError(
       0,
@@ -77,7 +93,10 @@ export async function request<T>(
   if (res.status === 204) return undefined as T;
 
   const type = res.headers.get("content-type") || "";
-  if (type.includes("application/json")) return (await res.json()) as T;
+  if (type.includes("application/json")) {
+    const json = await res.json();
+    return normalizeJson(json) as T;
+  }
   return (await res.text()) as T;
 }
 
