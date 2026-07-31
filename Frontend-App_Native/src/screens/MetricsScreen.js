@@ -45,7 +45,13 @@ export default function MetricsScreen({ route }) {
     ]);
   };
 
-  const chartPoints = (summary.data?.byDay || []).map((d) => ({ x: d.date, y: d.avg }));
+  // Backend trả cấu trúc lồng: { glucose:{average, abnormalCount, chart:[{date,value}]},
+  // hba1c:{latest}, bloodPressure:{...} }. Map đúng field để vẽ biểu đồ.
+  const glucose = summary.data?.glucose || {};
+  const chartPoints = (glucose.chart || []).map((p) => ({
+    x: p.date,
+    y: Number(p.value),
+  }));
 
   const saved = () => { setEditing(null); list.reload(); summary.reload(); };
 
@@ -58,9 +64,9 @@ export default function MetricsScreen({ route }) {
           <LoadState loading={summary.loading} error={summary.error} onRetry={summary.reload}>
             <MiniChart points={chartPoints} unit=" mmol/L" />
             <View style={styles.summaryRow}>
-              <Summary label="Trung bình" value={num(summary.data?.glucoseAvg)} unit="mmol/L" />
-              <Summary label="Bất thường" value={summary.data?.glucoseAbnormalCount ?? 0} unit="lần" />
-              <Summary label="HbA1c gần nhất" value={num(summary.data?.latestHbA1c)} unit="%" />
+              <Summary label="Trung bình" value={num(glucose.average)} unit="mmol/L" />
+              <Summary label="Bất thường" value={glucose.abnormalCount ?? 0} unit="lần" />
+              <Summary label="HbA1c gần nhất" value={num(summary.data?.hba1c?.latest?.value)} unit="%" />
             </View>
           </LoadState>
         </Card>

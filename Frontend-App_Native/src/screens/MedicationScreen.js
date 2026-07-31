@@ -123,7 +123,8 @@ export default function MedicationScreen() {
   const onRefresh = async () => { setRefreshing(true); await meds.reload(); setRefreshing(false); };
 
   return (
-    <Screen refreshing={refreshing} onRefresh={onRefresh}>
+    <>
+      <Screen refreshing={refreshing} onRefresh={onRefresh}>
       {/* Bật nhắc kiểu báo thức */}
       <Card style={styles.reminderCard}>
         <View style={styles.reminderLeft}>

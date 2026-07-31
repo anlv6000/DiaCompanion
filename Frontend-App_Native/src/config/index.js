@@ -10,7 +10,7 @@ import Constants from "expo-constants";
  */
 const fromConfig = Constants.expoConfig?.extra?.apiBase;
 
-export const API_BASE = ("https://localhost:53060").replace(/\/$/, "");
+export const API_BASE = ("https://localhost:55403").replace(/\/$/, "");
 
 // Khoá lưu phiên trong AsyncStorage.
 export const STORAGE_KEYS = {
