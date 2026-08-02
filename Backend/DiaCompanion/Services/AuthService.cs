@@ -121,8 +121,6 @@ public class AuthService : BaseService, IAuthService
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-
-
     /// <summary>UC-05 — đổi mật khẩu khi đã đăng nhập.</summary>
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest req)
     {
@@ -131,13 +129,8 @@ public class AuthService : BaseService, IAuthService
         var id = _me.RequireId();
         var user = await _repository.Users.FirstAsync(u => u.Id == id);
 
-        if(!user.MustChangePassword)
-        {
-            if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
-                throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
-        }
-
-
+        if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
+            throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
         user.PasswordHash = _hasher.Hash(req.NewPassword);
         // Gỡ cờ mật khẩu tạm — đây là điều kiện để bệnh nhân vào được hồ sơ
         user.MustChangePassword = false;

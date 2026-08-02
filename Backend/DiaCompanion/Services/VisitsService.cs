@@ -102,13 +102,13 @@ public class VisitsService : BaseService, IVisitsService
             throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
 
         var localNow = _clock.LocalNow;
-        var currentShift = ResolveShift(localNow);
+        //var currentShift = ResolveShift(localNow);
         var dayOfWeek = (byte)localNow.DayOfWeek;
 
         var isDoctorOnDuty = await _repository.DoctorShifts.AnyAsync(s =>
             s.DoctorId == req.DoctorId &&
             s.DayOfWeek == dayOfWeek &&
-            s.Shift == currentShift &&
+            //s.Shift == currentShift &&
             s.IsActive);
         if (!isDoctorOnDuty)
             throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
@@ -581,18 +581,18 @@ public class VisitsService : BaseService, IVisitsService
             .SelectMany(i => i.Diagnoses)
             .Count(d => !d.IsVoided && !d.Reviews.Any(r => !r.IsVoided))
     };
-    private static ShiftType ResolveShift(DateTime localNow)
-    {
-        var time = localNow.TimeOfDay;
+    //private static ShiftType ResolveShift(DateTime localNow)
+    //{
+    //    var time = localNow.TimeOfDay;
 
-        if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
-            return ShiftType.Morning;
+    //    if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
+    //        return ShiftType.Morning;
 
-        if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
-            return ShiftType.Afternoon;
+    //    if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
+    //        return ShiftType.Afternoon;
 
-        throw AppException.BadRequest(
-            Msg.InvalidData,
-            "Hiện tại không nằm trong thời gian tiếp nhận khám.");
-    }
+    //    throw AppException.BadRequest(
+    //        Msg.InvalidData,
+    //        "Hiện tại không nằm trong thời gian tiếp nhận khám.");
+    //}
 }
