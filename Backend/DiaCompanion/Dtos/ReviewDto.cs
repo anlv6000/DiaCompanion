@@ -14,4 +14,5 @@ public class ReviewDto
     public string? Reason { get; set; }
     public string DoctorName { get; set; } = "";
     public DateTime CreatedAt { get; set; }
+    public string RowVersion { get; set; } = "";
 }

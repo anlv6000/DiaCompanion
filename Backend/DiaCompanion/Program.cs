@@ -83,7 +83,6 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.ContentType = "application/json";
-
         await context.HttpContext.Response.WriteAsJsonAsync(
             new
             {

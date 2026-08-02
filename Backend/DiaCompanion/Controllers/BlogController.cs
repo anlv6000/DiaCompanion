@@ -65,9 +65,12 @@ public class BlogController : BaseApiController
     /// <summary>UC-62 — đăng hoặc gỡ bài.</summary>
     [HttpPut("{id:int}/publish")]
     [Authorize(Roles = Roles.DoctorOrAdmin)]
-    public async Task<IActionResult> Publish(int id, [FromQuery] bool value = true)
+    public async Task<IActionResult> Publish(
+        int id,
+        ConcurrencyRequest req,
+        [FromQuery] bool value = true)
     {
-        return await _service.Publish(id, value);
+        return await _service.Publish(id, value, req);
     }
 
 
@@ -78,8 +81,8 @@ public class BlogController : BaseApiController
     /// </summary>
     [HttpDelete("{id:int}")]
     [Authorize(Roles = Roles.DoctorOrAdmin)]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(int id, [FromQuery] string rowVersion)
     {
-        return await _service.Delete(id);
+        return await _service.Delete(id, rowVersion);
     }
 }

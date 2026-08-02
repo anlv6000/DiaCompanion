@@ -4,7 +4,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class User
+public class User : IHasRowVersion
 {
     public int Id { get; set; }                       // QT-1: INT IDENTITY, không dùng GUID clustered
     public Guid PublicId { get; set; } = Guid.NewGuid();
@@ -29,4 +29,6 @@ public class User
     public DateTime? UpdatedAt { get; set; }
 
     public Patient? Patient { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

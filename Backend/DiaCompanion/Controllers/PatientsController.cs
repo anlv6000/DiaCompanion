@@ -66,7 +66,7 @@ public class PatientsController : BaseApiController
 
     /// <summary>UC-15 — cập nhật hồ sơ.</summary>
     [HttpPut("{id:int}")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.StaffPatient)]
     public async Task<ActionResult<PatientDetailDto>> Update(int id, UpdatePatientRequest req)
     {
         return await _service.Update(id, req);

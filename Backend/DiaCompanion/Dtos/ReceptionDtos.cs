@@ -24,6 +24,8 @@ public class DoctorShiftDto
     public byte Shift { get; set; }          // 1 = Sáng, 2 = Chiều
     public string ShiftLabel { get; set; } = "";
     public bool IsActive { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }
 
 /// <summary>Tạo một dòng ca trực.</summary>

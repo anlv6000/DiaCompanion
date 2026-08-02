@@ -7,4 +7,5 @@ public class UpdateStaffRequest
 {
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
     public string? LicenseNo { get; set; }
+    [Required] public string RowVersion { get; set; } = "";
 }

@@ -58,7 +58,8 @@ public class MonitoringService : BaseService, IMonitoringService
             RecordedAtUtc = m.RecordedAtUtc,
             RecordedLocalDate = m.RecordedLocalDate,
             Note = m.Note,
-            IsAbnormal = m.IsAbnormal
+            IsAbnormal = m.IsAbnormal,
+            RowVersion = m.ToRowVersion()
         }).ToList();
 
         var last = rows.LastOrDefault();
@@ -149,7 +150,8 @@ public class MonitoringService : BaseService, IMonitoringService
                 RecordedAtUtc = systolicMetric.RecordedAtUtc,
                 RecordedLocalDate = systolicMetric.RecordedLocalDate,
                 Note = systolicMetric.Note,
-                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal
+                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal,
+                RowVersion = systolicMetric.ToRowVersion()
             });
         }
 
@@ -190,7 +192,8 @@ public class MonitoringService : BaseService, IMonitoringService
             RecordedAtUtc = metric.RecordedAtUtc,
             RecordedLocalDate = metric.RecordedLocalDate,
             Note = metric.Note,
-            IsAbnormal = metric.IsAbnormal
+            IsAbnormal = metric.IsAbnormal,
+            RowVersion = metric.ToRowVersion()
         });
     }
     /// <summary>UC-47 — sửa chỉ số đã nhập.</summary>
@@ -199,6 +202,7 @@ public class MonitoringService : BaseService, IMonitoringService
         var m = await _repository.HealthMetrics.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
+        _repository.ApplyOriginalRowVersion(m, req.RowVersion);
 
         if (m.MetricType == MetricType.HbA1c)
             throw AppException.BadRequest(Msg.Forbidden,
@@ -273,7 +277,8 @@ public class MonitoringService : BaseService, IMonitoringService
                 RecordedAtUtc = systolicMetric.RecordedAtUtc,
                 RecordedLocalDate = systolicMetric.RecordedLocalDate,
                 Note = systolicMetric.Note,
-                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal
+                IsAbnormal = systolicMetric.IsAbnormal || diastolicMetric.IsAbnormal,
+                RowVersion = systolicMetric.ToRowVersion()
             });
         }
 
@@ -315,7 +320,8 @@ public class MonitoringService : BaseService, IMonitoringService
             RecordedAtUtc = m.RecordedAtUtc,
             RecordedLocalDate = m.RecordedLocalDate,
             Note = m.Note,
-            IsAbnormal = m.IsAbnormal
+            IsAbnormal = m.IsAbnormal,
+            RowVersion = m.ToRowVersion()
         });
     }
 
@@ -323,11 +329,12 @@ public class MonitoringService : BaseService, IMonitoringService
     /// UC-47 — xoá chỉ số. XOÁ MỀM: bản ghi ẩn khỏi biểu đồ nhưng vẫn nằm trong
     /// CSDL để bác sĩ đối chiếu nếu cần (QT-5).
     /// </summary>
-    public async Task<IActionResult> DeleteMetric(int id)
+    public async Task<IActionResult> DeleteMetric(int id, ConcurrencyRequest req)
     {
         var m = await _repository.HealthMetrics.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
+        _repository.ApplyOriginalRowVersion(m, req.RowVersion);
 
         if (m.MetricType == MetricType.HbA1c)
             throw AppException.BadRequest(Msg.Forbidden,
@@ -511,19 +518,12 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = ResolvePatientId(patientId);
         var from = _clock.LocalToday.AddDays(-days);
 
-        var items = await _repository.LifestyleLogs.AsNoTracking()
+        var rows = await _repository.LifestyleLogs.AsNoTracking()
             .Where(l => l.PatientId == pid && l.LogLocalDate >= from)
             .OrderByDescending(l => l.LogLocalDate)
-            .Select(l => new LifestyleLogDto
-            {
-                Id = l.Id,
-                LogLocalDate = l.LogLocalDate,
-                MealNote = l.MealNote,
-                MealTags = l.MealTags,
-                ExerciseMinutes = l.ExerciseMinutes,
-                ExerciseType = l.ExerciseType
-            }).ToListAsync();
+            .ToListAsync();
 
+        var items = rows.Select(MapLifestyle).ToList();
         return Ok(items);
     }
     public async Task<ActionResult<LifestyleLogDto>> CreateLifestyle(CreateLifestyleRequest req)
@@ -538,6 +538,10 @@ public class MonitoringService : BaseService, IMonitoringService
             log = new LifestyleLog { PatientId = pid, LogLocalDate = date };
             _repository.LifestyleLogs.Add(log);
         }
+        else
+        {
+            _repository.ApplyOriginalRowVersion(log, req.RowVersion);
+        }
 
         log.MealNote = req.MealNote;
         log.MealTags = req.MealTags;
@@ -546,29 +550,33 @@ public class MonitoringService : BaseService, IMonitoringService
 
         await _repository.SaveChangesAsync();
 
-        return Ok(new LifestyleLogDto
-        {
-            Id = log.Id,
-            LogLocalDate = log.LogLocalDate,
-            MealNote = log.MealNote,
-            MealTags = log.MealTags,
-            ExerciseMinutes = log.ExerciseMinutes,
-            ExerciseType = log.ExerciseType
-        });
+        return Ok(MapLifestyle(log));
     }
 
     /// <summary>UC-52 — xoá mềm nhật ký lối sống.</summary>
-    public async Task<IActionResult> DeleteLifestyle(int id)
+    public async Task<IActionResult> DeleteLifestyle(int id, ConcurrencyRequest req)
     {
         var l = await _repository.LifestyleLogs.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, l.PatientId);
+        _repository.ApplyOriginalRowVersion(l, req.RowVersion);
 
         l.IsDeleted = true;
         l.DeletedAt = DateTime.UtcNow;
         await _repository.SaveChangesAsync();
         return Ok(new { message = "Đã ẩn bản ghi." });
     }
+
+    private static LifestyleLogDto MapLifestyle(LifestyleLog log) => new()
+    {
+        Id = log.Id,
+        LogLocalDate = log.LogLocalDate,
+        MealNote = log.MealNote,
+        MealTags = log.MealTags,
+        ExerciseMinutes = log.ExerciseMinutes,
+        ExerciseType = log.ExerciseType,
+        RowVersion = log.ToRowVersion()
+    };
 
     /* ---------------------------- THUỐC ---------------------------- */
 
@@ -658,5 +666,5 @@ public class MonitoringService : BaseService, IMonitoringService
         }
 
     }
-    
+
 }

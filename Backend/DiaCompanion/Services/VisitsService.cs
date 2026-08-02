@@ -86,7 +86,7 @@ public class VisitsService : BaseService, IVisitsService
     /// <summary>UC-18 — tạo lượt khám.</summary>
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
-        
+
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
         var doctorExits = await _repository.Users.AnyAsync(
@@ -102,13 +102,13 @@ public class VisitsService : BaseService, IVisitsService
             throw AppException.BadRequest(Msg.SlotTaken, "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
 
         var localNow = _clock.LocalNow;
-        var currentShift = ResolveShift(localNow);
+        //var currentShift = ResolveShift(localNow);
         var dayOfWeek = (byte)localNow.DayOfWeek;
 
         var isDoctorOnDuty = await _repository.DoctorShifts.AnyAsync(s =>
             s.DoctorId == req.DoctorId &&
             s.DayOfWeek == dayOfWeek &&
-            s.Shift == currentShift &&
+            //s.Shift == currentShift &&
             s.IsActive);
         if (!isDoctorOnDuty)
             throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
@@ -157,6 +157,8 @@ public class VisitsService : BaseService, IVisitsService
     {
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
+
+        _repository.ApplyOriginalRowVersion(v, req.RowVersion);
 
         if (v.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
@@ -348,7 +350,7 @@ public class VisitsService : BaseService, IVisitsService
                 "Bạn không có quyền thu hồi lượt khám.");
         }
 
-        await _void.VoidVisitAsync(id, req.Reason);
+        await _void.VoidVisitAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi lượt khám và các bản ghi liên quan." });
     }
 
@@ -576,23 +578,25 @@ public class VisitsService : BaseService, IVisitsService
         Referral = (byte?)v.Referral,
         RecheckMonths = v.RecheckMonths,
         ClosedAt = v.ClosedAt,
+        CreatedAt = v.CreatedAt,
+        RowVersion = Convert.ToBase64String(v.RowVer),
         ImageCount = v.Images.Count(i => !i.IsVoided),
         PendingReviewCount = v.Images
             .SelectMany(i => i.Diagnoses)
             .Count(d => !d.IsVoided && !d.Reviews.Any(r => !r.IsVoided))
     };
-    private static ShiftType ResolveShift(DateTime localNow)
-    {
-        var time = localNow.TimeOfDay;
+    //private static ShiftType ResolveShift(DateTime localNow)
+    //{
+    //    var time = localNow.TimeOfDay;
 
-        if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
-            return ShiftType.Morning;
+    //    if (time >= TimeSpan.FromHours(7) && time < TimeSpan.FromHours(12))
+    //        return ShiftType.Morning;
 
-        if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
-            return ShiftType.Afternoon;
+    //    if (time >= TimeSpan.FromHours(13) && time < TimeSpan.FromHours(17))
+    //        return ShiftType.Afternoon;
 
-        throw AppException.BadRequest(
-            Msg.InvalidData,
-            "Hiện tại không nằm trong thời gian tiếp nhận khám.");
-    }
+    //    throw AppException.BadRequest(
+    //        Msg.InvalidData,
+    //        "Hiện tại không nằm trong thời gian tiếp nhận khám.");
+    //}
 }

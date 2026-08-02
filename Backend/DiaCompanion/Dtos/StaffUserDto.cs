@@ -15,4 +15,5 @@ public class StaffUserDto
     public bool IsActive { get; set; }
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string RowVersion { get; set; } = "";
 }

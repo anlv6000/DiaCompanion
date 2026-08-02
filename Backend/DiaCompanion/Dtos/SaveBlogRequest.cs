@@ -9,4 +9,6 @@ public class SaveBlogRequest
     [MaxLength(500)] public string? Summary { get; set; }
     [Required] public string Body { get; set; } = "";
     public BlogCategory Category { get; set; } = BlogCategory.Knowledge;
+    /// <summary>Required for update; ignored when creating a new post.</summary>
+    public string? RowVersion { get; set; }
 }

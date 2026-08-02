@@ -136,14 +136,20 @@ public class TriageService : BaseService, ITriageService
     {
         var d = await LoadForReviewAsync(diagnosisId, req.RowVersion);
 
+        var doctorId = _me.RequireId();
         var review = new DiagnosisReview
         {
             AiDiagnosisId = d.Id,
-            DoctorId = _me.RequireId(),
+            DoctorId = doctorId,
             Action = ReviewAction.Approve,
             FinalGrade = d.DrGrade,
             Reason = null
         };
+
+        // Bắt buộc cập nhật chính AiDiagnosis để RowVer thực sự tham gia câu UPDATE.
+        // Nếu hai bác sĩ cùng dùng một token cũ, một request sẽ nhận 409.
+        d.LastReviewActionBy = doctorId;
+        d.LastReviewActionAt = DateTime.UtcNow;
 
         _repository.DiagnosisReviews.Add(review);
         await _audit.LogAsync(AuditAction.ReviewApprove, nameof(AiDiagnosis), d.Id,
@@ -165,14 +171,18 @@ public class TriageService : BaseService, ITriageService
 
         var d = await LoadForReviewAsync(diagnosisId, req.RowVersion);
 
+        var doctorId = _me.RequireId();
         var review = new DiagnosisReview
         {
             AiDiagnosisId = d.Id,
-            DoctorId = _me.RequireId(),
+            DoctorId = doctorId,
             Action = ReviewAction.Override,
             FinalGrade = req.FinalGrade,
             Reason = req.Reason.Trim()
         };
+
+        d.LastReviewActionBy = doctorId;
+        d.LastReviewActionAt = DateTime.UtcNow;
 
         _repository.DiagnosisReviews.Add(review);
 
@@ -199,7 +209,7 @@ public class TriageService : BaseService, ITriageService
     /// </summary>
     public async Task<IActionResult> VoidReview(int reviewId, VoidRequest req)
     {
-        await _void.VoidReviewAsync(reviewId, req.Reason);
+        await _void.VoidReviewAsync(reviewId, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi bản ghi duyệt. Ca quay lại hàng đợi triage." });
     }
 
@@ -219,16 +229,7 @@ public class TriageService : BaseService, ITriageService
             throw AppException.Conflict(Msg.ConcurrentEdit,
                 "Ca này vừa được một bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
 
-        //thừa
-        if (!string.IsNullOrWhiteSpace(rowVersion) && d.RowVer is not null)
-        {
-            var seen = Convert.FromBase64String(rowVersion);
-            if (!seen.SequenceEqual(d.RowVer))
-                throw AppException.Conflict(Msg.ConcurrentEdit,
-                    "Dữ liệu ca này đã thay đổi kể từ lúc bạn mở. Vui lòng tải lại.");
-            _repository.Entry(d).Property(x => x.RowVer).OriginalValue = seen;
-        }
-
+        _repository.ApplyOriginalRowVersion(d, rowVersion);
         return d;
     }
 
@@ -272,7 +273,8 @@ public class TriageService : BaseService, ITriageService
             FinalGradeLabel = DiagnosesService.GradeLabel((byte)r.FinalGrade),
             Reason = r.Reason,
             DoctorName = r.Doctor?.FullName ?? "",
-            CreatedAt = r.CreatedAt
+            CreatedAt = r.CreatedAt,
+            RowVersion = r.ToRowVersion()
         };
     }
 }

@@ -55,17 +55,22 @@ public class UsersController : BaseApiController
     /// BR-11: tài khoản KHÔNG bị xoá, chỉ khoá — để giữ vết các thao tác đã thực hiện.
     /// </summary>
     [HttpPut("{id:int}/active")]
-    public async Task<IActionResult> SetActive(int id, [FromQuery] bool value)
+    public async Task<IActionResult> SetActive(
+        int id,
+        ConcurrencyRequest req,
+        [FromQuery] bool value)
     {
-        return await _service.SetActive(id, value);
+        return await _service.SetActive(id, value, req);
     }
 
 
     /// <summary>UC-11 — đặt lại mật khẩu cho nhân viên.</summary>
     [HttpPost("{id:int}/reset-password")]
-    public async Task<ActionResult<TempCredentialResponse>> ResetPassword(int id)
+    public async Task<ActionResult<TempCredentialResponse>> ResetPassword(
+        int id,
+        ConcurrencyRequest req)
     {
-        return await _service.ResetPassword(id);
+        return await _service.ResetPassword(id, req);
     }
 
 

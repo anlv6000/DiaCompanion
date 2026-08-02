@@ -116,22 +116,24 @@ public class ReceptionController : BaseApiController
         var q = _db.Set<DoctorShift>().AsQueryable();
         if (doctorId is int id) q = q.Where(s => s.DoctorId == id);
 
-        var list = await q
+        var rows = await q
             .Join(_db.Users, s => s.DoctorId, u => u.Id, (s, u) => new { s, u })
             .OrderBy(x => x.s.DayOfWeek).ThenBy(x => x.s.Shift).ThenBy(x => x.u.FullName)
-            .Select(x => new DoctorShiftDto
-            {
-                Id = x.s.Id,
-                DoctorId = x.s.DoctorId,
-                DoctorName = x.u.FullName,
-                LicenseNo = x.u.LicenseNo,
-                DayOfWeek = x.s.DayOfWeek,
-                DayLabel = DayLabel(x.s.DayOfWeek),
-                Shift = (byte)x.s.Shift,
-                ShiftLabel = ShiftLabel((byte)x.s.Shift),
-                IsActive = x.s.IsActive,
-            })
             .ToListAsync();
+
+        var list = rows.Select(x => new DoctorShiftDto
+        {
+            Id = x.s.Id,
+            DoctorId = x.s.DoctorId,
+            DoctorName = x.u.FullName,
+            LicenseNo = x.u.LicenseNo,
+            DayOfWeek = x.s.DayOfWeek,
+            DayLabel = DayLabel(x.s.DayOfWeek),
+            Shift = (byte)x.s.Shift,
+            ShiftLabel = ShiftLabel((byte)x.s.Shift),
+            IsActive = x.s.IsActive,
+            RowVersion = x.s.ToRowVersion()
+        }).ToList();
 
         return Ok(list);
     }
@@ -195,10 +197,15 @@ public class ReceptionController : BaseApiController
     /// <summary>LT-9 — bật/tắt một ca trực (nghỉ tạm) mà không xoá.</summary>
     [HttpPut("shifts/{id:int}/active")]
     [Authorize(Roles = Roles.FrontDeskOrAdmin)]
-    public async Task<ActionResult<DoctorShiftDto>> SetShiftActive(int id, [FromQuery] bool active)
+    public async Task<ActionResult<DoctorShiftDto>> SetShiftActive(
+        int id,
+        [FromQuery] bool active,
+        [FromQuery] string rowVersion)
     {
         var shift = await _db.Set<DoctorShift>().FirstOrDefaultAsync(s => s.Id == id)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy ca trực.");
+
+        _db.ApplyOriginalRowVersion(shift, rowVersion);
         shift.IsActive = active;
         shift.UpdatedAt = _clock.UtcNow;
         await _db.SaveChangesAsync();
@@ -208,10 +215,12 @@ public class ReceptionController : BaseApiController
     /// <summary>Xoá hẳn một ca trực (lịch nhập sai).</summary>
     [HttpDelete("shifts/{id:int}")]
     [Authorize(Roles = Roles.FrontDeskOrAdmin)]
-    public async Task<IActionResult> DeleteShift(int id)
+    public async Task<IActionResult> DeleteShift(int id, [FromQuery] string rowVersion)
     {
         var shift = await _db.Set<DoctorShift>().FirstOrDefaultAsync(s => s.Id == id)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy ca trực.");
+
+        _db.ApplyOriginalRowVersion(shift, rowVersion);
         _db.Remove(shift);
         await _db.SaveChangesAsync();
         return NoContent();
@@ -236,22 +245,24 @@ public class ReceptionController : BaseApiController
 
     private async Task<ActionResult<DoctorShiftDto>> ShiftDto(int id)
     {
-        var dto = await _db.Set<DoctorShift>()
+        var row = await _db.Set<DoctorShift>()
             .Where(s => s.Id == id)
-            .Join(_db.Users, s => s.DoctorId, u => u.Id, (s, u) => new DoctorShiftDto
-            {
-                Id = s.Id,
-                DoctorId = s.DoctorId,
-                DoctorName = u.FullName,
-                LicenseNo = u.LicenseNo,
-                DayOfWeek = s.DayOfWeek,
-                DayLabel = DayLabel(s.DayOfWeek),
-                Shift = (byte)s.Shift,
-                ShiftLabel = ShiftLabel((byte)s.Shift),
-                IsActive = s.IsActive,
-            })
+            .Join(_db.Users, s => s.DoctorId, u => u.Id, (s, u) => new { s, u })
             .FirstAsync();
-        return Ok(dto);
+
+        return Ok(new DoctorShiftDto
+        {
+            Id = row.s.Id,
+            DoctorId = row.s.DoctorId,
+            DoctorName = row.u.FullName,
+            LicenseNo = row.u.LicenseNo,
+            DayOfWeek = row.s.DayOfWeek,
+            DayLabel = DayLabel(row.s.DayOfWeek),
+            Shift = (byte)row.s.Shift,
+            ShiftLabel = ShiftLabel((byte)row.s.Shift),
+            IsActive = row.s.IsActive,
+            RowVersion = row.s.ToRowVersion()
+        });
     }
 
     // Ca hiện tại suy theo giờ phòng khám: mốc 12:00 chia Sáng / Chiều.

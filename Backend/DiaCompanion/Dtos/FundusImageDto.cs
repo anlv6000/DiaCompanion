@@ -16,4 +16,6 @@ public class FundusImageDto
     public DateTime CreatedAt { get; set; }
     public string? ContentUrl { get; set; }
     public AiDiagnosisDto? LatestDiagnosis { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }

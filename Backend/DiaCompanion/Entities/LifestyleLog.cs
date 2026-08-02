@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class LifestyleLog : ISoftDeletable
+public class LifestyleLog : ISoftDeletable, IHasRowVersion
 {
     public int Id { get; set; }
     public int PatientId { get; set; }
@@ -16,4 +16,6 @@ public class LifestyleLog : ISoftDeletable
 
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();   
 }

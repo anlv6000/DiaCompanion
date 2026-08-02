@@ -27,7 +27,7 @@ public class ImagesController : BaseApiController
 
     /// <summary>UC-22 — nạp ảnh đáy mắt.</summary>
     [HttpPost]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.QualityImage)]
     [RequestSizeLimit(12 * 1024 * 1024)]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<FundusImageDto>> Upload([FromForm] UploadFundusRequest req)
@@ -58,7 +58,7 @@ public class ImagesController : BaseApiController
     /// đã về. Quyết định này khớp ma trận phân quyền SCR-10.
     /// </summary>
     [HttpPut("{id:int}/quality")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.QualityImage)]
     public async Task<IActionResult> SetQuality(int id, QualityCheckRequest req)
     {
         return await _service.SetQuality(id, req);
@@ -67,7 +67,7 @@ public class ImagesController : BaseApiController
 
     /// <summary>UC-24 — thu hồi ảnh (lan sang kết quả AI và review của ảnh đó).</summary>
     [HttpPut("{id:int}/void")]
-    [Authorize(Roles = Roles.DoctorOrAdmin)]
+    [Authorize(Roles = Roles.QualityImage)]
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);

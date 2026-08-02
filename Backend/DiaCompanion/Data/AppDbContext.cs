@@ -63,6 +63,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.Phone).IsUnique().HasFilter("[Phone] IS NOT NULL AND [IsActive] = 1");
             e.HasIndex(x => x.Email).IsUnique().HasFilter("[Email] IS NOT NULL AND [IsActive] = 1");
             e.HasIndex(x => x.PublicId).IsUnique();
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
         });
 
         /* ------------------------------------------------------ Patients */
@@ -75,6 +76,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.UserId).IsUnique().HasFilter("[UserId] IS NOT NULL AND [IsVoided] = 0");
             e.HasIndex(x => x.FullNameSearch);
             e.Property(x => x.BaselineHbA1c).HasPrecision(4, 1);
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
 
             e.HasOne(x => x.User).WithOne(u => u.Patient)
                 .HasForeignKey<Patient>(x => x.UserId).OnDelete(DeleteBehavior.NoAction);
@@ -86,6 +88,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Status).HasConversion<byte>();
             e.Property(x => x.Referral).HasConversion<byte?>();
             e.HasIndex(x => new { x.PatientId, x.VisitDate });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Patient).WithMany(p => p.Visits)
                 .HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(x => x.Doctor).WithMany()
@@ -99,6 +102,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.QualityStatus).HasConversion<byte>();
             e.HasIndex(x => x.VisitId);
             e.HasIndex(x => new { x.PatientId, x.CreatedAt });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Patient).WithMany(p => p.Images)
                 .HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(x => x.Visit).WithMany(v => v.Images)
@@ -144,6 +148,7 @@ public class AppDbContext : DbContext
             // Đây là chốt chặn cuối nếu kiểm tra tầng ứng dụng bị vượt qua.
             e.HasIndex(x => x.AiDiagnosisId).IsUnique().HasFilter("[IsVoided] = 0");
             e.HasIndex(x => new { x.DoctorId, x.CreatedAt });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.AiDiagnosis).WithMany(d => d.Reviews)
                 .HasForeignKey(x => x.AiDiagnosisId).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(x => x.Doctor).WithMany()
@@ -159,12 +164,14 @@ public class AppDbContext : DbContext
             e.Property(x => x.Qwk).HasPrecision(5, 4);
             e.Property(x => x.Dice).HasPrecision(5, 4);
             e.Property(x => x.IoU).HasPrecision(5, 4);
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
         });
 
         /* -------------------------------------------------- Prescriptions */
         b.Entity<Prescription>(e =>
         {
             e.HasIndex(x => new { x.PatientId, x.IssuedAt });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.NoAction);
         });
@@ -182,6 +189,7 @@ public class AppDbContext : DbContext
         b.Entity<MedicationLog>(e =>
         {
             e.Property(x => x.Status).HasConversion<byte>();
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasIndex(x => new { x.PatientId, x.ScheduledAt });
             e.HasOne(x => x.PrescriptionItem).WithMany(i => i.Logs)
                 .HasForeignKey(x => x.PrescriptionItemId).OnDelete(DeleteBehavior.NoAction);
@@ -193,6 +201,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.MetricType).HasConversion<byte>();
             e.Property(x => x.Context).HasConversion<byte?>();
             e.Property(x => x.Value).HasPrecision(6, 2);
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             // QT-12: clustered index thay cho partition. ~1,1 triệu dòng/năm
             // là quá nhỏ để cần partition; index này đạt đúng mục tiêu đó.
             // PK phải NONCLUSTERED để nhường vị trí clustered cho
@@ -204,12 +213,17 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
         });
 
-        b.Entity<LifestyleLog>(e => e.HasIndex(x => new { x.PatientId, x.LogLocalDate }));
+        b.Entity<LifestyleLog>(e =>
+        {
+            e.HasIndex(x => new { x.PatientId, x.LogLocalDate });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
+        });
 
         b.Entity<SymptomReport>(e =>
         {
             e.Property(x => x.Severity).HasConversion<byte>();
             e.HasIndex(x => new { x.PatientId, x.CreatedAt });
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
         });
 
@@ -223,6 +237,7 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.Category).HasConversion<byte>();
             e.HasIndex(x => x.PublishedAt).HasFilter("[IsPublished] = 1 AND [IsDeleted] = 0");
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Author).WithMany().HasForeignKey(x => x.AuthorId).OnDelete(DeleteBehavior.NoAction);
         });
 
@@ -253,6 +268,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Key).HasColumnName("Key");
             e.Property(x => x.MinValue).HasPrecision(10, 4);
             e.Property(x => x.MaxValue).HasPrecision(10, 4);
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
         });
         b.Entity<DoctorShift>(e =>
         {
@@ -260,6 +276,7 @@ public class AppDbContext : DbContext
 
             e.HasIndex(x => new { x.DoctorId, x.DayOfWeek, x.Shift })
                 .IsUnique();
+            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
 
             e.HasOne(x => x.Doctor)
                 .WithMany()

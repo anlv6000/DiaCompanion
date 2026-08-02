@@ -12,4 +12,6 @@ public class PatientDetailDto : PatientListItemDto
     public DateTime CreatedAt { get; set; }
     public string? DoctorInCharge { get; set; }
     public int VisitCount { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }

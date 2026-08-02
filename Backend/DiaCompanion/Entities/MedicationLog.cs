@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class MedicationLog
+public class MedicationLog : IHasRowVersion
 {
     public int Id { get; set; }
     public int PatientId { get; set; }
@@ -13,5 +13,7 @@ public class MedicationLog
     /// <summary>QT-10: gom "hôm nay" theo ngày địa phương, không theo ngày UTC.</summary>
     public DateOnly ScheduledLocalDate { get; set; }
     public DateTime? TakenAt { get; set; }
-    public MedicationStatus Status { get; set; } = MedicationStatus.Pending;
+    public MedicationStatus Status { get; set; } = MedicationStatus.Pending;    
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

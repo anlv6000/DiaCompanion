@@ -129,7 +129,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
     /// <summary>UC-24 phần kết quả — thu hồi một kết quả AI.</summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
-        await _void.VoidDiagnosisAsync(id, req.Reason);
+        await _void.VoidDiagnosisAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi kết quả AI." });
     }
 
@@ -249,7 +249,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
             CreatedAt = d.CreatedAt,
             // NT-3: chỉ "đã xác nhận" khi có review của bác sĩ
             IsConfirmed = review is not null,
-            RowVersion = d.RowVer is null ? null : Convert.ToBase64String(d.RowVer),
+            RowVersion = d.ToRowVersion(),
             Review = review is null ? null : new ReviewDto
             {
                 Id = review.Id,
@@ -260,7 +260,8 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 FinalGradeLabel = GradeLabel((byte)review.FinalGrade),
                 Reason = review.Reason,
                 DoctorName = review.Doctor?.FullName ?? "",
-                CreatedAt = review.CreatedAt
+                CreatedAt = review.CreatedAt,
+                RowVersion = review.ToRowVersion()
             }
         };
     }

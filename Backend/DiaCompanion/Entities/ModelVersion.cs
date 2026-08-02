@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class ModelVersion
+public class ModelVersion : IHasRowVersion
 {
     public int Id { get; set; }
     [Required, MaxLength(100)] public string Name { get; set; } = "";
@@ -20,4 +20,6 @@ public class ModelVersion
     public DateTime? ActivatedAt { get; set; }
     public int CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

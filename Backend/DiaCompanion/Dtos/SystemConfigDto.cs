@@ -12,4 +12,5 @@ public class SystemConfigDto
     public decimal? MinValue { get; set; }
     public decimal? MaxValue { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public string RowVersion { get; set; } = "";
 }

@@ -13,12 +13,12 @@ namespace DiaCompanion.Api.Services;
 /// </summary>
 public interface IVoidService
 {
-    Task VoidPatientAsync(int id, string reason);
-    Task VoidVisitAsync(int id, string reason);
-    Task VoidImageAsync(int id, string reason);
-    Task VoidDiagnosisAsync(int id, string reason);
-    Task VoidReviewAsync(int id, string reason);
-    Task VoidPrescriptionAsync(int id, string reason);
+    Task VoidPatientAsync(int id, string reason, string rowVersion);
+    Task VoidVisitAsync(int id, string reason, string rowVersion);
+    Task VoidImageAsync(int id, string reason, string rowVersion);
+    Task VoidDiagnosisAsync(int id, string reason, string rowVersion);
+    Task VoidReviewAsync(int id, string reason, string rowVersion);
+    Task VoidPrescriptionAsync(int id, string reason, string rowVersion);
 }
 
 public class VoidService : IVoidService
@@ -50,11 +50,12 @@ public class VoidService : IVoidService
        Patient       -> toàn bộ chuỗi trên
        --------------------------------------------------------------------- */
 
-    public async Task VoidPatientAsync(int id, string reason)
+    public async Task VoidPatientAsync(int id, string reason, string rowVersion)
     {
         var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
+        _repository.ApplyOriginalRowVersion(p, rowVersion);
         Mark(p, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(Patient), p.Id,
             new { p.Code, p.FullName, isVoided = false }, new { isVoided = true }, reason);
@@ -78,10 +79,11 @@ public class VoidService : IVoidService
         await _repository.SaveChangesAsync();
     }
 
-    public async Task VoidVisitAsync(int id, string reason)
+    public async Task VoidVisitAsync(int id, string reason, string rowVersion)
     {
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+        _repository.ApplyOriginalRowVersion(v, rowVersion);
         await VoidVisitInternalAsync(v, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(Visit), v.Id, null, new { isVoided = true }, reason);
         await _repository.SaveChangesAsync();
@@ -99,10 +101,11 @@ public class VoidService : IVoidService
         foreach (var p in prescriptions) await VoidPrescriptionInternalAsync(p, $"Thu hồi theo lượt khám: {reason}");
     }
 
-    public async Task VoidImageAsync(int id, string reason)
+    public async Task VoidImageAsync(int id, string reason, string rowVersion)
     {
         var f = await _repository.FundusImages.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt.");
+        _repository.ApplyOriginalRowVersion(f, rowVersion);
         await VoidImageInternalAsync(f, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(FundusImage), f.Id, null, new { isVoided = true }, reason);
         await _repository.SaveChangesAsync();
@@ -117,10 +120,11 @@ public class VoidService : IVoidService
         foreach (var d in diagnoses) await VoidDiagnosisInternalAsync(d, $"Thu hồi theo ảnh: {reason}");
     }
 
-    public async Task VoidDiagnosisAsync(int id, string reason)
+    public async Task VoidDiagnosisAsync(int id, string reason, string rowVersion)
     {
         var d = await _repository.AiDiagnoses.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
+        _repository.ApplyOriginalRowVersion(d, rowVersion);
         await VoidDiagnosisInternalAsync(d, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(AiDiagnosis), d.Id, null, new { isVoided = true }, reason);
         await _repository.SaveChangesAsync();
@@ -135,10 +139,11 @@ public class VoidService : IVoidService
         foreach (var r in reviews) if (!r.IsVoided) Mark(r, $"Thu hồi theo kết quả AI: {reason}");
     }
 
-    public async Task VoidReviewAsync(int id, string reason)
+    public async Task VoidReviewAsync(int id, string reason, string rowVersion)
     {
         var r = await _repository.DiagnosisReviews.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi duyệt.");
+        _repository.ApplyOriginalRowVersion(r, rowVersion);
         Mark(r, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(DiagnosisReview), r.Id,
             new { r.Action, r.FinalGrade }, new { isVoided = true }, reason);
@@ -147,10 +152,11 @@ public class VoidService : IVoidService
         // chỉ tính review chưa void.
     }
 
-    public async Task VoidPrescriptionAsync(int id, string reason)
+    public async Task VoidPrescriptionAsync(int id, string reason, string rowVersion)
     {
         var p = await _repository.Prescriptions.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
+        _repository.ApplyOriginalRowVersion(p, rowVersion);
         await VoidPrescriptionInternalAsync(p, reason);
         await _audit.LogAsync(AuditAction.Void, nameof(Prescription), p.Id, null, new { isVoided = true }, reason);
         await _repository.SaveChangesAsync();
@@ -168,7 +174,7 @@ public class VoidService : IVoidService
         var itemIds = await _repository.PrescriptionItems
             .Where(i => i.PrescriptionId == p.Id).Select(i => i.Id).ToListAsync();
 
-        var pending = await _repository.MedicationLogs  
+        var pending = await _repository.MedicationLogs
             .Where(m => itemIds.Contains(m.PrescriptionItemId) && m.Status == MedicationStatus.Pending)
             .ToListAsync();
 

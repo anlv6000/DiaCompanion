@@ -53,9 +53,9 @@ public class MonitoringController : BaseApiController
     /// CSDL để bác sĩ đối chiếu nếu cần (QT-5).
     /// </summary>
     [HttpDelete("metrics/{id:int}")]
-    public async Task<IActionResult> DeleteMetric(int id)
+    public async Task<IActionResult> DeleteMetric(int id, ConcurrencyRequest req)
     {
-        return await _service.DeleteMetric(id);
+        return await _service.DeleteMetric(id, req);
     }
 
 
@@ -88,9 +88,9 @@ public class MonitoringController : BaseApiController
 
     /// <summary>UC-52 — xoá mềm nhật ký lối sống.</summary>
     [HttpDelete("lifestyle/{id:int}")]
-    public async Task<IActionResult> DeleteLifestyle(int id)
+    public async Task<IActionResult> DeleteLifestyle(int id, ConcurrencyRequest req)
     {
-        return await _service.DeleteLifestyle(id);
+        return await _service.DeleteLifestyle(id, req);
     }
 
 

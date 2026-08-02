@@ -17,4 +17,6 @@ public class ModelVersionDto
     public bool WasActivated { get; set; }
     public DateTime? ActivatedAt { get; set; }
     public int DiagnosisCount { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }

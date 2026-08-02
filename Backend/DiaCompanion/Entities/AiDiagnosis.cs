@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class AiDiagnosis : IVoidable
+public class AiDiagnosis : IVoidable, IHasRowVersion
 {
     public int Id { get; set; }
     public int FundusImageId { get; set; }
@@ -49,6 +49,10 @@ public class AiDiagnosis : IVoidable
     [MaxLength(500)] public string? VoidReason { get; set; }
     public int? VoidedBy { get; set; }
     public DateTime? VoidedAt { get; set; }
+    /// <summary>Người và thời điểm thực hiện thao tác review gần nhất.</summary>
+    public int? LastReviewActionBy { get; set; }
+    public DateTime? LastReviewActionAt { get; set; }
+
 
     /// <summary>QT-9: chặn hai bác sĩ cùng duyệt một ca (xung đột → HTTP 409).</summary>
     public byte[]? RowVer { get; set; }

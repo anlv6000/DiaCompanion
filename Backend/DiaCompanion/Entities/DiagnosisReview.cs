@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class DiagnosisReview : IVoidable
+public class DiagnosisReview : IVoidable, IHasRowVersion
 {
     public int Id { get; set; }
     public int AiDiagnosisId { get; set; }
@@ -22,4 +22,6 @@ public class DiagnosisReview : IVoidable
     [MaxLength(500)] public string? VoidReason { get; set; }
     public int? VoidedBy { get; set; }
     public DateTime? VoidedAt { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }
