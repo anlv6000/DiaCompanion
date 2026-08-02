@@ -15,4 +15,7 @@ public class UpdateMyProfileRequest
     public short? DiabetesDurationYears { get; set; }
     public decimal? BaselineHbA1c { get; set; }
 
+    [Required]
+    public string RowVersion { get; set; } = "";
+
 }

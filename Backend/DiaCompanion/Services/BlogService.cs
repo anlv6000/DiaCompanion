@@ -15,7 +15,7 @@ public class BlogService : BaseService, IBlogService
     private readonly IClinicClock _clock;
 
 
-    public BlogService(IRepository repository, ICurrentUser me, IClinicClock clock) { _repository = repository; _me = me;_clock = clock; }
+    public BlogService(IRepository repository, ICurrentUser me, IClinicClock clock) { _repository = repository; _me = me; _clock = clock; }
 
     /// <summary>UC-59 — bệnh nhân chỉ thấy bài ĐÃ ĐĂNG.</summary>
     public async Task<ActionResult<PagedResult<BlogPostDto>>> Published(
@@ -41,7 +41,7 @@ public class BlogService : BaseService, IBlogService
                 Summary = b.Summary,
                 Category = (byte)b.Category,
                 IsPublished = b.IsPublished,
-                PublishedAt =  _clock.ToLocal(b.PublishedAt),
+                PublishedAt = _clock.ToLocal(b.PublishedAt),
                 AuthorName = b.Author!.FullName,
                 CreatedAt = b.CreatedAt
             }).ToListAsync();
@@ -117,6 +117,8 @@ public class BlogService : BaseService, IBlogService
         var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
+        _repository.ApplyOriginalRowVersion(b, req.RowVersion);
+
         b.Title = req.Title.Trim();
         b.Summary = req.Summary;
         b.Body = req.Body;
@@ -128,17 +130,23 @@ public class BlogService : BaseService, IBlogService
     }
 
     /// <summary>UC-62 — đăng hoặc gỡ bài.</summary>
-    public async Task<IActionResult> Publish(int id, [FromQuery] bool value = true)
+    public async Task<IActionResult> Publish(int id, bool value, ConcurrencyRequest req)
     {
         var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+
+        _repository.ApplyOriginalRowVersion(b, req.RowVersion);
 
         b.IsPublished = value;
         b.PublishedAt = value ? (b.PublishedAt ?? DateTime.UtcNow) : b.PublishedAt;
         b.UpdatedAt = DateTime.UtcNow;
 
         await _repository.SaveChangesAsync();
-        return Ok(new { message = value ? "Đã đăng bài viết." : "Đã gỡ bài viết." });
+        return Ok(new
+        {
+            message = value ? "Đã đăng bài viết." : "Đã gỡ bài viết.",
+            rowVersion = b.ToRowVersion()
+        });
     }
 
     /// <summary>
@@ -146,10 +154,12 @@ public class BlogService : BaseService, IBlogService
     /// BR-08: bài NHÁP xoá cứng được vì không chứa dữ liệu bệnh nhân;
     /// bài ĐÃ ĐĂNG chỉ xoá mềm vì bệnh nhân có thể đã đọc và lưu liên kết.
     /// </summary>
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(int id, string rowVersion)
     {
         var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+
+        _repository.ApplyOriginalRowVersion(b, rowVersion);
 
         if (b.IsPublished)
         {
@@ -170,7 +180,7 @@ public class BlogService : BaseService, IBlogService
         return Map(b, includeBody: true);
     }
 
-    private  BlogPostDto Map(BlogPost b, bool includeBody) => new()
+    private BlogPostDto Map(BlogPost b, bool includeBody) => new()
     {
         Id = b.Id,
         Title = b.Title,
@@ -183,7 +193,8 @@ public class BlogService : BaseService, IBlogService
         ? _clock.ToLocal(b.PublishedAt.Value)
         : null,
         AuthorName = b.Author?.FullName ?? "",
-        CreatedAt = (DateTime)_clock.ToLocal(b.CreatedAt)
+        CreatedAt = (DateTime)_clock.ToLocal(b.CreatedAt),
+        RowVersion = b.ToRowVersion()
 
     };
 }

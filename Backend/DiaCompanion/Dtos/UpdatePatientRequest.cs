@@ -14,4 +14,7 @@ public class UpdatePatientRequest
     public short? DiabetesDurationYears { get; set; }
     public decimal? BaselineHbA1c { get; set; }
     [MaxLength(1000)] public string? Note { get; set; }
+
+    [Required]
+    public string RowVersion { get; set; } = "";
 }

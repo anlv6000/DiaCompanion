@@ -4,7 +4,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class SystemConfig
+public class SystemConfig: IHasRowVersion
 {
     /// <summary>QT-19: chỉ tham số nghiệp vụ. Secret nằm ở biến môi trường.</summary>
     [Key, MaxLength(100)] public string Key { get; set; } = "";
@@ -15,4 +15,6 @@ public class SystemConfig
     public decimal? MaxValue { get; set; }
     public int? UpdatedBy { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

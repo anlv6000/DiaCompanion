@@ -33,26 +33,15 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         var query = _repository.Prescriptions.AsNoTracking().Where(p => p.PatientId == pid);
         var total = await query.CountAsync();
 
-        var items = await query.OrderByDescending(p => p.IssuedAt)
+        var rows = await query
+            .Include(p => p.Doctor)
+            .Include(p => p.Items)
+            .AsSplitQuery()
+            .OrderByDescending(p => p.IssuedAt)
             .Skip(page.Skip).Take(page.PageSize)
-            .Select(p => new PrescriptionDto
-            {
-                Id = p.Id,
-                PatientId = p.PatientId,
-                VisitId = p.VisitId,
-                DoctorName = p.Doctor!.FullName,
-                IssuedAt = p.IssuedAt,
-                Note = p.Note,
-                Items = p.Items.Select(i => new PrescriptionItemDto
-                {
-                    Id = i.Id,
-                    DrugName = i.DrugName,
-                    Dose = i.Dose,
-                    TimesPerDay = i.TimesPerDay,
-                    DurationDays = i.DurationDays,
-                    Instruction = i.Instruction
-                }).ToList()
-            }).ToListAsync();
+            .ToListAsync();
+
+        var items = rows.Select(Map).ToList();
 
         return Ok(new PagedResult<PrescriptionDto>
         { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
@@ -128,7 +117,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
                 throw;
             }
         });
-        
+
         return Ok(await GetDtoAsync(prescriptionId));
     }
 
@@ -164,6 +153,8 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
                         Msg.LoadFailed,
                         "Không tìm thấy đơn thuốc.");
 
+                _repository.ApplyOriginalRowVersion(presc, req.RowVersion);
+
                 var before = presc.Items
                     .Select(i => new
                     {
@@ -176,7 +167,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
                     })
                     .ToList();
 
-                
+
 
 
 
@@ -244,6 +235,8 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
                 }
 
                 presc.Note = req.Note?.Trim();
+                // Chạm bản ghi cha để RowVer bảo vệ toàn bộ aggregate đơn thuốc.
+                presc.UpdatedAt = DateTime.UtcNow;
 
                 /*
                  * Các item này đã có ID sẵn vì đang tồn tại trong database.
@@ -294,7 +287,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
     /// <summary>UC-39 — thu hồi đơn thuốc.</summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
-        await _void.VoidPrescriptionAsync(id, req.Reason);
+        await _void.VoidPrescriptionAsync(id, req.Reason, req.RowVersion);
         return Ok(new
         {
             message = "Đã thu hồi đơn thuốc. Lịch nhắc chưa tới hạn đã huỷ; " +
@@ -335,6 +328,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         DoctorName = p.Doctor?.FullName ?? "",
         IssuedAt = p.IssuedAt,
         Note = p.Note,
+        RowVersion = p.ToRowVersion(),
         Items = p.Items.Select(i => new PrescriptionItemDto
         {
             Id = i.Id,

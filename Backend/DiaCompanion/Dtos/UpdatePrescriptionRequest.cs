@@ -1,8 +1,13 @@
-﻿namespace DiaCompanion.Dtos
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace DiaCompanion.Dtos
 {
     public class UpdatePrescriptionRequest
     {
         public string? Note { get; set; }
+
+        [Required]
+        public string RowVersion { get; set; } = "";
         public List<UpdatePrescriptionItemRequest> Items { get; set; } = [];
     }
 

@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class Patient : IVoidable
+public class Patient : IVoidable, IHasRowVersion
 {
     public int Id { get; set; }
     [Required, MaxLength(20)] public string Code { get; set; } = "";
@@ -36,4 +36,5 @@ public class Patient : IVoidable
 
     public ICollection<Visit> Visits { get; set; } = new List<Visit>();
     public ICollection<FundusImage> Images { get; set; } = new List<FundusImage>();
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

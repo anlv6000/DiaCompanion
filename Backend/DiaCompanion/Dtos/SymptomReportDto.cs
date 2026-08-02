@@ -19,4 +19,5 @@ public class SymptomReportDto
     public DateTime CreatedAt { get; set; }
     public string State { get; set; } = "";
     public string PatientName { get; set; } = "";
+    public string RowVersion { get; set; } = "";
 }

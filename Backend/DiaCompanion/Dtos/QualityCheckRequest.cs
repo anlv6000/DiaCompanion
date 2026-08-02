@@ -8,4 +8,7 @@ public class QualityCheckRequest
     [Required] public QualityStatus Status { get; set; }
     /// <summary>Bắt buộc khi Status = Ungradable.</summary>
     [MaxLength(500)] public string? Note { get; set; }
+
+    [Required]
+    public string RowVersion { get; set; } = "";
 }

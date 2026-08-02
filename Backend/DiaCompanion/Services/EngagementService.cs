@@ -153,6 +153,8 @@ public class EngagementService : BaseService, IEngagementService
         var s = await _repository.SymptomReports.Include(x => x.Patient).FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy báo cáo triệu chứng.");
 
+        _repository.ApplyOriginalRowVersion(s, req.RowVersion);
+
         s.DoctorReply = req.Reply.Trim();
         s.RepliedBy = _me.RequireId();
         s.RepliedAt = DateTime.UtcNow;
@@ -164,7 +166,11 @@ public class EngagementService : BaseService, IEngagementService
                 nameof(SymptomReport), s.Id);
 
         await _repository.SaveChangesAsync();
-        return Ok(new { message = "Đã gửi phản hồi tới bệnh nhân." });
+        return Ok(new
+        {
+            message = "Đã gửi phản hồi tới bệnh nhân.",
+            rowVersion = s.ToRowVersion()
+        });
     }
 
     /* -------------------------- PHẢN HỒI (UC-56, 57) ----------------------- */
@@ -230,6 +236,7 @@ public class EngagementService : BaseService, IEngagementService
         RepliedAt = s.RepliedAt,
         CreatedAt = s.CreatedAt,
         PatientName = s.Patient?.FullName ?? "",
+        RowVersion = s.ToRowVersion(),
         // Ba trạng thái để giao diện hiển thị đúng, thay vì chỉ "có/không có trả lời"
         State = s.DoctorReply is not null ? "Bác sĩ đã trả lời" : "Chờ bác sĩ xem"
     };

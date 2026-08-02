@@ -15,5 +15,6 @@ public class CreateMetricRequest
     public DateTime? RecordedAtUtc { get; set; }
 
     [MaxLength(300)] public string? Note { get; set; }
+    public string? RowVersion { get; set; }
 }
 

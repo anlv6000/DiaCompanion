@@ -13,7 +13,7 @@ public interface IUsersService
     Task<ActionResult<StaffUserDto>> Get(int id);
     Task<ActionResult<TempCredentialResponse>> Create(CreateStaffRequest req);
     Task<IActionResult> Update(int id, UpdateStaffRequest req);
-    Task<IActionResult> SetActive(int id, [FromQuery] bool value);
-    Task<ActionResult<TempCredentialResponse>> ResetPassword(int id);
+    Task<IActionResult> SetActive(int id, bool value, ConcurrencyRequest req);
+    Task<ActionResult<TempCredentialResponse>> ResetPassword(int id, ConcurrencyRequest req);
     Task<IActionResult> Doctors();
 }

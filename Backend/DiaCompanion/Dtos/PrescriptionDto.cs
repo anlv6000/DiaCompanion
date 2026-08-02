@@ -14,4 +14,5 @@ public class PrescriptionDto
     public DateTime IssuedAt { get; set; }
     public string? Note { get; set; }
     public List<PrescriptionItemDto> Items { get; set; } = new();
+    public string RowVersion { get; set; } = "";
 }

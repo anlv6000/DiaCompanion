@@ -278,6 +278,8 @@ public class PatientsService : BaseService, IPatientsService
         var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
+        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
+
         var phone = req.Phone.Trim();
         if (phone != p.Phone && await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
@@ -315,8 +317,11 @@ public class PatientsService : BaseService, IPatientsService
     {
         var pid = RequireMyPatientId(_me);
         var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
+        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
 
-        if (await _repository.Patients.AnyAsync(p => p.Phone == req.Phone.Trim()))
+        var requestedPhone = req.Phone.Trim();
+
+        if (await _repository.Patients.AnyAsync(x => x.Phone == requestedPhone && x.Id != pid))
         {
             throw AppException.Conflict(
                 Msg.PhoneTaken,
@@ -326,7 +331,7 @@ public class PatientsService : BaseService, IPatientsService
 
         if (
             await _repository.Users.AnyAsync(
-                u => u.Phone == req.Phone.Trim() && u.IsActive))
+                u => u.Phone == requestedPhone && u.IsActive && u.Id != p.UserId))
         {
             throw AppException.Conflict(
                 Msg.PhoneTaken,
@@ -341,7 +346,7 @@ public class PatientsService : BaseService, IPatientsService
                 "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
         }
 
-        var phone = req.Phone.Trim();
+        var phone = requestedPhone;
 
         var before = new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c };
 
@@ -366,7 +371,11 @@ public class PatientsService : BaseService, IPatientsService
         await _audit.LogAsync(AuditAction.PatientUpdate, nameof(Patient), p.Id, before,
           new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
         await _repository.SaveChangesAsync();
-        return Ok(new { message = "Cập nhật thông tin thành công." });
+        return Ok(new
+        {
+            message = "Cập nhật thông tin thành công.",
+            rowVersion = p.ToRowVersion()
+        });
     }
 
     /// <summary>
@@ -421,7 +430,7 @@ public class PatientsService : BaseService, IPatientsService
     /// </summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
-        await _void.VoidPatientAsync(id, req.Reason);
+        await _void.VoidPatientAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi hồ sơ bệnh nhân." });
     }
 
@@ -477,7 +486,8 @@ public class PatientsService : BaseService, IPatientsService
             HasAccount = p.UserId != null,
             LatestDrGrade = latestGrade,
             DoctorInCharge = lastVisit?.DoctorName,
-            VisitCount = await _repository.Visits.CountAsync(v => v.PatientId == p.Id)
+            VisitCount = await _repository.Visits.CountAsync(v => v.PatientId == p.Id),
+            RowVersion = p.ToRowVersion()
         };
     }
 }

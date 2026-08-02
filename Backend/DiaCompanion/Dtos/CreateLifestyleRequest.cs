@@ -10,4 +10,5 @@ public class CreateLifestyleRequest
     [MaxLength(300)] public string? MealTags { get; set; }
     [Range(0, 600)] public short? ExerciseMinutes { get; set; }
     [MaxLength(100)] public string? ExerciseType { get; set; }
+    public string? RowVersion { get; set; }
 }

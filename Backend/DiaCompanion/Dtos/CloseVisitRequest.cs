@@ -9,4 +9,7 @@ public class CloseVisitRequest
     public ReferralType Referral { get; set; } = ReferralType.None;
     /// <summary>Bỏ trống thì hệ thống suy từ mức DR đã xác nhận theo BR-19.</summary>
     public byte? RecheckMonths { get; set; }
+
+    [Required]
+    public string RowVersion { get; set; } = "";
 }

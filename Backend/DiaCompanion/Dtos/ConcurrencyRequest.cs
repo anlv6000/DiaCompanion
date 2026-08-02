@@ -1,11 +1,10 @@
 using System.ComponentModel.DataAnnotations;
-using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
-public class UpdateConfigRequest
+/// <summary>Version token returned by the last GET response.</summary>
+public class ConcurrencyRequest
 {
-    [Required] public string Value { get; set; } = "";
     [Required]
     public string RowVersion { get; set; } = "";
 }

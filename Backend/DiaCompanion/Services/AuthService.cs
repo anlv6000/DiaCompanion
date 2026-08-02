@@ -131,6 +131,11 @@ public class AuthService : BaseService, IAuthService
 
         if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
             throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
+        if (!user.MustChangePassword)
+        {
+            if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
+                throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
+        }
         user.PasswordHash = _hasher.Hash(req.NewPassword);
         // Gỡ cờ mật khẩu tạm — đây là điều kiện để bệnh nhân vào được hồ sơ
         user.MustChangePassword = false;

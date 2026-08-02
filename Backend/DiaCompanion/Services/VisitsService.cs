@@ -86,7 +86,7 @@ public class VisitsService : BaseService, IVisitsService
     /// <summary>UC-18 — tạo lượt khám.</summary>
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
-        
+
         if (!await _repository.Patients.AnyAsync(p => p.Id == req.PatientId))
             throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
         var doctorExits = await _repository.Users.AnyAsync(
@@ -157,6 +157,8 @@ public class VisitsService : BaseService, IVisitsService
     {
         var v = await _repository.Visits.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
+
+        _repository.ApplyOriginalRowVersion(v, req.RowVersion);
 
         if (v.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
@@ -348,7 +350,7 @@ public class VisitsService : BaseService, IVisitsService
                 "Bạn không có quyền thu hồi lượt khám.");
         }
 
-        await _void.VoidVisitAsync(id, req.Reason);
+        await _void.VoidVisitAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi lượt khám và các bản ghi liên quan." });
     }
 
@@ -576,6 +578,8 @@ public class VisitsService : BaseService, IVisitsService
         Referral = (byte?)v.Referral,
         RecheckMonths = v.RecheckMonths,
         ClosedAt = v.ClosedAt,
+        CreatedAt = v.CreatedAt,
+        RowVersion = Convert.ToBase64String(v.RowVer),
         ImageCount = v.Images.Count(i => !i.IsVoided),
         PendingReviewCount = v.Images
             .SelectMany(i => i.Diagnoses)

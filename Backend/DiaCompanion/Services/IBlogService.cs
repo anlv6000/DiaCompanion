@@ -14,6 +14,6 @@ public interface IBlogService
         [FromQuery] bool? published, [FromQuery] PageQuery page);
     Task<ActionResult<BlogPostDto>> Create(SaveBlogRequest req);
     Task<ActionResult<BlogPostDto>> Update(int id, SaveBlogRequest req);
-    Task<IActionResult> Publish(int id, [FromQuery] bool value = true);
-    Task<IActionResult> Delete(int id);
+    Task<IActionResult> Publish(int id, bool value, ConcurrencyRequest req);
+    Task<IActionResult> Delete(int id, string rowVersion);
 }

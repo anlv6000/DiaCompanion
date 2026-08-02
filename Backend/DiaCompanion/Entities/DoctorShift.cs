@@ -14,7 +14,7 @@ namespace DiaCompanion.Api.Entities;
 /// xuất một hôm thì tắt IsActive tạm hoặc xử lý ở tầng nghiệp vụ; phiên bản
 /// này giữ đơn giản đúng phạm vi capstone.
 /// </summary>
-public class DoctorShift
+public class DoctorShift : IHasRowVersion
 {
     public int Id { get; set; }
 
@@ -39,4 +39,7 @@ public class DoctorShift
     public int CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
+
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

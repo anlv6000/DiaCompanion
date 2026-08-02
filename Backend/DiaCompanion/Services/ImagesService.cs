@@ -29,18 +29,31 @@ public class ImagesService : BaseService, IImagesService
         if (patientId is int pid) query = query.Where(f => f.PatientId == pid);
         if (visitId is int vid) query = query.Where(f => f.VisitId == vid);
 
-        var items = await query.OrderBy(f => f.Eye).ThenByDescending(f => f.CreatedAt)
-            .Select(f => new FundusImageDto
+        var rows = await query.OrderBy(f => f.Eye).ThenByDescending(f => f.CreatedAt)
+            .Select(f => new
             {
-                Id = f.Id,
-                PatientId = f.PatientId,
-                VisitId = f.VisitId,
-                Eye = (byte)f.Eye,
-                QualityStatus = (byte)f.QualityStatus,
-                QualityNote = f.QualityNote,
-                CreatedAt = f.CreatedAt,
-                ContentUrl = $"/api/images/{f.Id}/content"
+                f.Id,
+                f.PatientId,
+                f.VisitId,
+                f.Eye,
+                f.QualityStatus,
+                f.QualityNote,
+                f.CreatedAt,
+                f.RowVer
             }).ToListAsync();
+
+        var items = rows.Select(f => new FundusImageDto
+        {
+            Id = f.Id,
+            PatientId = f.PatientId,
+            VisitId = f.VisitId,
+            Eye = (byte)f.Eye,
+            QualityStatus = (byte)f.QualityStatus,
+            QualityNote = f.QualityNote,
+            CreatedAt = f.CreatedAt,
+            ContentUrl = $"/api/images/{f.Id}/content",
+            RowVersion = Convert.ToBase64String(f.RowVer)
+        }).ToList();
 
         return Ok(items);
     }
@@ -109,7 +122,8 @@ public class ImagesService : BaseService, IImagesService
             Eye = (byte)image.Eye,
             QualityStatus = (byte)image.QualityStatus,
             CreatedAt = image.CreatedAt,
-            ContentUrl = $"/api/images/{image.Id}/content"
+            ContentUrl = $"/api/images/{image.Id}/content",
+            RowVersion = image.ToRowVersion()
         });
     }
 
@@ -152,6 +166,8 @@ public class ImagesService : BaseService, IImagesService
         var image = await _repository.FundusImages.FirstOrDefaultAsync(f => f.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
+        _repository.ApplyOriginalRowVersion(image, req.RowVersion);
+
         if (req.Status == QualityStatus.Ungradable && string.IsNullOrWhiteSpace(req.Note))
             throw AppException.BadRequest(Msg.RequiredFields,
                 "Vui lòng nhập lý do khi đánh dấu ảnh không đạt chất lượng.");
@@ -167,13 +183,17 @@ public class ImagesService : BaseService, IImagesService
             before, new { status = req.Status.ToString(), note = req.Note });
         await _repository.SaveChangesAsync();
 
-        return Ok(new { message = "Đã cập nhật trạng thái chất lượng ảnh." });
+        return Ok(new
+        {
+            message = "Đã cập nhật trạng thái chất lượng ảnh.",
+            rowVersion = image.ToRowVersion()
+        });
     }
 
     /// <summary>UC-24 — thu hồi ảnh (lan sang kết quả AI và review của ảnh đó).</summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
-        await _void.VoidImageAsync(id, req.Reason);
+        await _void.VoidImageAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi ảnh và các kết quả liên quan." });
     }
 }

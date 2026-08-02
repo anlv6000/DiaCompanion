@@ -16,6 +16,8 @@ public class HealthMetricDto
     public DateOnly RecordedLocalDate { get; set; }
     public string? Note { get; set; }
     public bool IsAbnormal { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }
 public class MetricLatestDto
 {

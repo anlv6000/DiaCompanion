@@ -11,4 +11,6 @@ public class LifestyleLogDto
     public string? MealTags { get; set; }
     public short? ExerciseMinutes { get; set; }
     public string? ExerciseType { get; set; }
+
+    public string RowVersion { get; set; } = "";
 }

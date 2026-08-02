@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class SymptomReport : ISoftDeletable
+public class SymptomReport : ISoftDeletable, IHasRowVersion
 {
     public int Id { get; set; }
     public int PatientId { get; set; }
@@ -28,4 +28,6 @@ public class SymptomReport : ISoftDeletable
 
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

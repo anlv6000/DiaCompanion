@@ -46,18 +46,8 @@ public class UsersService : BaseService, IUsersService
             _ => query.OrderBy(u => u.Role).ThenBy(u => u.FullName)
         };
 
-        var items = await query.Skip(page.Skip).Take(page.PageSize)
-            .Select(u => new StaffUserDto
-            {
-                Id = u.Id,
-                FullName = u.FullName,
-                Email = u.Email,
-                Role = u.Role.ToString(),
-                LicenseNo = u.LicenseNo,
-                IsActive = u.IsActive,
-                LastLoginAt = u.LastLoginAt,
-                CreatedAt = u.CreatedAt
-            }).ToListAsync();
+        var rows = await query.Skip(page.Skip).Take(page.PageSize).ToListAsync();
+        var items = rows.Select(MapStaff).ToList();
 
         return Ok(new PagedResult<StaffUserDto>
         { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
@@ -66,21 +56,10 @@ public class UsersService : BaseService, IUsersService
     /// <summary>UC-07 — chi tiết tài khoản.</summary>
     public async Task<ActionResult<StaffUserDto>> Get(int id)
     {
-        var u = await _repository.Users.AsNoTracking()
-            .Where(x => x.Id == id && x.Role != UserRole.Patient)
-            .Select(x => new StaffUserDto
-            {
-                Id = x.Id,
-                FullName = x.FullName,
-                Email = x.Email,
-                Role = x.Role.ToString(),
-                LicenseNo = x.LicenseNo,
-                IsActive = x.IsActive,
-                LastLoginAt = x.LastLoginAt,
-                CreatedAt = x.CreatedAt
-            }).FirstOrDefaultAsync()
+        var user = await _repository.Users.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id && x.Role != UserRole.Patient)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
-        return Ok(u);
+        return Ok(MapStaff(user));
     }
 
     /// <summary>UC-08 — tạo tài khoản bác sĩ / điều dưỡng.</summary>
@@ -121,7 +100,8 @@ public class UsersService : BaseService, IUsersService
         {
             LoginId = email,
             TempPassword = temp,
-            Note = "Mật khẩu tạm chỉ hiển thị một lần. Người dùng phải đổi ở lần đăng nhập đầu."
+            Note = "Mật khẩu tạm chỉ hiển thị một lần. Người dùng phải đổi ở lần đăng nhập đầu.",
+            RowVersion = user.ToRowVersion()
         });
     }
 
@@ -130,6 +110,8 @@ public class UsersService : BaseService, IUsersService
     {
         var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == id && x.Role != UserRole.Patient)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+
+        _repository.ApplyOriginalRowVersion(u, req.RowVersion);
 
         if (u.Role == UserRole.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo))
             throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề.");
@@ -142,17 +124,23 @@ public class UsersService : BaseService, IUsersService
         await _audit.LogAsync(AuditAction.UserUpdate, nameof(User), u.Id, before,
             new { u.FullName, u.LicenseNo });
         await _repository.SaveChangesAsync();
-        return Ok(new { message = "Cập nhật thông tin thành công." });
+        return Ok(new
+        {
+            message = "Cập nhật thông tin thành công.",
+            rowVersion = u.ToRowVersion()
+        });
     }
 
     /// <summary>
     /// UC-10 — khoá / mở tài khoản.
     /// BR-11: tài khoản KHÔNG bị xoá, chỉ khoá — để giữ vết các thao tác đã thực hiện.
     /// </summary>
-    public async Task<IActionResult> SetActive(int id, [FromQuery] bool value)
+    public async Task<IActionResult> SetActive(int id, bool value, ConcurrencyRequest req)
     {
         var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == id && x.Role != UserRole.Patient)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+
+        _repository.ApplyOriginalRowVersion(u, req.RowVersion);
 
         // Tự khoá mình sẽ đẩy admin ra khỏi hệ thống và có thể không còn admin nào
         if (u.Id == _me.Id)
@@ -172,14 +160,20 @@ public class UsersService : BaseService, IUsersService
         await _audit.LogAsync(AuditAction.UserLock, nameof(User), u.Id,
             new { isActive = !value }, new { isActive = value });
         await _repository.SaveChangesAsync();
-        return Ok(new { message = value ? "Đã mở khóa tài khoản." : "Đã khóa tài khoản." });
+        return Ok(new
+        {
+            message = value ? "Đã mở khóa tài khoản." : "Đã khóa tài khoản.",
+            rowVersion = u.ToRowVersion()
+        });
     }
 
     /// <summary>UC-11 — đặt lại mật khẩu cho nhân viên.</summary>
-    public async Task<ActionResult<TempCredentialResponse>> ResetPassword(int id)
+    public async Task<ActionResult<TempCredentialResponse>> ResetPassword(int id, ConcurrencyRequest req)
     {
         var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == id && x.Role != UserRole.Patient)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+
+        _repository.ApplyOriginalRowVersion(u, req.RowVersion);
 
         var temp = _hasher.GenerateTempPassword() + "Aa";
         u.PasswordHash = _hasher.Hash(temp);
@@ -194,7 +188,8 @@ public class UsersService : BaseService, IUsersService
         {
             LoginId = u.Email ?? "",
             TempPassword = temp,
-            Note = "Mật khẩu tạm chỉ hiển thị một lần."
+            Note = "Mật khẩu tạm chỉ hiển thị một lần.",
+            RowVersion = u.ToRowVersion()
         });
     }
 
@@ -208,4 +203,17 @@ public class UsersService : BaseService, IUsersService
             .ToListAsync();
         return Ok(list);
     }
+
+    private static StaffUserDto MapStaff(User u) => new()
+    {
+        Id = u.Id,
+        FullName = u.FullName,
+        Email = u.Email,
+        Role = u.Role.ToString(),
+        LicenseNo = u.LicenseNo,
+        IsActive = u.IsActive,
+        LastLoginAt = u.LastLoginAt,
+        CreatedAt = u.CreatedAt,
+        RowVersion = u.ToRowVersion()
+    };
 }

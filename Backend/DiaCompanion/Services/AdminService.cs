@@ -54,17 +54,22 @@ public class AdminService : BaseService, IAdminService
     /* --------------------------- UC-63 CẤU HÌNH ------------------------- */
     public async Task<ActionResult<List<SystemConfigDto>>> Configs()
     {
-        var items = await _repository.SystemConfigs.AsNoTracking().OrderBy(c => c.Key)
-            .Select(c => new SystemConfigDto
-            {
-                Key = c.Key,
-                Value = c.Value,
-                ValueType = c.ValueType,
-                Description = c.Description,
-                MinValue = c.MinValue,
-                MaxValue = c.MaxValue,
-                UpdatedAt = c.UpdatedAt
-            }).ToListAsync();
+        var rows = await _repository.SystemConfigs.AsNoTracking()
+            .OrderBy(c => c.Key)
+            .ToListAsync();
+
+        var items = rows.Select(c => new SystemConfigDto
+        {
+            Key = c.Key,
+            Value = c.Value,
+            ValueType = c.ValueType,
+            Description = c.Description,
+            MinValue = c.MinValue,
+            MaxValue = c.MaxValue,
+            UpdatedAt = c.UpdatedAt,
+            RowVersion = c.ToRowVersion()
+        }).ToList();
+
         return Ok(items);
     }
 
@@ -77,6 +82,8 @@ public class AdminService : BaseService, IAdminService
     {
         var cfg = await _repository.SystemConfigs.FirstOrDefaultAsync(c => c.Key == key)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy khóa cấu hình.");
+
+        _repository.ApplyOriginalRowVersion(cfg, req.RowVersion);
 
         if (cfg.ValueType is "decimal" or "int")
         {
@@ -101,7 +108,11 @@ public class AdminService : BaseService, IAdminService
             new { key, value = oldValue }, new { key, value = req.Value });
         await _repository.SaveChangesAsync();
 
-        return Ok(new { message = "Cập nhật cấu hình thành công." });
+        return Ok(new
+        {
+            message = "Cập nhật cấu hình thành công.",
+            rowVersion = cfg.ToRowVersion()
+        });
     }
 
     /// <summary>
@@ -154,22 +165,21 @@ public class AdminService : BaseService, IAdminService
     /* --------------------------- UC-64, 65 MODEL ------------------------ */
     public async Task<ActionResult<List<ModelVersionDto>>> Models()
     {
-        var items = await _repository.ModelVersions.AsNoTracking().OrderByDescending(m => m.CreatedAt)
-            .Select(m => new ModelVersionDto
-            {
-                Id = m.Id,
-                Name = m.Name,
-                FilePath = m.FilePath,
-                Sha256 = m.Sha256,
-                Qwk = m.Qwk,
-                Dice = m.Dice,
-                IoU = m.IoU,
-                Note = m.Note,
-                IsActive = m.IsActive,
-                WasActivated = m.WasActivated,
-                ActivatedAt = m.ActivatedAt,
-                DiagnosisCount = _repository.AiDiagnoses.Count(d => d.ModelVersionId == m.Id)
-            }).ToListAsync();
+        var models = await _repository.ModelVersions.AsNoTracking()
+            .OrderByDescending(m => m.CreatedAt)
+            .ToListAsync();
+
+        var modelIds = models.Select(m => m.Id).ToList();
+        var counts = await _repository.AiDiagnoses.AsNoTracking()
+            .Where(d => modelIds.Contains(d.ModelVersionId))
+            .GroupBy(d => d.ModelVersionId)
+            .Select(g => new { ModelVersionId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ModelVersionId, x => x.Count);
+
+        var items = models
+            .Select(m => MapModel(m, counts.GetValueOrDefault(m.Id)))
+            .ToList();
+
         return Ok(items);
     }
 
@@ -207,12 +217,19 @@ public class AdminService : BaseService, IAdminService
     /// UC-64 — kích hoạt phiên bản.
     /// BR-15: chỉ một phiên bản kích hoạt tại một thời điểm.
     /// </summary>
-    public async Task<IActionResult> ActivateModel(int id)
+    public async Task<IActionResult> ActivateModel(int id, ConcurrencyRequest req)
     {
         var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy phiên bản mô hình.");
 
-        if (model.IsActive) return Ok(new { message = "Phiên bản này đang được sử dụng." });
+        _repository.ApplyOriginalRowVersion(model, req.RowVersion);
+
+        if (model.IsActive)
+            return Ok(new
+            {
+                message = "Phiên bản này đang được sử dụng.",
+                rowVersion = model.ToRowVersion()
+            });
 
         await using var tx = await _repository.Database.BeginTransactionAsync();
 
@@ -234,15 +251,18 @@ public class AdminService : BaseService, IAdminService
         return Ok(new
         {
             message = $"Đã kích hoạt {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản mới; " +
-                      "kết quả đã lưu giữ nguyên phiên bản cũ."
+                      "kết quả đã lưu giữ nguyên phiên bản cũ.",
+            rowVersion = model.ToRowVersion()
         });
     }
 
     /// <summary>UC-65 — xoá phiên bản CHƯA TỪNG kích hoạt (BR-16).</summary>
-    public async Task<IActionResult> DeleteModel(int id)
+    public async Task<IActionResult> DeleteModel(int id, string rowVersion)
     {
         var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy phiên bản mô hình.");
+
+        _repository.ApplyOriginalRowVersion(model, rowVersion);
 
         if (model.WasActivated || model.IsActive)
             throw AppException.BadRequest(Msg.ModelWasActive,
@@ -320,21 +340,30 @@ public class AdminService : BaseService, IAdminService
     private static decimal Pct(int part, int total) =>
         total == 0 ? 0 : Math.Round(part * 100m / total, 1);
 
-    private async Task<ModelVersionDto> GetModelDtoAsync(int id) =>
-        await _repository.ModelVersions.AsNoTracking().Where(m => m.Id == id)
-            .Select(m => new ModelVersionDto
-            {
-                Id = m.Id,
-                Name = m.Name,
-                FilePath = m.FilePath,
-                Sha256 = m.Sha256,
-                Qwk = m.Qwk,
-                Dice = m.Dice,
-                IoU = m.IoU,
-                Note = m.Note,
-                IsActive = m.IsActive,
-                WasActivated = m.WasActivated,
-                ActivatedAt = m.ActivatedAt,
-                DiagnosisCount = _repository.AiDiagnoses.Count(d => d.ModelVersionId == m.Id)
-            }).FirstAsync();
+    private async Task<ModelVersionDto> GetModelDtoAsync(int id)
+    {
+        var model = await _repository.ModelVersions.AsNoTracking()
+            .FirstAsync(m => m.Id == id);
+        var diagnosisCount = await _repository.AiDiagnoses.AsNoTracking()
+            .CountAsync(d => d.ModelVersionId == id);
+
+        return MapModel(model, diagnosisCount);
+    }
+
+    private static ModelVersionDto MapModel(ModelVersion m, int diagnosisCount) => new()
+    {
+        Id = m.Id,
+        Name = m.Name,
+        FilePath = m.FilePath,
+        Sha256 = m.Sha256,
+        Qwk = m.Qwk,
+        Dice = m.Dice,
+        IoU = m.IoU,
+        Note = m.Note,
+        IsActive = m.IsActive,
+        WasActivated = m.WasActivated,
+        ActivatedAt = m.ActivatedAt,
+        DiagnosisCount = diagnosisCount,
+        RowVersion = m.ToRowVersion()
+    };
 }

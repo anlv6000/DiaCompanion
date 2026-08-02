@@ -85,17 +85,17 @@ public class AdminController : BaseApiController
     /// BR-15: chỉ một phiên bản kích hoạt tại một thời điểm.
     /// </summary>
     [HttpPut("models/{id:int}/activate")]
-    public async Task<IActionResult> ActivateModel(int id)
+    public async Task<IActionResult> ActivateModel(int id, ConcurrencyRequest req)
     {
-        return await _service.ActivateModel(id);
+        return await _service.ActivateModel(id, req);
     }
 
 
     /// <summary>UC-65 — xoá phiên bản CHƯA TỪNG kích hoạt (BR-16).</summary>
     [HttpDelete("models/{id:int}")]
-    public async Task<IActionResult> DeleteModel(int id)
+    public async Task<IActionResult> DeleteModel(int id, [FromQuery] string rowVersion)
     {
-        return await _service.DeleteModel(id);
+        return await _service.DeleteModel(id, rowVersion);
     }
 
 

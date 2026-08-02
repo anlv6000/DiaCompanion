@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
-public class BlogPost : ISoftDeletable
+public class BlogPost : ISoftDeletable, IHasRowVersion
 {
     public int Id { get; set; }
     public int AuthorId { get; set; }
@@ -19,4 +19,6 @@ public class BlogPost : ISoftDeletable
 
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }
