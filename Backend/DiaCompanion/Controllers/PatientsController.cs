@@ -87,12 +87,11 @@ public class PatientsController : BaseApiController
     /// Dùng khi bệnh nhân quên mật khẩu và không nhận được OTP.
     /// </summary>
     [HttpPost("{id:int}/reissue-credentials")]
-    [Authorize(Roles = Roles.FrontDesk)]
+    [Authorize(Roles = Roles.AllRole)]
     public async Task<ActionResult<TempCredentialResponse>> ReissueCredentials(int id)
     {
         return await _service.ReissueCredentials(id);
     }
-
 
     /// <summary>
     /// Thu hồi hồ sơ nhập nhầm hoặc trùng.

@@ -381,6 +381,7 @@ public class PatientsService : BaseService, IPatientsService
     /// <summary>
     /// Cấp lại mật khẩu tạm tại quầy — thay cho luồng liên kết tài khoản cũ.
     /// Dùng khi bệnh nhân quên mật khẩu và không nhận được OTP.
+    /// người dùng khi được tạo 
     /// </summary>
     public async Task<ActionResult<TempCredentialResponse>> ReissueCredentials(int id)
     {

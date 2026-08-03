@@ -24,7 +24,7 @@ public class VisitsController : BaseApiController
     /// Không tự giới hạn theo bác sĩ đang đăng nhập; bộ lọc doctorId chỉ áp dụng khi client gửi.
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = Roles.VisitView)]
+    [Authorize(Roles = Roles.QualityImage)]
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
         [FromQuery] int? patientId, [FromQuery] int? doctorId,
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
@@ -51,7 +51,7 @@ public class VisitsController : BaseApiController
 
     /// <summary>UC-19 — chi tiết lượt khám kèm ảnh, kết quả AI và review.</summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = Roles.VisitView)]
+    [Authorize(Roles = Roles.QualityImage)]
     public async Task<ActionResult<VisitDto>> Get(int id)
     {
         return await _service.Get(id);

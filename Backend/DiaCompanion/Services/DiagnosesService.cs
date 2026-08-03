@@ -34,9 +34,22 @@ public class DiagnosesService : BaseService, IDiagnosesService
     /// </summary>
     public async Task<ActionResult<AiDiagnosisDto>> Run(int imageId, CancellationToken ct)
     {
-        var image = await _repository.FundusImages.FirstOrDefaultAsync(f => f.Id == imageId, ct)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt.");
+        var image = await _repository.FundusImages
+    .Include(x => x.Visit)
+    .FirstOrDefaultAsync(x => x.Id == imageId, ct)
+    ?? throw AppException.NotFound(
+        Msg.LoadFailed,
+        "Không tìm thấy ảnh đáy mắt.");
 
+
+        var doctorId = _me.RequireId();
+
+        if (image.Visit?.DoctorId != doctorId)
+        {
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Bạn không phải bác sĩ phụ trách lượt khám này.");
+        }
         // BR-01 — van chặn bắt buộc. Chạy AI trên ảnh mờ sinh ra kết quả trông
         // hợp lệ nhưng vô nghĩa, nguy hiểm hơn là không có kết quả.
         if (image.QualityStatus != QualityStatus.Gradable)
