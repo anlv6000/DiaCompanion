@@ -21,4 +21,5 @@ public static class Roles
     public const string StaffPatient = "Doctor,Nurse,Receptionist";
     public const string VisitView = "Doctor,Patient,Nurse";
     public const string QualityImage = "Doctor,Nurse";
+    public const string AllRole = "Admin,Doctor,Nurse,Receptionist,Patient";
 }

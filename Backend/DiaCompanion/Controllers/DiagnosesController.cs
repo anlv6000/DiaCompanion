@@ -53,7 +53,7 @@ public class DiagnosesController : BaseApiController
 
     /// <summary>UC-24 phần kết quả — thu hồi một kết quả AI.</summary>
     [HttpPut("{id:int}/void")]
-    [Authorize(Roles = Roles.DoctorOrAdmin)]
+    [Authorize(Roles = Roles.QualityImage)]
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);
@@ -65,6 +65,7 @@ public class DiagnosesController : BaseApiController
     /// thời gian, nối biến chứng mắt với mức kiểm soát bệnh gốc.
     /// </summary>
     [HttpGet("progression/{patientId:int}")]
+    [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)
     {
         return await _service.Progression(patientId, months);

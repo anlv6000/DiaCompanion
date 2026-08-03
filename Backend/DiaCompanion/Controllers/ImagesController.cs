@@ -17,7 +17,7 @@ public class ImagesController : BaseApiController
 
 
     [HttpGet]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<List<FundusImageDto>>> List(
     [FromQuery] int? patientId, [FromQuery] int? visitId)
     {
@@ -44,6 +44,7 @@ public class ImagesController : BaseApiController
     /// triển khai tại chỗ, có thể không có internet).
     /// </summary>
     [HttpGet("{id:int}/content")]
+    [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<IActionResult> Content(int id)
     {
         return await _service.Content(id);

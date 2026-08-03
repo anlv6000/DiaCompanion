@@ -149,7 +149,7 @@ export function AppRoutes() {
       <Route
         path="/patients/:id/edit"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
             <PatientEditRoute />
           </RequireAuth>
         }
