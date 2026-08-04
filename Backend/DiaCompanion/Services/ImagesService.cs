@@ -168,6 +168,18 @@ public class ImagesService : BaseService, IImagesService
     .FirstOrDefaultAsync(x => x.Id == id)
     ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
+        var currentUserId = _me.RequireId();
+
+        // Điều dưỡng vẫn được kiểm tra chất lượng ảnh.
+        // Bác sĩ chỉ được thao tác trên lượt khám do mình phụ trách.
+        if (_me.Role == UserRole.Doctor &&
+            image.Visit?.DoctorId != currentUserId)
+        {
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Bạn không phải bác sĩ phụ trách lượt khám này.");
+        }
+
 
         if (image.Visit?.Status != VisitStatus.InProgress)
         {
