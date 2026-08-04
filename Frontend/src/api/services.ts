@@ -21,10 +21,14 @@ export const usersApi = {
     http.post<T.TempCredentialResponse>("/api/users", b),
   update: (id: number, b: T.UpdateStaffRequest) =>
     http.put<T.ApiMessage>(`/api/users/${id}`, b),
-  active: (id: number, value: boolean) =>
-    http.put<T.ApiMessage>(`/api/users/${id}/active?value=${value}`),
-  reset: (id: number) =>
-    http.post<T.TempCredentialResponse>(`/api/users/${id}/reset-password`),
+  active: (id: number, value: boolean, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/users/${id}/active?value=${value}`, {
+      rowVersion,
+    }),
+  reset: (id: number, rowVersion: string) =>
+    http.post<T.TempCredentialResponse>(`/api/users/${id}/reset-password`, {
+      rowVersion,
+    }),
   doctors: () => http.get<T.DoctorDto[]>("/api/users/doctors"),
 };
 export const patientsApi = {
@@ -39,8 +43,8 @@ export const patientsApi = {
     http.post<T.TempCredentialResponse>(
       `/api/patients/${id}/reissue-credentials`,
     ),
-  void: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/patients/${id}/void`, { reason }),
+  void: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/patients/${id}/void`, { reason, rowVersion }),
 };
 export const visitsApi = {
   list: (p: Record<string, unknown>) =>
@@ -51,8 +55,8 @@ export const visitsApi = {
   create: (b: T.CreateVisitRequest) => http.post<T.VisitDto>("/api/visits", b),
   close: (id: number, b: T.CloseVisitRequest) =>
     http.put<T.VisitDto>(`/api/visits/${id}/close`, b),
-  void: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/visits/${id}/void`, { reason }),
+  void: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/visits/${id}/void`, { reason, rowVersion }),
 };
 export const imagesApi = {
   list: (p: Record<string, unknown>) =>
@@ -60,20 +64,32 @@ export const imagesApi = {
   upload: (
     file: File,
     patientId: number,
-    visitId: number | null,
+    visitId: number,
     eye: number,
   ) => {
     const f = new FormData();
     f.append("file", file);
     f.append("patientId", String(patientId));
-    if (visitId) f.append("visitId", String(visitId));
+    f.append("visitId", String(visitId));
     f.append("eye", String(eye));
     return http.upload<T.FundusImageDto>("/api/images", f);
   },
-  quality: (id: number, status: number, note?: string) =>
-    http.put<T.ApiMessage>(`/api/images/${id}/quality`, { status, note }),
-  void: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/images/${id}/void`, { reason }),
+  quality: (
+    id: number,
+    status: number,
+    note: string | undefined,
+    rowVersion: string,
+  ) =>
+    http.put<T.ApiMessage>(`/api/images/${id}/quality`, {
+      status,
+      note,
+      rowVersion,
+    }),
+  void: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/images/${id}/void`, {
+      reason,
+      rowVersion,
+    }),
   content: (id: number) => http.blob(`/api/images/${id}/content`),
 };
 export const diagnosesApi = {
@@ -82,8 +98,11 @@ export const diagnosesApi = {
   get: (id: number) => http.get<T.AiDiagnosisDto>(`/api/diagnoses/${id}`),
   byImage: (imageId: number) =>
     http.get<T.AiDiagnosisDto[]>(`/api/diagnoses/by-image/${imageId}`),
-  void: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/diagnoses/${id}/void`, { reason }),
+  void: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/diagnoses/${id}/void`, {
+      reason,
+      rowVersion,
+    }),
   progression: (patientId: number, months: number) =>
     http.get<T.ProgressionDto>(
       `/api/diagnoses/progression/${patientId}?months=${months}`,
@@ -97,8 +116,11 @@ export const triageApi = {
     http.post<T.ReviewDto>(`/api/triage/${id}/approve`, { rowVersion }),
   override: (id: number, b: T.OverrideRequest) =>
     http.post<T.ReviewDto>(`/api/triage/${id}/override`, b),
-  voidReview: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/triage/reviews/${id}/void`, { reason }),
+  voidReview: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/triage/reviews/${id}/void`, {
+      reason,
+      rowVersion,
+    }),
 };
 export const prescriptionsApi = {
   list: (p: Record<string, unknown>) =>
@@ -106,10 +128,13 @@ export const prescriptionsApi = {
   get: (id: number) => http.get<T.PrescriptionDto>(`/api/prescriptions/${id}`),
   create: (b: T.CreatePrescriptionRequest) =>
     http.post<T.PrescriptionDto>("/api/prescriptions", b),
-  update: (id: number, b: T.CreatePrescriptionRequest) =>
+  update: (id: number, b: T.UpdatePrescriptionRequest) =>
     http.put<T.PrescriptionDto>(`/api/prescriptions/${id}`, b),
-  void: (id: number, reason: string) =>
-    http.put<T.ApiMessage>(`/api/prescriptions/${id}/void`, { reason }),
+  void: (id: number, reason: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/prescriptions/${id}/void`, {
+      reason,
+      rowVersion,
+    }),
   adherence: (patientId: number, days = 30) =>
     http.get<T.AdherenceDto>(
       `/api/prescriptions/adherence/${patientId}?days=${days}`,
@@ -136,12 +161,14 @@ export const receptionApi = {
     http.post<T.DoctorShiftDto>("/api/reception/shifts", b),
   createShiftsBatch: (b: T.CreateDoctorShiftsBatchRequest) =>
     http.post<T.DoctorShiftDto[]>("/api/reception/shifts/batch", b),
-  setShiftActive: (id: number, active: boolean) =>
+  setShiftActive: (id: number, active: boolean, rowVersion: string) =>
     http.put<T.DoctorShiftDto>(
-      `/api/reception/shifts/${id}/active?active=${active}`,
+      `/api/reception/shifts/${id}/active?active=${active}&rowVersion=${encodeURIComponent(rowVersion)}`,
     ),
-  deleteShift: (id: number) =>
-    http.delete<void>(`/api/reception/shifts/${id}`),
+  deleteShift: (id: number, rowVersion: string) =>
+    http.delete<void>(
+      `/api/reception/shifts/${id}?rowVersion=${encodeURIComponent(rowVersion)}`,
+    ),
 };
 export const monitoringApi = {
   metrics: (p: Record<string, unknown>) =>
@@ -174,8 +201,11 @@ export const engagementApi = {
     http.get<T.PagedResult<T.SymptomReportDto>>(
       "/api/engagement/symptoms" + query(p),
     ),
-  reply: (id: number, reply: string) =>
-    http.put<T.ApiMessage>(`/api/engagement/symptoms/${id}/reply`, { reply }),
+  reply: (id: number, reply: string, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/engagement/symptoms/${id}/reply`, {
+      reply,
+      rowVersion,
+    }),
   feedback: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.FeedbackDto>>(
       "/api/engagement/feedback" + query(p),
@@ -192,16 +222,23 @@ export const blogApi = {
   create: (b: T.SaveBlogRequest) => http.post<T.BlogPostDto>("/api/blog", b),
   update: (id: number, b: T.SaveBlogRequest) =>
     http.put<T.BlogPostDto>(`/api/blog/${id}`, b),
-  publish: (id: number, value: boolean) =>
-    http.put<T.ApiMessage>(`/api/blog/${id}/publish?value=${value}`),
-  delete: (id: number) => http.delete<T.ApiMessage>(`/api/blog/${id}`),
+  publish: (id: number, value: boolean, rowVersion: string) =>
+    http.put<T.ApiMessage>(
+      `/api/blog/${id}/${value ? "publish" : "unpublish"}`,
+      { rowVersion },
+    ),
+  delete: (id: number, rowVersion: string) =>
+    http.delete<T.ApiMessage>(
+      `/api/blog/${id}?rowVersion=${encodeURIComponent(rowVersion)}`,
+    ),
 };
 export const adminApi = {
   dashboard: () => http.get<T.DashboardDto>("/api/admin/dashboard"),
   configs: () => http.get<T.SystemConfigDto[]>("/api/admin/configs"),
-  updateConfig: (key: string, value: string) =>
+  updateConfig: (key: string, value: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/admin/configs/${encodeURIComponent(key)}`, {
       value,
+      rowVersion,
     }),
   impact: (key: string, proposed: number) =>
     http.get<T.ThresholdImpactDto>(
@@ -210,10 +247,14 @@ export const adminApi = {
   models: () => http.get<T.ModelVersionDto[]>("/api/admin/models"),
   registerModel: (b: T.RegisterModelRequest) =>
     http.post<T.ModelVersionDto>("/api/admin/models", b),
-  activate: (id: number) =>
-    http.put<T.ApiMessage>(`/api/admin/models/${id}/activate`),
-  deleteModel: (id: number) =>
-    http.delete<T.ApiMessage>(`/api/admin/models/${id}`),
+  activate: (id: number, rowVersion: string) =>
+    http.put<T.ApiMessage>(`/api/admin/models/${id}/activate`, {
+      rowVersion,
+    }),
+  deleteModel: (id: number, rowVersion: string) =>
+    http.delete<T.ApiMessage>(
+      `/api/admin/models/${id}?rowVersion=${encodeURIComponent(rowVersion)}`,
+    ),
   audit: (p: Record<string, unknown>) =>
     http.get<T.KeysetResult<T.AuditLogDto>>("/api/admin/audit" + query(p)),
 };

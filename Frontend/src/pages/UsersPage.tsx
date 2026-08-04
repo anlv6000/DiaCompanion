@@ -45,7 +45,7 @@ export function UsersPage() {
   );
 
   const toggle = async (u: StaffUserDto) => {
-    await data.users.setActive(u.id, !u.isActive);
+    await data.users.setActive(u.id, !u.isActive, u.rowVersion);
     toast.push(
       u.isActive ? "Đã khóa tài khoản." : "Đã mở tài khoản.",
       "success",
@@ -54,7 +54,7 @@ export function UsersPage() {
     list.reload();
   };
   const reset = async (u: StaffUserDto) => {
-    setCred(await data.users.resetPassword(u.id));
+    setCred(await data.users.resetPassword(u.id, u.rowVersion));
     toast.push("Đã cấp mật khẩu tạm mới.", "success");
   };
 
@@ -239,6 +239,7 @@ function UserEditor({
         await data.users.update(user.id, {
           fullName,
           licenseNo: license || null,
+          rowVersion: user.rowVersion,
         });
         onSaved();
       }

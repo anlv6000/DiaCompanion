@@ -205,7 +205,7 @@ export function ReceptionShiftsPage() {
 
   const toggleActive = async (s: DoctorShiftDto) => {
     try {
-      await data.reception.setShiftActive(s.id, !s.isActive);
+      await data.reception.setShiftActive(s.id, !s.isActive, s.rowVersion);
       shifts.reload();
     } catch (err) {
       toast.push((err as Error).message, "error");
@@ -214,7 +214,7 @@ export function ReceptionShiftsPage() {
 
   const remove = async (s: DoctorShiftDto) => {
     try {
-      await data.reception.deleteShift(s.id);
+      await data.reception.deleteShift(s.id, s.rowVersion);
       toast.push("Đã xoá ca trực.", "success");
       shifts.reload();
     } catch (err) {
@@ -435,7 +435,7 @@ export function ReceptionVisitsPage() {
   const voidVisit = async (reason: string) => {
     if (!voiding) return;
     try {
-      await data.visits.void(voiding.id, reason);
+      await data.visits.void(voiding.id, reason, voiding.rowVersion);
       toast.push("Đã thu hồi lượt khám.", "success");
       setVoiding(null);
       list.reload();

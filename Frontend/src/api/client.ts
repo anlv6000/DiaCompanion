@@ -29,6 +29,14 @@ export class ApiError extends Error {
     this.detail = body?.detail;
     this.traceId = body?.traceId;
   }
+
+  get isConflict() {
+    return this.status === 409;
+  }
+}
+
+export function isConflict(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 409;
 }
 
 function normalizeJson(value: unknown): unknown {

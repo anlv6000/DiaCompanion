@@ -29,6 +29,7 @@ import {
   metricContexts,
 } from "@/lib/enums";
 import { can } from "@/lib/permissions";
+import { ProtectedImage } from "@/components/ProtectedImage";
 import { fmtDate, num } from "@/lib/format";
 import type {
   VisitDto,
@@ -447,10 +448,26 @@ function VisitImages({
   const [quality, setQuality] = useState<FundusImageDto | null>(null);
   const [voiding, setVoiding] = useState<FundusImageDto | null>(null);
 
-  const images = useAsync(
-    () => data.images.list({ visitId: visit.id, page: 1, pageSize: 50 }),
-    [],
-  );
+  const images = useAsync(async () => {
+    const rows = await data.images.list({
+      visitId: visit.id,
+      page: 1,
+      pageSize: 50,
+    });
+
+    // ImagesService.List currently returns image metadata but does not populate
+    // LatestDiagnosis, so fetch the latest diagnosis for each image here.
+    return Promise.all(
+      rows.map(async (img) => {
+        try {
+          const diagnoses = await data.diagnoses.byImage(img.id);
+          return { ...img, latestDiagnosis: diagnoses[0] || null };
+        } catch {
+          return img;
+        }
+      }),
+    );
+  }, [visit.id]);
 
   const runAi = async (imageId: number) => {
     try {
@@ -464,7 +481,7 @@ function VisitImages({
 
   const setQ = async (status: number, note: string) => {
     if (!quality) return;
-    await data.images.quality(quality.id, status, note);
+    await data.images.quality(quality.id, status, note, quality.rowVersion);
     toast.push("Đã cập nhật chất lượng ảnh.", "success");
     setQuality(null);
     images.reload();
@@ -472,7 +489,7 @@ function VisitImages({
 
   const voidImg = async (reason: string) => {
     if (!voiding) return;
-    await data.images.void(voiding.id, reason);
+    await data.images.void(voiding.id, reason, voiding.rowVersion);
     toast.push("Đã thu hồi ảnh và kết quả liên quan.", "success");
     setVoiding(null);
     images.reload();
@@ -498,9 +515,22 @@ function VisitImages({
         emptyText="Chưa có ảnh nào trong lượt khám này."
       >
         {images.data && (
-          <DataTable headers={["Mắt", "Chất lượng", "Kết quả AI", ""]}>
+          <DataTable headers={["Ảnh", "Mắt", "Chất lượng", "Kết quả AI", ""]}>
             {images.data.map((img: FundusImageDto) => (
               <tr key={img.id}>
+                <td>
+                  <ProtectedImage
+                    imageId={img.id}
+                    alt={`Ảnh đáy mắt #${img.id}`}
+                    onClick={() =>
+                      navigate(
+                        img.latestDiagnosis
+                          ? `/fundus/${img.id}?diagnosis=${img.latestDiagnosis.id}`
+                          : `/fundus/${img.id}`,
+                      )
+                    }
+                  />
+                </td>
                 <td>{label(eyes, img.eye)}</td>
                 <td>{img.qualityStatus === 1 ? "Đạt" : "Chưa đạt"}</td>
                 <td>
@@ -837,13 +867,33 @@ function UploadModal({
           <option value="1">OS (mắt trái)</option>
         </select>
       </Field>
-      <Field labelText="Tệp ảnh" required>
+      <Field labelText="Tệp ảnh" required help="JPG/PNG, tối đa 10 MB.">
         <input
           type="file"
           accept="image/jpeg,image/png"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
         />
       </Field>
+      {file && (
+        <div style={{ marginTop: 12 }}>
+          <div className="help" style={{ marginBottom: 6 }}>
+            Xem trước: {file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB
+          </div>
+          <img
+            src={URL.createObjectURL(file)}
+            alt="Xem trước ảnh sẽ tải lên"
+            style={{
+              display: "block",
+              width: "100%",
+              maxHeight: 280,
+              objectFit: "contain",
+              borderRadius: 10,
+              border: "1px solid var(--border, #d8dee8)",
+            }}
+            onLoad={(e) => URL.revokeObjectURL(e.currentTarget.src)}
+          />
+        </div>
+      )}
       <div className="modal-actions">
         <Button onClick={onClose}>Hủy</Button>
         <Button kind="primary" busy={busy} onClick={save}>
@@ -880,6 +930,7 @@ function CloseVisitForm({
         conclusion: conclusion.trim(),
         referral,
         recheckMonths: recheckMonths === "" ? null : Number(recheckMonths),
+        rowVersion: visit.rowVersion,
       });
       toast.push("Đã đóng lượt khám.", "success");
       onDone();

@@ -59,6 +59,22 @@ export function FundusPage({ imageId }: { imageId: number }) {
 
   const canReview = can.reviewDiagnosis(user?.role);
 
+  const downloadOriginal = async () => {
+    try {
+      const blob = await data.images.content(imageId);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `fundus-${imageId}.${blob.type === "image/png" ? "png" : "jpg"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
+  };
+
   const run = async () => {
     setBusy(true);
     try {
@@ -93,7 +109,11 @@ export function FundusPage({ imageId }: { imageId: number }) {
   };
   const voidR = async (r: string) => {
     if (!selected?.review) return;
-    await data.triage.voidReview(selected.review.id, r);
+    await data.triage.voidReview(
+      selected.review.id,
+      r,
+      selected.review.rowVersion,
+    );
     toast.push("Đã thu hồi review; ca quay lại triage.", "success");
     setVoidReview(false);
     diagnoses.reload();
@@ -107,6 +127,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
         actions={
           <>
             <Button onClick={() => navigate(-1)}>Quay lại</Button>
+            <Button onClick={downloadOriginal}>Tải ảnh gốc</Button>
             {canReview && (
               <Button kind="primary" busy={busy} onClick={run}>
                 Chạy lại AI
