@@ -77,7 +77,6 @@ public class AuthController : BaseApiController
         return await _service.ChangePassword(req);
     }
 
-
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {

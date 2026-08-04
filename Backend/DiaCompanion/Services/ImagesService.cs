@@ -163,9 +163,28 @@ public class ImagesService : BaseService, IImagesService
     /// </summary>
     public async Task<IActionResult> SetQuality(int id, QualityCheckRequest req)
     {
-        var image = await _repository.FundusImages.FirstOrDefaultAsync(f => f.Id == id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
+        var image = await _repository.FundusImages
+    .Include(x => x.Visit)
+    .FirstOrDefaultAsync(x => x.Id == id)
+    ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
+
+        if (image.Visit?.Status != VisitStatus.InProgress)
+        {
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Không thể thay đổi ảnh của lượt khám đã đóng.");
+        }
+
+        var hasDiagnosis = await _repository.AiDiagnoses
+            .AnyAsync(x => x.FundusImageId == id);
+
+        if (hasDiagnosis)
+        {
+            throw AppException.Conflict(
+                Msg.InvalidData,
+                "Ảnh đã được chạy AI nên không thể thay đổi đánh giá chất lượng.");
+        }
         _repository.ApplyOriginalRowVersion(image, req.RowVersion);
 
         if (req.Status == QualityStatus.Ungradable && string.IsNullOrWhiteSpace(req.Note))
