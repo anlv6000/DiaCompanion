@@ -53,7 +53,7 @@ public class DiagnosesController : BaseApiController
 
     /// <summary>UC-24 phần kết quả — thu hồi một kết quả AI.</summary>
     [HttpPut("{id:int}/void")]
-    [Authorize(Roles = Roles.QualityImage)]
+    [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);

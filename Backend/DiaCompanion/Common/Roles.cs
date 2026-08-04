@@ -19,6 +19,5 @@ public static class Roles
     public const string FrontDeskOrAdmin = "Admin,Receptionist";
     public const string StaffPatient = "Doctor,Receptionist";
     public const string VisitView = "Doctor,Patient";
-    public const string QualityImage = "Doctor";
     public const string AllRole = "Admin,Doctor,Receptionist,Patient";
 }
