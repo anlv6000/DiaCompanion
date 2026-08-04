@@ -1,6 +1,6 @@
 namespace DiaCompanion.Api.Common;
 
-public enum UserRole : byte { Admin = 0, Doctor = 1, Nurse = 2, Patient = 3, Receptionist = 4 };
+public enum UserRole : byte { Admin = 0, Doctor = 1, Patient = 3, Receptionist = 4 };
 
 /// <summary>
 /// QT-8: mức DR là thang THỨ BẬC nên lưu dạng số, không phải chuỗi.
