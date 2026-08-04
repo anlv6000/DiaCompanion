@@ -260,6 +260,7 @@ export interface PrescriptionItemDto {
   timesPerDay: number;
   durationDays: number;
   instruction?: string | null;
+  instructions?: string | null;
 }
 export interface AdherenceDto {
   total: number;
