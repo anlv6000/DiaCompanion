@@ -155,11 +155,7 @@ public class ImagesService : BaseService, IImagesService
     }
 
     /// <summary>
-    /// UC-23 — kiểm duyệt chất lượng ảnh.
-    ///
-    /// Cho phép cả Điều dưỡng: người chụp phát hiện ảnh hỏng ngay lúc bệnh nhân
-    /// còn ở phòng khám thì chụp lại được; để đến khi bác sĩ duyệt thì bệnh nhân
-    /// đã về. Quyết định này khớp ma trận phân quyền SCR-10.
+    /// UC-23 — Bác sĩ kiểm duyệt chất lượng ảnh trước khi chạy AI.
     /// </summary>
     public async Task<IActionResult> SetQuality(int id, QualityCheckRequest req)
     {
@@ -170,7 +166,6 @@ public class ImagesService : BaseService, IImagesService
 
         var currentUserId = _me.RequireId();
 
-        // Điều dưỡng vẫn được kiểm tra chất lượng ảnh.
         // Bác sĩ chỉ được thao tác trên lượt khám do mình phụ trách.
         if (_me.Role == UserRole.Doctor &&
             image.Visit?.DoctorId != currentUserId)

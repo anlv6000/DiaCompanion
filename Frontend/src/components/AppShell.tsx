@@ -12,7 +12,7 @@ import type { Role, NotificationDto } from "@/types/api";
    con render trong <main> qua <Outlet/> ở routes.
 
    nav lọc theo vai trò — chỉ hiện mục người dùng có quyền. Đây là web bệnh
-   viện: menu chỉ gồm Bác sĩ / Điều dưỡng / Admin, không có gì của bệnh nhân. */
+   viện: menu chỉ gồm Bác sĩ / Lễ tân / Admin, không có gì của bệnh nhân. */
 interface NavItem {
   to: string;
   label: string;
@@ -27,13 +27,13 @@ const NAV: [string, NavItem[]][] = [
         to: "/triage",
         label: "Triage",
         icon: "menu",
-        roles: ["Doctor", "Admin"],
+        roles: ["Doctor"],
       },
       {
         to: "/patients",
         label: "Bệnh nhân",
         icon: "users",
-        roles: ["Doctor", "Nurse", "Admin", "Receptionist"],
+        roles: ["Doctor", "Receptionist"],
       },
       {
         to: "/my-visits",
@@ -45,13 +45,13 @@ const NAV: [string, NavItem[]][] = [
         to: "/recheck",
         label: "Tái tầm soát",
         icon: "calendar",
-        roles: ["Doctor", "Nurse", "Admin", "Receptionist"],
+        roles: ["Doctor", "Receptionist"],
       },
       {
         to: "/progression",
         label: "Diễn tiến",
         icon: "chart",
-        roles: ["Doctor", "Nurse", "Admin"],
+        roles: ["Doctor"],
       },
       {
         to: "/symptoms",
@@ -80,13 +80,13 @@ const NAV: [string, NavItem[]][] = [
         to: "/reception/visits",
         label: "Danh sách lượt khám",
         icon: "menu",
-        roles: ["Receptionist", "Admin"],
+        roles: ["Receptionist"],
       },
       {
         to: "/reception/shifts",
         label: "Lịch ca trực",
         icon: "settings",
-        roles: ["Receptionist", "Admin"],
+        roles: ["Receptionist"],
       },
     ],
   ],

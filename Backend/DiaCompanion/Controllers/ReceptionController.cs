@@ -10,20 +10,10 @@ using DiaCompanion.Api.Services;
 namespace DiaCompanion.Api.Controllers;
 
 /// <summary>
-/// LT-1..LT-9 — nghiệp vụ của LỄ TÂN (Receptionist).
+/// LT-1..LT-9 — nghiệp vụ của Lễ tân.
 ///
-/// Lễ tân là vai trò mới, đảm nhận khâu đầu quầy: tạo tài khoản/hồ sơ bệnh nhân,
-/// mở lượt khám và gán bác sĩ đang trực. Việc gán bác sĩ dựa vào bảng ca trực
-/// cố định theo tuần (DoctorShift): hôm nay là thứ mấy, ca nào, thì những bác sĩ
-/// nào đang trực.
-///
-/// Ghi chú phân quyền: tạo bệnh nhân và tạo lượt khám vốn đã có ở
-/// PatientsController / VisitsController nhưng đang giới hạn ở Roles.Staff
-/// (Admin, Doctor, Nurse). Sau khi thêm lễ tân, cần mở các endpoint đó cho
-/// Receptionist (đổi [Authorize(Roles = Roles.Staff)] thành
-/// [Authorize(Roles = Roles.FrontDesk)] — xem RolesToAdd.cs). Controller này
-/// KHÔNG lặp lại việc tạo bệnh nhân/lượt khám mà chỉ bổ sung phần còn thiếu:
-/// tra cứu bác sĩ trực và quản lý ca trực.
+/// Lễ tân tạo hồ sơ, mở lượt khám, chọn bác sĩ đang trực và quản lý lịch ca trực.
+/// Các quyết định lâm sàng vẫn thuộc riêng vai trò Bác sĩ.
 /// </summary>
 [Route("api/reception")]
 public class ReceptionController : BaseApiController
@@ -44,7 +34,7 @@ public class ReceptionController : BaseApiController
     /// Lễ tân dùng để chọn bác sĩ gán vào lượt khám mới.
     /// </summary>
     [HttpGet("on-duty")]
-    [Authorize(Roles = Roles.FrontDesk)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<OnDutyResponse>> OnDuty([FromQuery] DateOnly? date, [FromQuery] byte? shift)
     {
         var day = date ?? _clock.LocalToday;
@@ -110,7 +100,7 @@ public class ReceptionController : BaseApiController
 
     /// <summary>LT-6 — xem toàn bộ lịch trực, lọc tùy chọn theo bác sĩ.</summary>
     [HttpGet("shifts")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<List<DoctorShiftDto>>> ListShifts([FromQuery] int? doctorId)
     {
         var q = _db.Set<DoctorShift>().AsQueryable();
@@ -140,7 +130,7 @@ public class ReceptionController : BaseApiController
 
     /// <summary>LT-7 — thêm một ca trực.</summary>
     [HttpPost("shifts")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<DoctorShiftDto>> CreateShift(CreateDoctorShiftRequest req)
     {
         await EnsureDoctorAsync(req.DoctorId);
@@ -164,7 +154,7 @@ public class ReceptionController : BaseApiController
     /// Bỏ qua những ngày đã có sẵn thay vì báo lỗi cả lô.
     /// </summary>
     [HttpPost("shifts/batch")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<List<DoctorShiftDto>>> CreateShiftsBatch(CreateDoctorShiftsBatchRequest req)
     {
         await EnsureDoctorAsync(req.DoctorId);
@@ -196,7 +186,7 @@ public class ReceptionController : BaseApiController
 
     /// <summary>LT-9 — bật/tắt một ca trực (nghỉ tạm) mà không xoá.</summary>
     [HttpPut("shifts/{id:int}/active")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<ActionResult<DoctorShiftDto>> SetShiftActive(
         int id,
         [FromQuery] bool active,
@@ -214,7 +204,7 @@ public class ReceptionController : BaseApiController
 
     /// <summary>Xoá hẳn một ca trực (lịch nhập sai).</summary>
     [HttpDelete("shifts/{id:int}")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<IActionResult> DeleteShift(int id, [FromQuery] string rowVersion)
     {
         var shift = await _db.Set<DoctorShift>().FirstOrDefaultAsync(s => s.Id == id)

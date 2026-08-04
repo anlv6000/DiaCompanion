@@ -244,7 +244,7 @@ function ReviewRail({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Chỉ Bác sĩ được phê duyệt/ghi đè (đặt FinalGrade). Admin/Điều dưỡng chỉ xem.
+  // Chỉ Bác sĩ được phê duyệt/ghi đè và truy cập hàng đợi triage.
   const canReview = user?.role === "Doctor";
 
   const submit = async () => {

@@ -272,7 +272,10 @@ public class PatientsService : BaseService, IPatientsService
             response);
     }
 
-    /// <summary>UC-15 — cập nhật hồ sơ.</summary>
+    /// <summary>
+    /// UC-15 — cập nhật hồ sơ theo phạm vi vai trò.
+    /// Receptionist chỉ sửa thông tin hành chính; Doctor chỉ sửa thông tin lâm sàng.
+    /// </summary>
     public async Task<ActionResult<PatientDetailDto>> Update(int id, UpdatePatientRequest req)
     {
         var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
@@ -280,35 +283,90 @@ public class PatientsService : BaseService, IPatientsService
 
         _repository.ApplyOriginalRowVersion(p, req.RowVersion);
 
-        var phone = req.Phone.Trim();
-        if (phone != p.Phone && await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
-            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
-
-        var before = new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c };
-
-        p.FullName = req.FullName.Trim();
-        p.Gender = req.Gender;
-        p.DateOfBirth = req.DateOfBirth;
-        p.Phone = phone;
-        p.Address = req.Address;
-        p.DiabetesType = req.DiabetesType;
-        p.DiabetesDurationYears = req.DiabetesDurationYears;
-        p.BaselineHbA1c = req.BaselineHbA1c;
-        p.Note = req.Note;
-        p.UpdatedAt = DateTime.UtcNow;
-
-        // Tài khoản đăng nhập phải đi theo, nếu không bệnh nhân đổi số xong
-        // sẽ không đăng nhập được nữa.
-        if (p.UserId is int uid)
+        if (_me.Role == UserRole.Receptionist)
         {
-            var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
-            if (u is not null) { u.Phone = phone; u.FullName = p.FullName; u.UpdatedAt = DateTime.UtcNow; }
+            var phone = req.Phone.Trim();
+            if (phone != p.Phone &&
+                await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
+            {
+                throw AppException.Conflict(
+                    Msg.PhoneTaken,
+                    "Số điện thoại này đã được dùng cho một hồ sơ khác.");
+            }
+
+            var before = new { p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.Address };
+
+            p.FullName = req.FullName.Trim();
+            p.Gender = req.Gender;
+            p.DateOfBirth = req.DateOfBirth;
+            p.Phone = phone;
+            p.Address = req.Address;
+            p.UpdatedAt = DateTime.UtcNow;
+
+            // Số điện thoại là định danh đăng nhập nên tài khoản phải cập nhật đồng bộ.
+            if (p.UserId is int uid)
+            {
+                var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
+                if (u is not null)
+                {
+                    u.Phone = phone;
+                    u.FullName = p.FullName;
+                    u.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await _audit.LogAsync(
+                AuditAction.PatientUpdate,
+                nameof(Patient),
+                p.Id,
+                before,
+                new { p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.Address, Scope = "Administrative" });
+        }
+        else if (_me.Role == UserRole.Doctor)
+        {
+            if (req.BaselineHbA1c is decimal hba1c && (hba1c < 3 || hba1c > 20))
+            {
+                throw AppException.BadRequest(
+                    Msg.RequiredFields,
+                    "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
+            }
+
+            var before = new
+            {
+                p.DiabetesType,
+                p.DiabetesDurationYears,
+                p.BaselineHbA1c,
+                p.Note
+            };
+
+            p.DiabetesType = req.DiabetesType;
+            p.DiabetesDurationYears = req.DiabetesDurationYears;
+            p.BaselineHbA1c = req.BaselineHbA1c;
+            p.Note = req.Note;
+            p.UpdatedAt = DateTime.UtcNow;
+
+            await _audit.LogAsync(
+                AuditAction.PatientUpdate,
+                nameof(Patient),
+                p.Id,
+                before,
+                new
+                {
+                    p.DiabetesType,
+                    p.DiabetesDurationYears,
+                    p.BaselineHbA1c,
+                    p.Note,
+                    Scope = "Clinical"
+                });
+        }
+        else
+        {
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Vai trò hiện tại không được cập nhật hồ sơ bệnh nhân.");
         }
 
-        await _audit.LogAsync(AuditAction.PatientUpdate, nameof(Patient), p.Id, before,
-            new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
         await _repository.SaveChangesAsync();
-
         return Ok(await ToDetailAsync(p));
     }
 

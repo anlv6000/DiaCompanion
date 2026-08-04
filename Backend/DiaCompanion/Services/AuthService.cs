@@ -198,7 +198,6 @@ public class AuthService : BaseService, IAuthService
     {
         UserRole.Doctor => "/triage",       // SCR-14
         UserRole.Admin => "/dashboard",     // SCR-19
-        UserRole.Nurse => "/patients",      // SCR-06
         UserRole.Receptionist => "/reception/visits/new", // quầy tiếp đón
         _ => "/home"                        // MOB-03
     };

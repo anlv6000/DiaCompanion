@@ -44,7 +44,7 @@ export function LoginPage() {
         <form className="login-form" onSubmit={submit}>
           <h2 className="serif">Đăng nhập</h2>
           <p className="faint">
-            Dành cho nhân viên bệnh viện (Bác sĩ, Điều dưỡng, Quản trị).
+            Dành cho nhân viên bệnh viện (Bác sĩ, Lễ tân, Quản trị).
           </p>
           <Field labelText="Email" required>
             <input

@@ -62,12 +62,12 @@ public class UsersService : BaseService, IUsersService
         return Ok(MapStaff(user));
     }
 
-    /// <summary>UC-08 — tạo tài khoản bác sĩ / điều dưỡng.</summary>
+    /// <summary>UC-08 — tạo tài khoản Admin, Bác sĩ hoặc Lễ tân.</summary>
     public async Task<ActionResult<TempCredentialResponse>> Create(CreateStaffRequest req)
     {
-        if (req.Role == UserRole.Patient)
+        if (req.Role is not (UserRole.Admin or UserRole.Doctor or UserRole.Receptionist))
             throw AppException.BadRequest(Msg.RequiredFields,
-                "Tài khoản bệnh nhân được cấp khi tạo hồ sơ, không tạo ở màn này.");
+                "Vai trò nhân viên chỉ có thể là Admin, Bác sĩ hoặc Lễ tân.");
 
         // BR-10 — kiểm ở tầng ứng dụng để có thông điệp rõ; CK_Users_License là chốt cuối
         if (req.Role == UserRole.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo))

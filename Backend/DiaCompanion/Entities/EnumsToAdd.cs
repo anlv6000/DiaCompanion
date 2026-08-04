@@ -5,12 +5,12 @@
 // 1) SỬA enum UserRole hiện tại — thêm Receptionist = 4:
 //
 //    TRƯỚC:
-//        public enum UserRole : byte { Admin = 0, Doctor = 1, Nurse = 2, Patient = 3 }
+//        public enum UserRole : byte { Admin = 0, Doctor = 1, Patient = 3 }
 //    SAU:
-//        public enum UserRole : byte { Admin = 0, Doctor = 1, Nurse = 2, Patient = 3, Receptionist = 4 }
+//        public enum UserRole : byte { Admin = 0, Doctor = 1, Patient = 3, Receptionist = 4 }
 //
-//    Giữ nguyên các giá trị số cũ (0..3) để không phá dữ liệu đã có; chỉ nối
-//    thêm 4 ở cuối.
+//    Giữ nguyên Patient = 3 và Receptionist = 4; giá trị 2 từng dùng cho Nurse
+//    được để trống, không đánh lại số enum.
 //
 // 2) THÊM enum mới ShiftType (ca làm việc):
 
