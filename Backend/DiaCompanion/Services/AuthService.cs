@@ -129,8 +129,6 @@ public class AuthService : BaseService, IAuthService
         var id = _me.RequireId();
         var user = await _repository.Users.FirstAsync(u => u.Id == id);
 
-        if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
-            throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
         if (!user.MustChangePassword)
         {
             if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
