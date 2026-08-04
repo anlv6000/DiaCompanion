@@ -64,6 +64,15 @@ public class DiagnosesController : BaseApiController
     /// UC-29 — diễn tiến: ghép mức DR đã xác nhận, fractal và HbA1c trên một trục
     /// thời gian, nối biến chứng mắt với mức kiểm soát bệnh gốc.
     /// </summary>
+
+    /// <summary>Diễn tiến của chính bệnh nhân đang đăng nhập.</summary>
+    [HttpGet("progression/me")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<ActionResult<ProgressionDto>> ProgressionMine([FromQuery] int months = 24)
+    {
+        return await _service.ProgressionMine(months);
+    }
+
     [HttpGet("progression/{patientId:int}")]
     [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)

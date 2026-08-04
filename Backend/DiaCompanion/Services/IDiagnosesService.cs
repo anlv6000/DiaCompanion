@@ -12,4 +12,5 @@ public interface IDiagnosesService
     Task<ActionResult<List<AiDiagnosisDto>>> ByImage(int imageId);
     Task<IActionResult> Void(int id, VoidRequest req);
     Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24);
+    Task<ActionResult<ProgressionDto>> ProgressionMine(int months = 24);
 }
