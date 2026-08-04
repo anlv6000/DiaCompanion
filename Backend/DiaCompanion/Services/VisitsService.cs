@@ -183,17 +183,17 @@ public class VisitsService : BaseService, IVisitsService
     .Select(f => f.Id);
 
         // 1. Đếm ảnh vẫn đang chờ duyệt chất lượng.
-        var pendingQualityImages = await _repository.FundusImages
+        var pendingDoctorOnlys = await _repository.FundusImages
             .CountAsync(f =>
                 f.VisitId == id &&
                 !f.IsVoided &&
                 f.QualityStatus == QualityStatus.Pending);
 
-        if (pendingQualityImages > 0)
+        if (pendingDoctorOnlys > 0)
         {
             throw AppException.BadRequest(
                 Msg.ConclusionNeeded,
-                $"Còn {pendingQualityImages} ảnh đáy mắt chưa được duyệt chất lượng.");
+                $"Còn {pendingDoctorOnlys} ảnh đáy mắt chưa được duyệt chất lượng.");
         }
 
         // 2. Ảnh đã đạt chất lượng nhưng chưa chạy AI,
