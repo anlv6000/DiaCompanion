@@ -76,8 +76,8 @@ export function AuthProvider({ children }) {
     await clearSession();
   }, [clearSession]);
 
-  const changePassword = useCallback(async (current, next) => {
-    await authApi.changePassword(current, next);
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    await authApi.changePassword(currentPassword, newPassword);
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, mustChangePassword: false };

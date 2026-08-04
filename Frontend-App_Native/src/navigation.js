@@ -54,6 +54,8 @@ function ForceChangePasswordStack() {
       <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
+        // Route param is a fallback; ChangePasswordScreen also reads
+        // mustChangePassword directly from AuthContext.
         initialParams={{ force: true }}
         options={{ title: "Đổi mật khẩu", headerLeft: () => null }}
       />

@@ -25,3 +25,13 @@ appsettings.Development.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Bỏ tất cả thư mục weights ở mọi cấp
+**/weights/
+weights/
+
+# Bỏ tất cả thư mục storage ở mọi cấp
+**/storage/
+
+# Bỏ tất cả thư mục venv ở mọi cấp
+**/venv/
