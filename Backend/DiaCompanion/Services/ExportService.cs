@@ -267,21 +267,68 @@ public class ExportService : BaseService, IExportService
             query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
         query = ApplyReviewDateFilter(query, from, to);
 
-        var cases = await query.Select(r => new DisagreementCaseDto
+        var rawCases = await query
+    .Select(r => new
+    {
+        r.AiDiagnosisId,
+
+        PatientCode =
+            r.AiDiagnosis!.FundusImage!.Patient!.Code,
+
+        Eye =
+            r.AiDiagnosis.FundusImage.Eye,
+
+        ModelVersion =
+            r.AiDiagnosis.ModelVersion!.Name,
+
+        AiGrade =
+            r.AiDiagnosis.DrGrade,
+
+        DoctorGrade =
+            r.FinalGrade,
+
+        Confidence =
+            r.AiDiagnosis.Confidence,
+
+        Disagreement =
+            r.AiDiagnosis.Disagreement,
+
+        WasDeferred =
+            r.AiDiagnosis.IsDeferred,
+
+        r.Reason,
+
+        ReviewedAt =
+            r.CreatedAt
+    })
+    .ToListAsync();
+
+    var cases = rawCases
+        .Select(r => new DisagreementCaseDto
         {
             AiDiagnosisId = r.AiDiagnosisId,
-            PatientCode = r.AiDiagnosis!.FundusImage!.Patient!.Code,
-            Eye = (byte)r.AiDiagnosis.FundusImage.Eye,
-            ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
-            AiGrade = (byte)r.AiDiagnosis.DrGrade,
-            DoctorGrade = (byte)r.FinalGrade,
-            GradeDistance = Math.Abs((byte)r.FinalGrade - (byte)r.AiDiagnosis.DrGrade),
-            Confidence = r.AiDiagnosis.Confidence,
-            Disagreement = r.AiDiagnosis.Disagreement,
-            WasDeferred = r.AiDiagnosis.IsDeferred,
+            PatientCode = r.PatientCode,
+
+            // Chuyển enum sang byte sau khi dữ liệu đã được đọc khỏi SQL.
+            Eye = (byte)r.Eye,
+            ModelVersion = r.ModelVersion,
+            AiGrade = (byte)r.AiGrade,
+            DoctorGrade = (byte)r.DoctorGrade,
+
+            GradeDistance = Math.Abs(
+                (int)r.DoctorGrade -
+                (int)r.AiGrade
+            ),
+
+            Confidence = r.Confidence,
+            Disagreement = r.Disagreement,
+            WasDeferred = r.WasDeferred,
             Reason = r.Reason,
-            ReviewedAt = r.CreatedAt
-        }).OrderByDescending(c => c.GradeDistance).ThenByDescending(c => c.ReviewedAt).ToListAsync();
+            ReviewedAt = r.ReviewedAt
+        })
+        .OrderByDescending(r => r.GradeDistance)
+        .ThenByDescending(r => r.ReviewedAt)
+        .ToList();
 
         // Tính chỉ số tổng hợp trên TOÀN BỘ review, không chỉ ca ghi đè
         var allReviewsQuery = _repository.DiagnosisReviews.AsNoTracking()
