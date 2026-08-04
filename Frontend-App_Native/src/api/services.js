@@ -23,7 +23,7 @@ export const authApi = {
 // Hồ sơ bản thân.
 export const profileApi = {
   me: () => http.get("/api/patients/me"),
-  updateAddress: (address) => http.put("/api/patients/me", { address }),
+  updateMine: (body) => http.put("/api/patients/me", body),
 };
 
 // Chỉ số sức khỏe (glucose, HbA1c, huyết áp).
@@ -31,7 +31,8 @@ export const metricsApi = {
   list: (params) => http.get("/api/monitoring/metrics" + query(params)),
   create: (body) => http.post("/api/monitoring/metrics", body),
   update: (id, body) => http.put(`/api/monitoring/metrics/${id}`, body),
-  remove: (id) => http.del(`/api/monitoring/metrics/${id}`),
+  remove: (id, rowVersion, pairRowVersion) =>
+    http.del(`/api/monitoring/metrics/${id}`, { rowVersion, pairRowVersion }),
   summary: (patientId, days) =>
     http.get(`/api/monitoring/metrics/summary/${patientId}` + query({ days })),
 };
@@ -39,15 +40,17 @@ export const metricsApi = {
 // Nhật ký lối sống (ăn uống + vận động).
 export const lifestyleApi = {
   list: (days) => http.get("/api/monitoring/lifestyle" + query({ days })),
-  save: (body) => http.post("/api/monitoring/lifestyle", body),
-  remove: (id) => http.del(`/api/monitoring/lifestyle/${id}`),
+  create: (body) => http.post("/api/monitoring/lifestyle", body),
+  update: (id, body) => http.put(`/api/monitoring/lifestyle/${id}`, body),
+  remove: (id, rowVersion) =>
+    http.del(`/api/monitoring/lifestyle/${id}`, { rowVersion }),
 };
 
 // Thuốc hôm nay.
 export const medicationApi = {
   today: () => http.get("/api/monitoring/medications/today"),
-  setTaken: (id, taken) =>
-    http.put(`/api/monitoring/medications/${id}/taken` + query({ taken })),
+  setStatus: (id, status, rowVersion) =>
+    http.put(`/api/monitoring/medications/${id}/status`, { status, rowVersion }),
 };
 
 // Tái tầm soát (ngày tái khám kế tiếp).
@@ -64,8 +67,8 @@ export const visitsApi = {
 
 // Diễn tiến bệnh (biểu đồ DR + fractal + HbA1c của bản thân).
 export const progressionApi = {
-  mine: (patientId, months) =>
-    http.get(`/api/diagnoses/progression/${patientId}` + query({ months })),
+  mine: (months) =>
+    http.get("/api/diagnoses/progression/me" + query({ months })),
 };
 
 // Triệu chứng.
@@ -88,8 +91,7 @@ export const blogApi = {
   get: (id) => http.get(`/api/blog/${id}`),
 };
 
-// Phản hồi lượt khám. Backend nhận tại /api/visits/feedback
-// (body: { visitId, rating 1..5, tags?, comment? }).
+// Phản hồi lượt khám đã hoàn tất.
 export const feedbackApi = {
-  create: (body) => http.post("/api/visits/feedback", body),
+  create: (body) => http.post("/api/engagement/feedback", body),
 };

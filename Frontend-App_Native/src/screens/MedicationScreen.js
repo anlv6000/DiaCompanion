@@ -9,6 +9,7 @@ import { colors } from "../theme/colors";
 import { font, spacing, radius } from "../theme/typography";
 import { fmtTime } from "../lib/format";
 import { medicationStatuses } from "../lib/enums";
+import { isConflict } from "../api/client";
 import {
   requestNotificationPermission,
   hasActiveMedicationReminders,
@@ -109,16 +110,30 @@ export default function MedicationScreen() {
     (m) => m.status !== 1 && m.scheduledAt && new Date(m.scheduledAt) < now,
   ).length;
 
-  const toggle = async (item) => {
-    const nextTaken = item.status !== 1; // đang chưa uống -> đánh dấu uống, ngược lại hoàn tác
+  const setMedicationStatus = async (item, status) => {
     try {
-      await data.medication.setTaken(item.id, nextTaken);
-      toast.push(nextTaken ? "Đã xác nhận uống thuốc." : "Đã hoàn tác.", "success");
-      meds.reload();
+      await data.medication.setStatus(item.id, status, item.rowVersion);
+      toast.push(
+        status === 1
+          ? "Đã xác nhận uống thuốc."
+          : status === 2
+            ? "Đã ghi nhận bỏ qua liều."
+            : "Đã hoàn tác về chưa uống.",
+        "success",
+      );
+      await meds.reload();
     } catch (e) {
+      if (isConflict(e)) {
+        toast.push("Liều thuốc vừa được cập nhật ở thiết bị khác. Đã tải lại dữ liệu mới.", "error");
+        await meds.reload();
+        return;
+      }
       toast.push(e.message, "error");
     }
   };
+
+  const toggle = (item) =>
+    setMedicationStatus(item, item.status === 1 ? 0 : 1);
 
   const onRefresh = async () => { setRefreshing(true); await meds.reload(); setRefreshing(false); };
 
@@ -229,7 +244,8 @@ export default function MedicationScreen() {
       >
         {list.map((m) => {
           const taken = m.status === 1;
-          const overdue = !taken && m.scheduledAt && new Date(m.scheduledAt) < now;
+          const skipped = m.status === 2;
+          const overdue = m.status === 0 && m.scheduledAt && new Date(m.scheduledAt) < now;
           return (
             <Card key={m.id} style={[styles.medCard, overdue && styles.medCardOverdue]}>
               <TouchableOpacity style={styles.check} onPress={() => toggle(m)} activeOpacity={0.7}>
@@ -246,6 +262,24 @@ export default function MedicationScreen() {
                   </Text>
                 </View>
                 {taken && m.takenAt && <Text style={styles.takenAt}>Đã uống lúc {fmtTime(m.takenAt)}</Text>}
+                <View style={styles.statusActions}>
+                  {m.status === 0 && (
+                    <TouchableOpacity
+                      style={styles.skipButton}
+                      onPress={() => setMedicationStatus(m, 2)}
+                    >
+                      <Text style={styles.skipButtonText}>Bỏ qua liều</Text>
+                    </TouchableOpacity>
+                  )}
+                  {skipped && (
+                    <TouchableOpacity
+                      style={styles.undoButton}
+                      onPress={() => setMedicationStatus(m, 0)}
+                    >
+                      <Text style={styles.undoButtonText}>Hoàn tác</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
               {overdue ? (
                 <Badge text="Quá giờ" kind="alert" />
@@ -418,5 +452,10 @@ const styles = StyleSheet.create({
   drugNameTaken: { textDecorationLine: "line-through", color: colors.muted },
   drugMeta: { ...font.small, color: colors.muted, marginTop: 2 },
   takenAt: { ...font.tiny, color: colors.ok, marginTop: 2 },
+  statusActions: { flexDirection: "row", gap: 8, marginTop: 8 },
+  skipButton: { paddingVertical: 5, paddingHorizontal: 9, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.warn },
+  skipButtonText: { ...font.tiny, color: colors.warn, fontWeight: "600" },
+  undoButton: { paddingVertical: 5, paddingHorizontal: 9, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.muted },
+  undoButtonText: { ...font.tiny, color: colors.muted, fontWeight: "600" },
   hint: { ...font.small, color: colors.faint, textAlign: "center", marginTop: spacing.md, paddingHorizontal: spacing.lg },
 });

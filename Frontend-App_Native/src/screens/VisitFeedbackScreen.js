@@ -7,6 +7,7 @@ import { Screen, Card, Button, Field, Input } from "../components/ui";
 import { colors } from "../theme/colors";
 import { font, spacing, radius } from "../theme/typography";
 import { fmtDate } from "../lib/format";
+import { isConflict } from "../api/client";
 
 /**
  * Gửi phản hồi theo lượt khám đã chọn từ lịch sử khám.
@@ -34,6 +35,10 @@ export default function VisitFeedbackScreen({ route, navigation }) {
     );
 
   const submit = async () => {
+    if (!visit?.id || visit.status !== 1) {
+      toast.push("Chỉ có thể phản hồi cho lượt khám đã hoàn tất.", "error");
+      return;
+    }
     setBusy(true);
     try {
       // Backend CreateFeedbackRequest: { visitId, rating (1..5), tags?, comment? }
@@ -46,6 +51,10 @@ export default function VisitFeedbackScreen({ route, navigation }) {
       toast.push("Đã gửi phản hồi cho lượt khám.", "success");
       navigation.goBack();
     } catch (e) {
+      if (isConflict(e)) {
+        toast.push("Lượt khám này đã có phản hồi hoặc dữ liệu vừa thay đổi.", "error");
+        return;
+      }
       toast.push(e.message, "error");
     } finally {
       setBusy(false);

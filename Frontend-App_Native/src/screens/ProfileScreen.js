@@ -9,6 +9,7 @@ import { Screen, Card, Button, Field, Input, InfoRow, GradeBadge, LoadState } fr
 import { colors } from "../theme/colors";
 import { font, spacing } from "../theme/typography";
 import { fmtDate } from "../lib/format";
+import { isConflict } from "../api/client";
 
 const GENDERS = { 0: "Nam", 1: "Nữ", 2: "Khác" };
 const DIABETES = { 0: "Tiền đái tháo đường", 1: "Type 1", 2: "Type 2", 3: "Thai kỳ" };
@@ -84,25 +85,41 @@ export default function ProfileScreen({ navigation }) {
       </Screen>
 
       {editAddr && p && (
-        <AddressForm current={p.address || ""} onClose={() => setEditAddr(false)} onSaved={() => { setEditAddr(false); profile.reload(); }} />
+        <AddressForm profile={p} onClose={() => setEditAddr(false)} onSaved={() => { setEditAddr(false); profile.reload(); }} onConflict={profile.reload} />
       )}
     </>
   );
 }
 
-function AddressForm({ current, onClose, onSaved }) {
+function AddressForm({ profile, onClose, onSaved, onConflict }) {
   const data = useData();
   const toast = useToast();
-  const [address, setAddress] = useState(current);
+  const [address, setAddress] = useState(profile.address || "");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     try {
-      await data.profile.updateAddress(address);
+      await data.profile.updateMine({
+        fullName: profile.fullName,
+        gender: profile.gender,
+        dateOfBirth: profile.dateOfBirth,
+        phone: profile.phone,
+        address: address.trim() || null,
+        diabetesType: profile.diabetesType,
+        diabetesDurationYears: profile.diabetesDurationYears,
+        baselineHbA1c: profile.baselineHbA1c,
+        rowVersion: profile.rowVersion,
+      });
       toast.push("Đã cập nhật địa chỉ.", "success");
       onSaved();
     } catch (e) {
+      if (isConflict(e)) {
+        toast.push("Hồ sơ vừa được thay đổi ở nơi khác. Đã tải lại bản mới, vui lòng mở form và nhập lại.", "error");
+        onConflict();
+        onClose();
+        return;
+      }
       toast.push(e.message, "error");
     } finally {
       setBusy(false);

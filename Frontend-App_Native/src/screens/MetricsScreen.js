@@ -10,6 +10,7 @@ import { colors } from "../theme/colors";
 import { font, spacing, radius } from "../theme/typography";
 import { fmtDate, num } from "../lib/format";
 import { metricTypes, metricContexts, metricTypeOptions, contextOptions } from "../lib/enums";
+import { isConflict } from "../api/client";
 
 /**
  * Chỉ số sức khỏe tự theo dõi tại nhà.
@@ -38,8 +39,18 @@ export default function MetricsScreen({ route }) {
       {
         text: "Xóa", style: "destructive",
         onPress: async () => {
-          try { await data.metrics.remove(item.id); toast.push("Đã ẩn bản ghi.", "success"); list.reload(); summary.reload(); }
-          catch (e) { toast.push(e.message, "error"); }
+          try {
+            await data.metrics.remove(item.id, item.rowVersion, item.pairRowVersion);
+            toast.push("Đã ẩn bản ghi.", "success");
+            await Promise.all([list.reload(), summary.reload()]);
+          } catch (e) {
+            if (isConflict(e)) {
+              toast.push("Chỉ số vừa được thay đổi ở nơi khác. Đã tải lại dữ liệu mới.", "error");
+              await Promise.all([list.reload(), summary.reload()]);
+            } else {
+              toast.push(e.message, "error");
+            }
+          }
         },
       },
     ]);
@@ -104,7 +115,7 @@ export default function MetricsScreen({ route }) {
               </View>
               {m.note ? <Text style={styles.metricNote}>{m.note}</Text> : null}
               <View style={styles.metricActions}>
-                <TouchableOpacity onPress={() => setEditing(withBpPair(m, list.data?.items))} style={styles.actionBtn}>
+                <TouchableOpacity onPress={() => setEditing(withBpPair(m))} style={styles.actionBtn}>
                   <Ionicons name="create-outline" size={18} color={colors.muted} />
                   <Text style={styles.actionText}>Sửa</Text>
                 </TouchableOpacity>
@@ -133,20 +144,15 @@ export default function MetricsScreen({ route }) {
  * thời điểm để form nạp đủ cả hai giá trị (backend yêu cầu gửi đồng thời).
  * Trả về object bản ghi kèm _systolic/_diastolic nếu là huyết áp.
  */
-function withBpPair(m, items) {
+function withBpPair(m) {
   if (m.metricType !== 3 && m.metricType !== 4) return m;
-  const pairType = m.metricType === 3 ? 4 : 3;
-  const pair = (items || []).find(
-    (x) => x.metricType === pairType && x.recordedAtUtc === m.recordedAtUtc,
-  );
-  const systolic = m.metricType === 3 ? m : pair;
-  const diastolic = m.metricType === 4 ? m : pair;
   return {
     ...m,
-    _systolic: systolic ? String(systolic.value) : "",
-    _diastolic: diastolic ? String(diastolic.value) : "",
-    // id để cập nhật: dùng id của bản ghi tâm thu nếu có, không thì bản ghi hiện tại.
-    _updateId: (systolic || m).id,
+    _systolic: m.systolicValue != null ? String(m.systolicValue) : "",
+    _diastolic: m.diastolicValue != null ? String(m.diastolicValue) : "",
+    _updateId: m.metricType === 3 ? m.id : (m.pairMetricId || m.id),
+    _rowVersion: m.metricType === 3 ? m.rowVersion : m.pairRowVersion,
+    _pairRowVersion: m.metricType === 3 ? m.pairRowVersion : m.rowVersion,
   };
 }
 
@@ -193,6 +199,8 @@ function MetricForm({ value, onClose, onSaved }) {
           systolicValue: s,
           diastolicValue: d,
           note: note || null,
+          rowVersion: isNew ? undefined : value._rowVersion,
+          pairRowVersion: isNew ? undefined : value._pairRowVersion,
         };
         if (isNew) await data.metrics.create(bpPayload);
         else await data.metrics.update(value._updateId || value.id, bpPayload);
@@ -213,12 +221,17 @@ function MetricForm({ value, onClose, onSaved }) {
         value: numVal,
         context: isGlucose ? context : null,
         note: note || null,
+        rowVersion: isNew ? undefined : value.rowVersion,
       };
       if (isNew) await data.metrics.create(payload);
       else await data.metrics.update(value.id, payload);
       toast.push("Đã lưu chỉ số.", "success");
       onSaved();
     } catch (e) {
+      if (isConflict(e)) {
+        toast.push("Chỉ số vừa được thay đổi ở nơi khác. Hãy đóng form, tải lại và thử lại.", "error");
+        return;
+      }
       toast.push(e.message, "error");
     } finally {
       setBusy(false);
