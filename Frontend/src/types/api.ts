@@ -19,6 +19,14 @@ export interface ApiMessage {
   detail?: string;
   traceId?: string;
 }
+export interface ConcurrencyRequest {
+  rowVersion: string;
+  pairRowVersion?: string;
+}
+export interface VoidRequest {
+  reason: string;
+  rowVersion: string;
+}
 export interface LoginRequest {
   email?: string;
   phone?: string;
@@ -52,6 +60,7 @@ export interface StaffUserDto {
   isActive: boolean;
   lastLoginAt?: string | null;
   createdAt: string;
+  rowVersion: string;
 }
 export interface DoctorDto {
   id: number;
@@ -72,6 +81,7 @@ export interface CreateStaffRequest {
 export interface UpdateStaffRequest {
   fullName: string;
   licenseNo?: string | null;
+  rowVersion: string;
 }
 export interface PatientListItemDto {
   id: number;
@@ -94,6 +104,7 @@ export interface PatientDetailDto extends PatientListItemDto {
   createdAt: string;
   doctorInCharge?: string | null;
   visitCount: number;
+  rowVersion: string;
 }
 export interface CreatePatientRequest {
   fullName: string;
@@ -111,7 +122,9 @@ export interface CreatePatientResponse {
   patient: PatientDetailDto;
   account?: TempCredentialResponse | null;
 }
-export type UpdatePatientRequest = Omit<CreatePatientRequest, "createAccount">;
+export type UpdatePatientRequest = Omit<CreatePatientRequest, "createAccount"> & {
+  rowVersion: string;
+};
 export interface VisitDto {
   id: number;
   patientId: number;
@@ -127,6 +140,7 @@ export interface VisitDto {
   closedAt?: string | null;
   imageCount: number;
   pendingReviewCount: number;
+  rowVersion: string;
 }
 export interface CreateVisitRequest {
   patientId: number;
@@ -136,6 +150,7 @@ export interface CloseVisitRequest {
   conclusion: string;
   referral: number;
   recheckMonths?: number | null;
+  rowVersion: string;
 }
 export interface RecheckDto {
   patientId: number;
@@ -163,6 +178,7 @@ export interface FundusImageDto {
   createdAt: string;
   contentUrl?: string | null;
   latestDiagnosis?: AiDiagnosisDto | null;
+  rowVersion: string;
 }
 export interface AiDiagnosisDto {
   id: number;
@@ -219,6 +235,7 @@ export interface ReviewDto {
   reason?: string | null;
   doctorName: string;
   createdAt: string;
+  rowVersion: string;
 }
 export interface OverrideRequest {
   rowVersion?: string | null;
@@ -279,12 +296,16 @@ export interface PrescriptionDto {
   issuedAt: string;
   note?: string | null;
   items: PrescriptionItemDto[];
+  rowVersion: string;
 }
 export interface CreatePrescriptionRequest {
   patientId: number;
   visitId?: number | null;
   note?: string | null;
   items: PrescriptionItemDto[];
+}
+export interface UpdatePrescriptionRequest extends CreatePrescriptionRequest {
+  rowVersion: string;
 }
 // ===== Lễ tân: ca trực + bác sĩ đang trực =====
 export interface DoctorShiftDto {
@@ -297,6 +318,7 @@ export interface DoctorShiftDto {
   shift: number; // 1=Sáng, 2=Chiều
   shiftLabel: string;
   isActive: boolean;
+  rowVersion: string;
 }
 export interface CreateDoctorShiftRequest {
   doctorId: number;
@@ -424,6 +446,7 @@ export interface SymptomReportDto {
   createdAt: string;
   state: string;
   patientName: string;
+  rowVersion: string;
 }
 export interface FeedbackDto {
   id: number;
@@ -448,12 +471,14 @@ export interface BlogPostDto {
   publishedAt?: string | null;
   authorName: string;
   createdAt: string;
+  rowVersion: string;
 }
 export interface SaveBlogRequest {
   title: string;
   summary?: string | null;
   body: string;
   category: number;
+  rowVersion?: string;
 }
 export interface DashboardDto {
   totalPatients: number;
@@ -474,6 +499,11 @@ export interface SystemConfigDto {
   minValue?: number | null;
   maxValue?: number | null;
   updatedAt?: string | null;
+  rowVersion: string;
+}
+export interface UpdateConfigRequest {
+  value: string;
+  rowVersion: string;
 }
 export interface ThresholdImpactDto {
   currentThreshold: number;
@@ -498,6 +528,7 @@ export interface ModelVersionDto {
   wasActivated: boolean;
   activatedAt?: string | null;
   diagnosisCount: number;
+  rowVersion: string;
 }
 export interface RegisterModelRequest {
   name: string;

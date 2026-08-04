@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useAsync } from "@/lib/hooks";
 import { can } from "@/lib/permissions";
+import { ProtectedImage } from "@/components/ProtectedImage";
 import {
   PageHeader,
   Panel,
@@ -134,7 +135,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
 
   const reissue = async () => setCred(await data.patients.reissue(patient.id));
   const doVoid = async (reason: string) => {
-    await data.patients.void(patient.id, reason);
+    await data.patients.void(patient.id, reason, patient.rowVersion);
     toast.push("Đã thu hồi hồ sơ và chuỗi lâm sàng liên quan.", "success");
     navigate("/patients");
   };
@@ -253,146 +254,72 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
 function VisitsTab({ patientId }: { patientId: number }) {
   const data = useData();
   const { user } = useAuth();
-  const toast = useToast();
   const navigate = useNavigate();
-  const isReceptionist = user?.role === "Receptionist";
   const list = useAsync(
     () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
     [patientId],
   );
-  const docs = useAsync(() => data.users.doctors(), []);
-  const [create, setCreate] = useState(false);
-  const [closing, setClosing] = useState<VisitDto | null>(null);
-  const [voiding, setVoiding] = useState<VisitDto | null>(null);
-
-  const newVisit = async (doctorId?: number) => {
-    await data.visits.create({ patientId, doctorId: doctorId || null });
-    toast.push("Đã tạo lượt khám.", "success");
-    setCreate(false);
-    list.reload();
-  };
-  const close = async (
-    id: number,
-    b: { conclusion: string; referral: number; recheckMonths: number | null },
-  ) => {
-    await data.visits.close(id, b);
-    toast.push("Đã đóng lượt khám.", "success");
-    setClosing(null);
-    list.reload();
-  };
-  const voidVisit = async (reason: string) => {
-    if (!voiding) return;
-    await data.visits.void(voiding.id, reason);
-    toast.push("Đã thu hồi lượt khám.", "success");
-    setVoiding(null);
-    list.reload();
-  };
 
   return (
-    <>
-      <Panel
-        title="Lượt khám"
-        action={
-          /* Tạo lượt khám thực hiện ở màn "Tiếp đón" riêng của lễ tân, không tạo
-             tại trang bệnh nhân. Lễ tân thấy lối tắt sang đó; vai trò khác không. */
-          can.createVisit(user?.role) ? (
-            <ActionLink to="/reception/visits/new">
-              <Button kind="primary">
-                <Icon name="plus" />
-                Tạo lượt khám
-              </Button>
-            </ActionLink>
-          ) : undefined
-        }
+    <Panel
+      title="Lượt khám"
+      action={
+        can.createVisit(user?.role) ? (
+          <ActionLink to="/reception/visits/new">
+            <Button kind="primary">
+              <Icon name="plus" />
+              Tạo lượt khám
+            </Button>
+          </ActionLink>
+        ) : undefined
+      }
+    >
+      <LoadState
+        loading={list.loading}
+        error={list.error}
+        empty={!list.data?.items.length}
+        onRetry={list.reload}
       >
-        <LoadState
-          loading={list.loading}
-          error={list.error}
-          empty={!list.data?.items.length}
-          onRetry={list.reload}
+        <DataTable
+          headers={[
+            "Mã",
+            "Ngày khám",
+            "Bác sĩ",
+            "Ảnh",
+            "Chờ duyệt",
+            "Kết luận",
+            "Chuyển tuyến",
+            "Trạng thái",
+            "Thao tác",
+          ]}
         >
-          <DataTable
-            headers={[
-              "Mã",
-              "Ngày khám",
-              "Bác sĩ",
-              "Ảnh",
-              "Chờ duyệt",
-              "Kết luận",
-              "Chuyển tuyến",
-              "Trạng thái",
-              "Thao tác",
-            ]}
-          >
-            {list.data?.items.map((v) => (
-              <tr key={v.id}>
-                <td className="mono">#{v.id}</td>
-                <td className="mono">{fmtDate(v.visitDate, true)}</td>
-                <td>{v.doctorName || "Chưa phân công"}</td>
-                <td className="mono">{v.imageCount}</td>
-                <td className="mono">{v.pendingReviewCount}</td>
-                <td className="wrap-text">{v.conclusion || "—"}</td>
-                <td>
-                  {v.referral == null ? "—" : label(referralTypes, v.referral)}
-                </td>
-                <td>
-                  <StatusBadge
-                    text={label(visitStatuses, v.status)}
-                    kind={v.status === 1 ? "ok" : "watch"}
-                  />
-                </td>
-                <td>
-                  <div className="actions">
-                    <Button onClick={() => navigate(`/reports/visit/${v.id}`)}>
-                      Báo cáo
-                    </Button>
-                    {/* Đóng lượt (nhập kết luận): CHỈ Bác sĩ. Backend chặn 403. */}
-                    {can.closeVisit(user?.role) && (
-                      <Button
-                        disabled={v.status === 1}
-                        onClick={() => setClosing(v)}
-                      >
-                        Đóng
-                      </Button>
-                    )}
-                    {/* Void lượt khám: CHỈ Bác sĩ. Admin/Điều dưỡng không thấy nút. */}
-                    {can.voidVisit(user?.role) && (
-                      <Button kind="danger" onClick={() => setVoiding(v)}>
-                        Void
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        </LoadState>
-      </Panel>
-      {create && (
-        <CreateVisitModal
-          doctors={docs.data || []}
-          onClose={() => setCreate(false)}
-          onSave={newVisit}
-        />
-      )}
-      {closing && (
-        <CloseVisitModal
-          visit={closing}
-          onClose={() => setClosing(null)}
-          onSave={(b) => close(closing.id, b)}
-        />
-      )}
-      {voiding && (
-        <ConfirmDialog
-          title="Void lượt khám"
-          message={`Thu hồi lượt khám #${voiding.id}. Ảnh, kết quả AI và đơn thuốc liên quan cũng được void.`}
-          requireReason
-          danger
-          onClose={() => setVoiding(null)}
-          onConfirm={voidVisit}
-        />
-      )}
-    </>
+          {list.data?.items.map((v) => (
+            <tr key={v.id}>
+              <td className="mono">#{v.id}</td>
+              <td className="mono">{fmtDate(v.visitDate, true)}</td>
+              <td>{v.doctorName || "Chưa phân công"}</td>
+              <td className="mono">{v.imageCount}</td>
+              <td className="mono">{v.pendingReviewCount}</td>
+              <td className="wrap-text">{v.conclusion || "—"}</td>
+              <td>
+                {v.referral == null ? "—" : label(referralTypes, v.referral)}
+              </td>
+              <td>
+                <StatusBadge
+                  text={label(visitStatuses, v.status)}
+                  kind={v.status === 1 ? "ok" : "watch"}
+                />
+              </td>
+              <td>
+                <Button onClick={() => navigate(`/reports/visit/${v.id}`)}>
+                  Báo cáo
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      </LoadState>
+    </Panel>
   );
 }
 
@@ -534,11 +461,6 @@ function ImagesTab({ patientId }: { patientId: number }) {
       }),
     );
   }, [patientId]);
-  const visits = useAsync(
-    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
-    [patientId],
-  );
-  const [upload, setUpload] = useState(false);
   const [quality, setQuality] = useState<FundusImageDto | null>(null);
   const [voiding, setVoiding] = useState<FundusImageDto | null>(null);
   const [running, setRunning] = useState<number | null>(null);
@@ -557,14 +479,14 @@ function ImagesTab({ patientId }: { patientId: number }) {
   };
   const setQ = async (status: number, note: string) => {
     if (!quality) return;
-    await data.images.quality(quality.id, status, note);
+    await data.images.quality(quality.id, status, note, quality.rowVersion);
     toast.push("Đã cập nhật chất lượng ảnh.", "success");
     setQuality(null);
     list.reload();
   };
   const voidImg = async (reason: string) => {
     if (!voiding) return;
-    await data.images.void(voiding.id, reason);
+    await data.images.void(voiding.id, reason, voiding.rowVersion);
     toast.push("Đã thu hồi ảnh và kết quả liên quan.", "success");
     setVoiding(null);
     list.reload();
@@ -602,7 +524,20 @@ function ImagesTab({ patientId }: { patientId: number }) {
           >
             {list.data?.map((img) => (
               <tr key={img.id}>
-                <td className="mono">#{img.id}</td>
+                <td>
+                  <ProtectedImage
+                    imageId={img.id}
+                    alt={`Ảnh đáy mắt #${img.id}`}
+                    onClick={() =>
+                      navigate(
+                        img.latestDiagnosis
+                          ? `/fundus/${img.id}?diagnosis=${img.latestDiagnosis.id}`
+                          : `/fundus/${img.id}`,
+                      )
+                    }
+                  />
+                  <div className="mono" style={{ marginTop: 4 }}>#{img.id}</div>
+                </td>
                 <td>
                   <EyeBadge eye={img.eye} />
                 </td>
@@ -689,17 +624,6 @@ function ImagesTab({ patientId }: { patientId: number }) {
           </DataTable>
         </LoadState>
       </Panel>
-      {upload && (
-        <UploadImageModal
-          patientId={patientId}
-          visits={visits.data?.items || []}
-          onClose={() => setUpload(false)}
-          onSaved={() => {
-            setUpload(false);
-            list.reload();
-          }}
-        />
-      )}
       {quality && (
         <QualityModal
           image={quality}
@@ -718,84 +642,6 @@ function ImagesTab({ patientId }: { patientId: number }) {
         />
       )}
     </>
-  );
-}
-
-function UploadImageModal({
-  patientId,
-  visits,
-  onClose,
-  onSaved,
-}: {
-  patientId: number;
-  visits: VisitDto[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const data = useData();
-  const toast = useToast();
-  const [file, setFile] = useState<File | null>(null);
-  const [eye, setEye] = useState(0);
-  const [visit, setVisit] = useState("");
-  const [busy, setBusy] = useState(false);
-  const save = async () => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      if (file.size > 12 * 1024 * 1024) throw new Error("Tệp vượt quá 12 MB.");
-      await data.images.upload(
-        file,
-        patientId,
-        visit ? Number(visit) : null,
-        eye,
-      );
-      toast.push("Đã nạp ảnh.", "success");
-      onSaved();
-    } catch (e) {
-      toast.push((e as Error).message, "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      title="Nạp ảnh đáy mắt"
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Hủy</Button>
-          <Button kind="primary" busy={busy} disabled={!file} onClick={save}>
-            Nạp ảnh
-          </Button>
-        </>
-      }
-    >
-      <div className="form-row">
-        <Field labelText="Mắt" required>
-          <select value={eye} onChange={(e) => setEye(Number(e.target.value))}>
-            <option value="0">OD — Phải</option>
-            <option value="1">OS — Trái</option>
-          </select>
-        </Field>
-        <Field labelText="Gắn lượt khám">
-          <select value={visit} onChange={(e) => setVisit(e.target.value)}>
-            <option value="">Không gắn</option>
-            {visits.map((v) => (
-              <option key={v.id} value={v.id}>
-                #{v.id} · {fmtDate(v.visitDate, true)}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <Field labelText="Tệp ảnh" required help="JPEG/PNG/TIFF, tối đa 12 MB.">
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/tiff"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-        />
-      </Field>
-    </Modal>
   );
 }
 
@@ -862,16 +708,12 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
     () => data.prescriptions.adherence(patientId),
     [patientId],
   );
-  const visits = useAsync(
-    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
-    [patientId],
-  );
   const [editor, setEditor] = useState<PrescriptionDto | "new" | null>(null);
   const [voiding, setVoiding] = useState<PrescriptionDto | null>(null);
 
   const voidRx = async (reason: string) => {
     if (!voiding) return;
-    await data.prescriptions.void(voiding.id, reason);
+    await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
     toast.push("Đã void đơn thuốc.", "success");
     setVoiding(null);
     list.reload();
@@ -979,7 +821,6 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
         <PrescriptionEditor
           patientId={patientId}
           value={editor}
-          visits={visits.data?.items || []}
           onClose={() => setEditor(null)}
           onSaved={() => {
             setEditor(null);
@@ -1004,13 +845,11 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
 function PrescriptionEditor({
   patientId,
   value,
-  visits,
   onClose,
   onSaved,
 }: {
   patientId: number;
   value: PrescriptionDto | "new";
-  visits: VisitDto[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1048,7 +887,7 @@ function PrescriptionEditor({
       // Khi TẠO mới: bỏ id (chưa có, để backend sinh).
       // Khi SỬA: GIỮ id của từng dòng thuốc — backend cần PrescriptionItem.Id
       // để biết dòng nào cập nhật, dòng nào thêm mới (id rỗng), dòng nào đã xoá.
-      const body = {
+      const baseBody = {
         patientId,
         visitId,
         note: note || null,
@@ -1056,8 +895,14 @@ function PrescriptionEditor({
           ? items.map(({ id, ...x }) => x)
           : items.map((x) => ({ ...x })),
       };
-      if (isNew) await data.prescriptions.create(body);
-      else await data.prescriptions.update(value.id, body);
+      if (isNew) {
+        await data.prescriptions.create(baseBody);
+      } else {
+        await data.prescriptions.update(value.id, {
+          ...baseBody,
+          rowVersion: value.rowVersion,
+        });
+      }
       toast.push("Đã lưu đơn thuốc.", "success");
       onSaved();
     } catch (e) {

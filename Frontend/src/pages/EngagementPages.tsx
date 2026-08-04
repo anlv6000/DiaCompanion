@@ -43,8 +43,12 @@ export function BlogPage() {
   const act = async () => {
     if (!confirm) return;
     if (confirm.action === "publish")
-      await data.blog.publish(confirm.post.id, !confirm.post.isPublished);
-    else await data.blog.delete(confirm.post.id);
+      await data.blog.publish(
+        confirm.post.id,
+        !confirm.post.isPublished,
+        confirm.post.rowVersion,
+      );
+    else await data.blog.delete(confirm.post.id, confirm.post.rowVersion);
     toast.push(
       confirm.action === "publish"
         ? confirm.post.isPublished
@@ -214,7 +218,7 @@ function BlogEditor({
     setBusy(true);
     try {
       if (isNew) await data.blog.create(form);
-      else await data.blog.update(value.id, form);
+      else await data.blog.update(value.id, { ...form, rowVersion: value.rowVersion });
       toast.push("Đã lưu bài viết.", "success");
       onSaved();
     } catch (e) {
@@ -413,7 +417,7 @@ export function SymptomsPage() {
 
   const save = async (text: string) => {
     if (!reply) return;
-    await data.engagement.reply(reply.id, text);
+    await data.engagement.reply(reply.id, text, reply.rowVersion);
     toast.push("Đã gửi trả lời bác sĩ.", "success");
     setReply(null);
     list.reload();

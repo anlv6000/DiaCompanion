@@ -253,7 +253,7 @@ export function ConfigsPage() {
   const [edit, setEdit] = useState<SystemConfigDto | null>(null);
 
   const save = async (key: string, value: string) => {
-    await data.admin.updateConfig(key, value);
+    await data.admin.updateConfig(key, value, edit!.rowVersion);
     toast.push("Đã cập nhật cấu hình và ghi audit.", "success");
     setEdit(null);
     list.reload();
@@ -400,8 +400,8 @@ export function ModelsPage() {
   const act = async () => {
     if (!confirm) return;
     if (confirm.action === "activate")
-      await data.admin.activate(confirm.item.id);
-    else await data.admin.deleteModel(confirm.item.id);
+      await data.admin.activate(confirm.item.id, confirm.item.rowVersion);
+    else await data.admin.deleteModel(confirm.item.id, confirm.item.rowVersion);
     toast.push(
       confirm.action === "activate" ? "Đã kích hoạt model." : "Đã xóa model.",
       "success",

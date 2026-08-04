@@ -74,8 +74,10 @@ const buildUsers = () => ({
   get: (id: number) => usersApi.get(id),
   create: (b: T.CreateStaffRequest) => usersApi.create(b),
   update: (id: number, b: T.UpdateStaffRequest) => usersApi.update(id, b),
-  setActive: (id: number, v: boolean) => usersApi.active(id, v),
-  resetPassword: (id: number) => usersApi.reset(id),
+  setActive: (id: number, v: boolean, rowVersion: string) =>
+    usersApi.active(id, v, rowVersion),
+  resetPassword: (id: number, rowVersion: string) =>
+    usersApi.reset(id, rowVersion),
   doctors: () => usersApi.doctors(),
 });
 const buildPatients = () => ({
@@ -84,7 +86,8 @@ const buildPatients = () => ({
   create: (b: T.CreatePatientRequest) => patientsApi.create(b),
   update: (id: number, b: T.UpdatePatientRequest) => patientsApi.update(id, b),
   reissue: (id: number) => patientsApi.reissue(id),
-  void: (id: number, reason: string) => patientsApi.void(id, reason),
+  void: (id: number, reason: string, rowVersion: string) =>
+    patientsApi.void(id, reason, rowVersion),
 });
 const buildVisits = () => ({
   list: (p: Record<string, unknown>) => visitsApi.list(p),
@@ -92,26 +95,33 @@ const buildVisits = () => ({
   get: (id: number) => visitsApi.get(id),
   create: (b: T.CreateVisitRequest) => visitsApi.create(b),
   close: (id: number, b: T.CloseVisitRequest) => visitsApi.close(id, b),
-  void: (id: number, reason: string) => visitsApi.void(id, reason),
+  void: (id: number, reason: string, rowVersion: string) =>
+    visitsApi.void(id, reason, rowVersion),
 });
 const buildImages = () => ({
   list: (p: Record<string, unknown>) => imagesApi.list(p),
   upload: (
     file: File,
     patientId: number,
-    visitId: number | null,
+    visitId: number,
     eye: number,
   ) => imagesApi.upload(file, patientId, visitId, eye),
-  quality: (id: number, status: number, note?: string) =>
-    imagesApi.quality(id, status, note),
-  void: (id: number, reason: string) => imagesApi.void(id, reason),
+  quality: (
+    id: number,
+    status: number,
+    note: string | undefined,
+    rowVersion: string,
+  ) => imagesApi.quality(id, status, note, rowVersion),
+  void: (id: number, reason: string, rowVersion: string) =>
+    imagesApi.void(id, reason, rowVersion),
   content: (id: number) => imagesApi.content(id),
 });
 const buildDiagnoses = () => ({
   run: (imageId: number) => diagnosesApi.run(imageId),
   get: (id: number) => diagnosesApi.get(id),
   byImage: (imageId: number) => diagnosesApi.byImage(imageId),
-  void: (id: number, reason: string) => diagnosesApi.void(id, reason),
+  void: (id: number, reason: string, rowVersion: string) =>
+    diagnosesApi.void(id, reason, rowVersion),
   progression: (patientId: number, months: number) =>
     diagnosesApi.progression(patientId, months),
 });
@@ -121,15 +131,17 @@ const buildTriage = () => ({
   approve: (id: number, rowVersion?: string | null) =>
     triageApi.approve(id, rowVersion),
   override: (id: number, b: T.OverrideRequest) => triageApi.override(id, b),
-  voidReview: (id: number, reason: string) => triageApi.voidReview(id, reason),
+  voidReview: (id: number, reason: string, rowVersion: string) =>
+    triageApi.voidReview(id, reason, rowVersion),
 });
 const buildPrescriptions = () => ({
   list: (p: Record<string, unknown>) => prescriptionsApi.list(p),
   get: (id: number) => prescriptionsApi.get(id),
   create: (b: T.CreatePrescriptionRequest) => prescriptionsApi.create(b),
-  update: (id: number, b: T.CreatePrescriptionRequest) =>
+  update: (id: number, b: T.UpdatePrescriptionRequest) =>
     prescriptionsApi.update(id, b),
-  void: (id: number, reason: string) => prescriptionsApi.void(id, reason),
+  void: (id: number, reason: string, rowVersion: string) =>
+    prescriptionsApi.void(id, reason, rowVersion),
   adherence: (patientId: number, days?: number) =>
     prescriptionsApi.adherence(patientId, days),
 });
@@ -139,9 +151,10 @@ const buildReception = () => ({
   createShift: (b: T.CreateDoctorShiftRequest) => receptionApi.createShift(b),
   createShiftsBatch: (b: T.CreateDoctorShiftsBatchRequest) =>
     receptionApi.createShiftsBatch(b),
-  setShiftActive: (id: number, active: boolean) =>
-    receptionApi.setShiftActive(id, active),
-  deleteShift: (id: number) => receptionApi.deleteShift(id),
+  setShiftActive: (id: number, active: boolean, rowVersion: string) =>
+    receptionApi.setShiftActive(id, active, rowVersion),
+  deleteShift: (id: number, rowVersion: string) =>
+    receptionApi.deleteShift(id, rowVersion),
 });
 const buildRecheck = () => ({
   me: () => recheckApi.me(),
@@ -161,7 +174,8 @@ const buildEngagement = () => ({
   read: (id: number) => engagementApi.read(id),
   readAll: () => engagementApi.readAll(),
   symptoms: (p: Record<string, unknown>) => engagementApi.symptoms(p),
-  reply: (id: number, reply: string) => engagementApi.reply(id, reply),
+  reply: (id: number, reply: string, rowVersion: string) =>
+    engagementApi.reply(id, reply, rowVersion),
   feedback: (p: Record<string, unknown>) => engagementApi.feedback(p),
   feedbackSummary: () => engagementApi.feedbackSummary(),
 });
@@ -171,18 +185,23 @@ const buildBlog = () => ({
   get: (id: number) => blogApi.get(id),
   create: (b: T.SaveBlogRequest) => blogApi.create(b),
   update: (id: number, b: T.SaveBlogRequest) => blogApi.update(id, b),
-  publish: (id: number, v: boolean) => blogApi.publish(id, v),
-  delete: (id: number) => blogApi.delete(id),
+  publish: (id: number, v: boolean, rowVersion: string) =>
+    blogApi.publish(id, v, rowVersion),
+  delete: (id: number, rowVersion: string) =>
+    blogApi.delete(id, rowVersion),
 });
 const buildAdmin = () => ({
   dashboard: () => adminApi.dashboard(),
   configs: () => adminApi.configs(),
-  updateConfig: (key: string, v: string) => adminApi.updateConfig(key, v),
+  updateConfig: (key: string, v: string, rowVersion: string) =>
+    adminApi.updateConfig(key, v, rowVersion),
   impact: (key: string, proposed: number) => adminApi.impact(key, proposed),
   models: () => adminApi.models(),
   registerModel: (b: T.RegisterModelRequest) => adminApi.registerModel(b),
-  activate: (id: number) => adminApi.activate(id),
-  deleteModel: (id: number) => adminApi.deleteModel(id),
+  activate: (id: number, rowVersion: string) =>
+    adminApi.activate(id, rowVersion),
+  deleteModel: (id: number, rowVersion: string) =>
+    adminApi.deleteModel(id, rowVersion),
   audit: (p: Record<string, unknown>) => adminApi.audit(p),
 });
 const buildExports = () => ({

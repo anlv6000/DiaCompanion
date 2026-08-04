@@ -258,7 +258,10 @@ export function PatientFormPage({ id }: { id?: number }) {
     try {
       if (id) {
         const { createAccount, ...body } = form;
-        await data.patients.update(id, body);
+        await data.patients.update(id, {
+          ...body,
+          rowVersion: detail.data!.rowVersion,
+        });
         toast.push("Đã cập nhật hồ sơ.", "success");
         navigate(`/patients/${id}`);
       } else {
