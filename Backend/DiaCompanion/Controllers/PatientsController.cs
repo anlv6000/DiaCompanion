@@ -20,7 +20,7 @@ public class PatientsController : BaseApiController
     /// Tìm bỏ dấu: "nguyen van an" khớp "Nguyễn Văn Ấn" (QT-15).
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = Roles.DoctorOrReception)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PagedResult<PatientListItemDto>>> Search(
     [FromQuery] string? q,
     [FromQuery] byte? diabetesType,
@@ -33,7 +33,7 @@ public class PatientsController : BaseApiController
 
     /// <summary>UC-13 — chi tiết hồ sơ.</summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = Roles.DoctorOrReception)]
+    [Authorize(Roles = Roles.FrontDesk)]
     public async Task<ActionResult<PatientDetailDto>> Get(int id)
     {
         return await _service.Get(id);
@@ -82,12 +82,39 @@ public class PatientsController : BaseApiController
     }
 
 
+
+/// <summary>
+/// Gửi OTP tới số điện thoại mới. Số mới phải chưa được dùng bởi hồ sơ hoặc
+/// tài khoản đang hoạt động khác.
+/// </summary>
+[HttpPost("me/phone/request-otp")]
+[Authorize(Roles = Roles.Patient)]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("otp-request-limit")]
+public async Task<IActionResult> RequestPhoneChangeOtp(
+    RequestPhoneChangeOtpRequest req,
+    [FromServices] IWebHostEnvironment env)
+{
+    return await _service.RequestPhoneChangeOtp(req, env);
+}
+
+/// <summary>
+/// Xác minh OTP rồi mới đổi số điện thoại hồ sơ và tài khoản đăng nhập.
+/// RowVersion bảo vệ khỏi lost update.
+/// </summary>
+[HttpPost("me/phone/confirm")]
+[Authorize(Roles = Roles.Patient)]
+public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest req)
+{
+    return await _service.ConfirmPhoneChange(req);
+}
+
+
     /// <summary>
     /// Cấp lại mật khẩu tạm tại quầy — thay cho luồng liên kết tài khoản cũ.
     /// Dùng khi bệnh nhân quên mật khẩu và không nhận được OTP.
     /// </summary>
     [HttpPost("{id:int}/reissue-credentials")]
-    [Authorize(Roles = Roles.FrontDeskOrAdmin)]
+    [Authorize(Roles = Roles.AllRole)]
     public async Task<ActionResult<TempCredentialResponse>> ReissueCredentials(int id)
     {
         return await _service.ReissueCredentials(id);

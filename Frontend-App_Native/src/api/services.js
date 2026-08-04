@@ -24,6 +24,10 @@ export const authApi = {
 export const profileApi = {
   me: () => http.get("/api/patients/me"),
   updateMine: (body) => http.put("/api/patients/me", body),
+  requestPhoneChangeOtp: (newPhone) =>
+    http.post("/api/patients/me/phone/request-otp", { newPhone }),
+  confirmPhoneChange: (newPhone, code, rowVersion) =>
+    http.post("/api/patients/me/phone/confirm", { newPhone, code, rowVersion }),
 };
 
 // Chỉ số sức khỏe (glucose, HbA1c, huyết áp).
