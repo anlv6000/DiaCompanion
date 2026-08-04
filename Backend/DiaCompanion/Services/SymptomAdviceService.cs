@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 namespace DiaCompanion.Api.Services;
 
 /// <summary>
-/// UC-55 / BR-20. Khuyến cáo do HỆ THỐNG sinh, theo quy tắc cứng dựa trên mức
+/// UC-50 / BR-20. Khuyến cáo do HỆ THỐNG sinh, theo quy tắc cứng dựa trên mức
 /// độ bệnh nhân tự chọn — KHÔNG phải AI, KHÔNG phải chẩn đoán.
 ///
 /// Ghi vào cột AutoAdvice (bất biến). Trả lời của bác sĩ ghi vào DoctorReply.

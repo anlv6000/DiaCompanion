@@ -13,6 +13,8 @@ public class MedicationLog : IHasRowVersion
     /// <summary>QT-10: gom "hôm nay" theo ngày địa phương, không theo ngày UTC.</summary>
     public DateOnly ScheduledLocalDate { get; set; }
     public DateTime? TakenAt { get; set; }
+    /// <summary>Thời điểm hệ thống đã tạo thông báo nhắc cho liều này.</summary>
+    public DateTime? ReminderSentAt { get; set; }
     public MedicationStatus Status { get; set; } = MedicationStatus.Pending;    
 
     public byte[] RowVer { get; set; } = Array.Empty<byte>();

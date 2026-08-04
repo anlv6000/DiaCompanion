@@ -18,5 +18,4 @@ public interface IVisitsService
     Task<PagedResult<VisitDto>> GetMineAsync(int userId,PageQuery page);
 
     Task<VisitDto> GetMineByIdAsync(int userId,int visitId);
-    Task CreateAsync(int userId, CreateFeedbackRequest req);
 }

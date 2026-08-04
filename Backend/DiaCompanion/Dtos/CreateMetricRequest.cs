@@ -16,5 +16,7 @@ public class CreateMetricRequest
 
     [MaxLength(300)] public string? Note { get; set; }
     public string? RowVersion { get; set; }
+    /// <summary>RowVersion của bản ghi còn lại trong cặp huyết áp.</summary>
+    public string? PairRowVersion { get; set; }
 }
 

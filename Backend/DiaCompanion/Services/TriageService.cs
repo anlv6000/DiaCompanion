@@ -65,7 +65,18 @@ public class TriageService : BaseService, ITriageService
                     ? d.FundusImage.Visit.Doctor.FullName : null
             });
 
-        if (doctorId is int did) query = query.Where(x => x.DoctorId == did);
+        // Bác sĩ chỉ được thấy ca thuộc lượt khám do chính mình phụ trách.
+        // Admin có thể lọc theo một bác sĩ để giám sát vận hành.
+        if (_me.Role == UserRole.Doctor)
+        {
+            var currentDoctorId = _me.RequireId();
+            query = query.Where(x => x.DoctorId == currentDoctorId);
+        }
+        else if (_me.Role == UserRole.Admin && doctorId is int did)
+        {
+            query = query.Where(x => x.DoctorId == did);
+        }
+
         if (deferredOnly == true) query = query.Where(x => x.IsDeferred);
 
         if (!string.IsNullOrWhiteSpace(q) && q.Trim().Length >= 2)
@@ -123,8 +134,18 @@ public class TriageService : BaseService, ITriageService
     /// <summary>Số ca đang chờ, để hiện badge trên thanh điều hướng.</summary>
     public async Task<IActionResult> Count()
     {
-        var pending = await _repository.AiDiagnoses.CountAsync(d => !d.Reviews.Any());
-        var deferred = await _repository.AiDiagnoses.CountAsync(d => !d.Reviews.Any() && d.IsDeferred);
+        var query = _repository.AiDiagnoses.AsNoTracking()
+            .Where(d => !d.Reviews.Any());
+
+        if (_me.Role == UserRole.Doctor)
+        {
+            var doctorId = _me.RequireId();
+            query = query.Where(d => d.FundusImage!.Visit != null &&
+                                     d.FundusImage.Visit.DoctorId == doctorId);
+        }
+
+        var pending = await query.CountAsync();
+        var deferred = await query.CountAsync(d => d.IsDeferred);
         return Ok(new { pending, deferred });
     }
 
@@ -209,8 +230,12 @@ public class TriageService : BaseService, ITriageService
     /// </summary>
     public async Task<IActionResult> VoidReview(int reviewId, VoidRequest req)
     {
-        await _void.VoidReviewAsync(reviewId, req.Reason, req.RowVersion);
-        return Ok(new { message = "Đã thu hồi bản ghi duyệt. Ca quay lại hàng đợi triage." });
+        var rowVersion = await _void.VoidReviewAsync(reviewId, req.Reason, req.RowVersion);
+        return Ok(new
+        {
+            message = "Đã thu hồi bản ghi duyệt. Ca quay lại hàng đợi triage.",
+            rowVersion
+        });
     }
 
     /// <summary>
@@ -222,8 +247,18 @@ public class TriageService : BaseService, ITriageService
     /// </summary>
     private async Task<AiDiagnosis> LoadForReviewAsync(int diagnosisId, string? rowVersion)
     {
-        var d = await _repository.AiDiagnoses.FirstOrDefaultAsync(x => x.Id == diagnosisId)
+        var d = await _repository.AiDiagnoses
+            .Include(x => x.FundusImage)
+            .ThenInclude(x => x!.Visit)
+            .FirstOrDefaultAsync(x => x.Id == diagnosisId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
+
+        var doctorId = _me.RequireId();
+        var visit = d.FundusImage?.Visit;
+        if (visit is null || visit.IsVoided || visit.DoctorId != doctorId)
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Bác sĩ chỉ được duyệt kết quả thuộc lượt khám do mình phụ trách.");
 
         if (await _repository.DiagnosisReviews.AnyAsync(r => r.AiDiagnosisId == diagnosisId))
             throw AppException.Conflict(Msg.ConcurrentEdit,

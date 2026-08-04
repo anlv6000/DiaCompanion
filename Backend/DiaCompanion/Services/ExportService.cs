@@ -14,17 +14,24 @@ public class ExportService : BaseService, IExportService
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
     private readonly IAuditService _audit;
+    private readonly IClinicClock _clock;
 
-    public ExportService(IRepository repository, ICurrentUser me, IAuditService audit)
-    { _repository = repository; _me = me; _audit = audit; }
+    public ExportService(
+        IRepository repository,
+        ICurrentUser me,
+        IAuditService audit,
+        IClinicClock clock)
+    {
+        _repository = repository;
+        _me = me;
+        _audit = audit;
+        _clock = clock;
+    }
 
     /// <summary>
-    /// UC-34 — dữ liệu báo cáo khám.
-    ///
-    /// Trả JSON để client dựng PDF, thay vì sinh PDF ở server: bản Electron
-    /// đã có sẵn khả năng in, và làm vậy tránh thêm phụ thuộc thư viện PDF
-    /// vào backend. Bệnh nhân cũng gọi được endpoint này cho lượt khám của mình
-    /// (BR-13), nhưng CHỈ khi lượt khám đã hoàn tất.
+    /// UC-34 — dữ liệu có cấu trúc của báo cáo khám. Endpoint PDF riêng bên dưới
+    /// sinh tệp chính thức; endpoint này phục vụ màn xem trước hoặc client cần tự in.
+    /// Mọi actor chỉ được xuất sau khi lượt khám đã hoàn tất.
     /// </summary>
     public async Task<IActionResult> VisitReport(int visitId)
     {
@@ -35,11 +42,10 @@ public class ExportService : BaseService, IExportService
 
         EnsureCanAccessPatient(_me, visit.PatientId);
 
-        // BR-13: bệnh nhân chỉ xem được kết quả bác sĩ ĐÃ xác nhận.
-        // Không có kiểm tra này thì bệnh nhân tải được báo cáo chứa kết quả AI thô.
-        if (_me.Role == UserRole.Patient && visit.Status != VisitStatus.Completed)
+        // Báo cáo khám chỉ được phát hành sau khi bác sĩ phụ trách đóng lượt khám.
+        if (visit.Status != VisitStatus.Completed)
             throw AppException.Forbidden(Msg.Forbidden,
-                "Kết quả lượt khám này chưa được bác sĩ xác nhận.");
+                "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo chính thức.");
 
         var findings = await _repository.DiagnosisReviews.AsNoTracking()
             .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visitId)
@@ -70,7 +76,8 @@ public class ExportService : BaseService, IExportService
             {
                 p.IssuedAt,
                 p.Note,
-                Items = p.Items.Select(i => new { i.DrugName, i.Dose, i.TimesPerDay, i.DurationDays, i.Instruction })
+                Items = p.Items.Where(i => i.IsActive)
+                    .Select(i => new { i.DrugName, i.Dose, i.TimesPerDay, i.DurationDays, i.Instruction })
             }).ToListAsync();
 
         await _audit.LogAsync(AuditAction.Export, nameof(Visit), visitId, detail: "Xuất báo cáo khám");
@@ -130,6 +137,120 @@ public class ExportService : BaseService, IExportService
         });
     }
 
+    /// <summary>UC-34 — sinh tệp PDF báo cáo khám đã được bác sĩ xác nhận.</summary>
+    public async Task<IActionResult> VisitReportPdf(int visitId)
+    {
+        var visit = await _repository.Visits.AsNoTracking()
+            .Include(v => v.Patient)
+            .Include(v => v.Doctor)
+            .FirstOrDefaultAsync(v => v.Id == visitId)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+        EnsureCanAccessPatient(_me, visit.PatientId);
+        if (visit.Status != VisitStatus.Completed)
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo PDF.");
+
+        var findings = await _repository.DiagnosisReviews.AsNoTracking()
+            .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visitId)
+            .OrderBy(r => r.AiDiagnosis!.FundusImage!.Eye)
+            .Select(r => new
+            {
+                Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
+                AiGrade = (byte)r.AiDiagnosis.DrGrade,
+                FinalGrade = (byte)r.FinalGrade,
+                r.Action,
+                r.Reason,
+                r.AiDiagnosis.Confidence,
+                Model = r.AiDiagnosis.ModelVersion!.Name,
+                ConfirmedBy = r.Doctor!.FullName
+            })
+            .ToListAsync();
+
+        var prescriptions = await _repository.Prescriptions.AsNoTracking()
+            .Where(p => p.VisitId == visitId)
+            .SelectMany(p => p.Items.Where(i => i.IsActive)
+                .Select(i => new
+                {
+                    i.DrugName,
+                    i.Dose,
+                    i.TimesPerDay,
+                    i.DurationDays,
+                    i.Instruction
+                }))
+            .ToListAsync();
+
+        var visitLocal = _clock.ToLocal(visit.VisitDate) ?? visit.VisitDate;
+
+        var lines = new List<string>
+        {
+            "DIACOMPANION - EXAMINATION REPORT",
+            "Diabetic Retinopathy Screening Support System",
+            "",
+            $"Report ID: VISIT-{visit.Id}",
+            $"Patient code: {visit.Patient!.Code}",
+            $"Patient name: {visit.Patient.FullName}",
+            $"Date of birth: {visit.Patient.DateOfBirth:dd/MM/yyyy}",
+            $"Phone: {visit.Patient.Phone}",
+            $"Visit date: {visitLocal:dd/MM/yyyy HH:mm}",
+            $"Assigned doctor: {visit.Doctor?.FullName ?? "N/A"}",
+            $"License number: {visit.Doctor?.LicenseNo ?? "N/A"}",
+            "",
+            "CLINICAL CONCLUSION",
+            visit.Conclusion ?? "No conclusion recorded.",
+            $"Referral: {visit.Referral?.ToString() ?? "None"}",
+            $"Re-screen interval: {visit.RecheckMonths?.ToString() ?? "N/A"} month(s)",
+            "",
+            "DOCTOR-CONFIRMED RETINAL FINDINGS"
+        };
+
+        if (findings.Count == 0)
+        {
+            lines.Add("No confirmed retinal finding.");
+        }
+        else
+        {
+            foreach (var finding in findings)
+            {
+                var eye = finding.Eye == (byte)Eye.Od ? "OD" : finding.Eye == (byte)Eye.Os ? "OS" : finding.Eye.ToString();
+                lines.Add(
+                    $"{eye}: final {DiagnosesService.GradeLabel(finding.FinalGrade)}; " +
+                    $"AI {DiagnosesService.GradeLabel(finding.AiGrade)}; confidence {finding.Confidence:P1}; " +
+                    $"model {finding.Model}; confirmed by {finding.ConfirmedBy}.");
+                if (finding.Action == ReviewAction.Override && !string.IsNullOrWhiteSpace(finding.Reason))
+                    lines.Add($"  Override reason: {finding.Reason}");
+            }
+        }
+
+        lines.Add("");
+        lines.Add("PRESCRIPTION");
+        if (prescriptions.Count == 0)
+        {
+            lines.Add("No prescription recorded for this visit.");
+        }
+        else
+        {
+            foreach (var item in prescriptions)
+            {
+                lines.Add(
+                    $"- {item.DrugName}, {item.Dose}, {item.TimesPerDay} time(s)/day, " +
+                    $"{item.DurationDays} day(s). {item.Instruction}");
+            }
+        }
+
+        lines.Add("");
+        lines.Add("AI results support clinical decision-making only. The final grade is confirmed by a doctor.");
+        lines.Add($"Generated at: {_clock.LocalNow:dd/MM/yyyy HH:mm}");
+
+        var pdf = SimplePdfDocument.Create(lines);
+
+        await _audit.LogAsync(AuditAction.Export, nameof(Visit), visitId,
+            detail: "Xuất báo cáo khám PDF");
+        await _repository.SaveChangesAsync();
+
+        return File(pdf, "application/pdf", $"examination-report-{visitId}.pdf");
+    }
+
     /// <summary>
     /// UC-35 — tập ca người–máy mâu thuẫn.
     ///
@@ -137,13 +258,14 @@ public class ExportService : BaseService, IExportService
     /// BỊ GẮN CỜ cao hơn hẳn nhóm không gắn cờ, nghĩa là cơ chế deferral đang
     /// bắt đúng những ca mà mô hình thực sự sai.
     /// </summary>
-    public async Task<ActionResult<object>> DisagreementCases([FromQuery] int? modelVersionId)
+    public async Task<ActionResult<object>> DisagreementCases(int? modelVersionId, DateOnly? from, DateOnly? to)
     {
         var query = _repository.DiagnosisReviews.AsNoTracking()
             .Where(r => r.Action == ReviewAction.Override);
 
         if (modelVersionId is int mv)
             query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
+        query = ApplyReviewDateFilter(query, from, to);
 
         var cases = await query.Select(r => new DisagreementCaseDto
         {
@@ -162,8 +284,11 @@ public class ExportService : BaseService, IExportService
         }).OrderByDescending(c => c.GradeDistance).ThenByDescending(c => c.ReviewedAt).ToListAsync();
 
         // Tính chỉ số tổng hợp trên TOÀN BỘ review, không chỉ ca ghi đè
-        var allReviews = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => modelVersionId == null || r.AiDiagnosis!.ModelVersionId == modelVersionId)
+        var allReviewsQuery = _repository.DiagnosisReviews.AsNoTracking()
+            .Where(r => modelVersionId == null || r.AiDiagnosis!.ModelVersionId == modelVersionId);
+        allReviewsQuery = ApplyReviewDateFilter(allReviewsQuery, from, to);
+
+        var allReviews = await allReviewsQuery
             .Select(r => new { Action = (byte)r.Action, Deferred = r.AiDiagnosis!.IsDeferred })
             .ToListAsync();
 
@@ -201,11 +326,12 @@ public class ExportService : BaseService, IExportService
     }
 
     /// <summary>UC-35 — kết xuất CSV để phân tích ngoài hệ thống.</summary>
-    public async Task<IActionResult> DisagreementCsv([FromQuery] int? modelVersionId)
+    public async Task<IActionResult> DisagreementCsv(int? modelVersionId, DateOnly? from, DateOnly? to)
     {
         var query = _repository.DiagnosisReviews.AsNoTracking()
             .Where(r => r.Action == ReviewAction.Override);
         if (modelVersionId is int mv) query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
+        query = ApplyReviewDateFilter(query, from, to);
 
         var rows = await query.Select(r => new
         {
@@ -247,4 +373,25 @@ public class ExportService : BaseService, IExportService
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
         return File(bytes, "text/csv", $"disagreement-cases-{DateTime.UtcNow:yyyyMMdd}.csv");
     }
+
+    private IQueryable<DiagnosisReview> ApplyReviewDateFilter(
+        IQueryable<DiagnosisReview> query,
+        DateOnly? from,
+        DateOnly? to)
+    {
+        if (from is DateOnly fromDate)
+        {
+            var fromUtc = _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue));
+            query = query.Where(r => r.CreatedAt >= fromUtc);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            var toExclusiveUtc = _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
+            query = query.Where(r => r.CreatedAt < toExclusiveUtc);
+        }
+
+        return query;
+    }
+
 }

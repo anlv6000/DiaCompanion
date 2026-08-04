@@ -7,7 +7,7 @@ namespace DiaCompanion.Api.Services;
 
 public interface IAdminService
 {
-    Task<ActionResult<DashboardDto>> Dashboard();
+    Task<ActionResult<DashboardDto>> Dashboard(DateOnly? from, DateOnly? to, int? modelVersionId);
     Task<ActionResult<List<SystemConfigDto>>> Configs();
     Task<IActionResult> UpdateConfig(string key, UpdateConfigRequest req);
     Task<ActionResult<ThresholdImpactDto>> ThresholdImpact(

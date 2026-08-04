@@ -35,6 +35,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
     public async Task<ActionResult<AiDiagnosisDto>> Run(int imageId, CancellationToken ct)
     {
         var image = await _repository.FundusImages
+
     .Include(x => x.Visit)
     .FirstOrDefaultAsync(x => x.Id == imageId, ct)
     ?? throw AppException.NotFound(

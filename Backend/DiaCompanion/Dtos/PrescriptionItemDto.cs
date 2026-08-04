@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using DiaCompanion.Api.Common;
-
 namespace DiaCompanion.Api.Dtos;
 
 public class PrescriptionItemDto
@@ -11,4 +8,5 @@ public class PrescriptionItemDto
     public byte TimesPerDay { get; set; }
     public short DurationDays { get; set; }
     public string? Instruction { get; set; }
+    public bool IsActive { get; set; }
 }

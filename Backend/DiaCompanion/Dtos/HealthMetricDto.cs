@@ -1,9 +1,9 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
-/* ========================= MONITORING (UC-46..52) ======================= */
+/* ========================= MONITORING (UC-41..47) ======================= */
 
 public class HealthMetricDto
 {
@@ -18,6 +18,10 @@ public class HealthMetricDto
     public bool IsAbnormal { get; set; }
 
     public string RowVersion { get; set; } = "";
+    public int? PairMetricId { get; set; }
+    public string? PairRowVersion { get; set; }
+    public decimal? SystolicValue { get; set; }
+    public decimal? DiastolicValue { get; set; }
 }
 public class MetricLatestDto
 {

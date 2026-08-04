@@ -14,5 +14,6 @@ public class BlogPostDto
     public DateTime? PublishedAt { get; set; }
     public string AuthorName { get; set; } = "";
     public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
     public string RowVersion { get; set; } = "";
 }

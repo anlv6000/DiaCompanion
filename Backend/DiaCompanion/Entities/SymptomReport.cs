@@ -8,6 +8,9 @@ public class SymptomReport : ISoftDeletable, IHasRowVersion
     public int Id { get; set; }
     public int PatientId { get; set; }
     public Patient? Patient { get; set; }
+    /// <summary>Bác sĩ phụ trách tại thời điểm bệnh nhân gửi báo cáo.</summary>
+    public int? ResponsibleDoctorId { get; set; }
+    public User? ResponsibleDoctor { get; set; }
     [Required, MaxLength(500)] public string Symptoms { get; set; } = "";
     public SymptomSeverity Severity { get; set; }
     [MaxLength(1000)] public string? Description { get; set; }

@@ -7,7 +7,7 @@ using DiaCompanion.Api.Entities;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-58, UC-63..66 — quản trị hệ thống.</summary>
+/// <summary>UC-53, UC-58..61 — thống kê và quản trị hệ thống.</summary>
 public class AdminService : BaseService, IAdminService
 {
     private readonly IRepository _repository;
@@ -18,40 +18,84 @@ public class AdminService : BaseService, IAdminService
     public AdminService(IRepository repository, ICurrentUser me, IAuditService audit, IClinicClock clock)
     { _repository = repository; _me = me; _audit = audit; _clock = clock; }
 
-    /* ----------------------------- UC-58 DASHBOARD ----------------------- */
-    public async Task<ActionResult<DashboardDto>> Dashboard()
+    /* ----------------------------- UC-53 DASHBOARD ----------------------- */
+    public async Task<ActionResult<DashboardDto>> Dashboard(
+        DateOnly? from,
+        DateOnly? to,
+        int? modelVersionId)
     {
-        var monthStart = new DateTime(_clock.LocalNow.Year, _clock.LocalNow.Month, 1);
+        var localFrom = from ?? new DateOnly(_clock.LocalNow.Year, _clock.LocalNow.Month, 1);
+        var localTo = to ?? _clock.LocalToday;
+        if (localTo < localFrom)
+            throw AppException.BadRequest(Msg.InvalidData, "Ngày kết thúc phải từ ngày bắt đầu trở đi.");
 
-        var totalDiagnoses = await _repository.AiDiagnoses.CountAsync();
-        var deferredTotal = await _repository.AiDiagnoses.CountAsync(d => d.IsDeferred);
-        var reviews = await _repository.DiagnosisReviews.CountAsync();
-        var overrides = await _repository.DiagnosisReviews.CountAsync(r => r.Action == ReviewAction.Override);
-        var referred = await _repository.Visits.CountAsync(v => v.Referral >= ReferralType.Ophthalmology);
-        var closedVisits = await _repository.Visits.CountAsync(v => v.Status == VisitStatus.Completed);
+        var fromUtc = _clock.ToUtc(localFrom.ToDateTime(TimeOnly.MinValue));
+        var toExclusiveUtc = _clock.ToUtc(localTo.AddDays(1).ToDateTime(TimeOnly.MinValue));
 
-        var gradeDist = await _repository.DiagnosisReviews
+        var diagnoses = _repository.AiDiagnoses.AsNoTracking()
+            .Where(d => d.CreatedAt >= fromUtc && d.CreatedAt < toExclusiveUtc);
+        var reviews = _repository.DiagnosisReviews.AsNoTracking()
+            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < toExclusiveUtc);
+        var visits = _repository.Visits.AsNoTracking()
+            .Where(v => v.VisitDate >= fromUtc && v.VisitDate < toExclusiveUtc);
+
+        if (_me.Role == UserRole.Doctor)
+        {
+            var doctorId = _me.RequireId();
+            diagnoses = diagnoses.Where(d => d.FundusImage!.Visit != null
+                                               && d.FundusImage.Visit.DoctorId == doctorId);
+            reviews = reviews.Where(r => r.AiDiagnosis!.FundusImage!.Visit != null
+                                           && r.AiDiagnosis.FundusImage.Visit.DoctorId == doctorId);
+            visits = visits.Where(v => v.DoctorId == doctorId);
+        }
+
+        if (modelVersionId is int selectedModelId)
+        {
+            diagnoses = diagnoses.Where(d => d.ModelVersionId == selectedModelId);
+            reviews = reviews.Where(r => r.AiDiagnosis!.ModelVersionId == selectedModelId);
+        }
+
+        var totalDiagnoses = await diagnoses.CountAsync();
+        var deferredTotal = await diagnoses.CountAsync(d => d.IsDeferred);
+        var totalReviews = await reviews.CountAsync();
+        var overrides = await reviews.CountAsync(r => r.Action == ReviewAction.Override);
+        var closedVisits = await visits.CountAsync(v => v.Status == VisitStatus.Completed);
+        var referred = await visits.CountAsync(v => v.Status == VisitStatus.Completed
+                                                   && v.Referral.HasValue
+                                                   && v.Referral.Value >= ReferralType.Ophthalmology);
+
+        var gradeDistribution = await reviews
             .GroupBy(r => r.FinalGrade)
             .Select(g => new { Grade = (byte)g.Key, Count = g.Count() })
             .ToListAsync();
 
+        var patientCount = await visits.Select(v => v.PatientId).Distinct().CountAsync();
+        if (_me.Role == UserRole.Admin && from is null && to is null)
+            patientCount = await _repository.Patients.CountAsync();
+
         return Ok(new DashboardDto
         {
-            TotalPatients = await _repository.Patients.CountAsync(),
-            VisitsThisMonth = await _repository.Visits.CountAsync(v => v.VisitDate >= monthStart),
-            PendingTriage = await _repository.AiDiagnoses.CountAsync(d => !d.Reviews.Any()),
-            DeferredPending = await _repository.AiDiagnoses.CountAsync(d => !d.Reviews.Any() && d.IsDeferred),
+            PeriodFrom = localFrom,
+            PeriodTo = localTo,
+            ModelVersionId = modelVersionId,
+            Scope = _me.Role == UserRole.Doctor ? "AssignedDoctor" : "System",
+            TotalPatients = patientCount,
+            VisitsThisMonth = await visits.CountAsync(),
+            PendingTriage = await diagnoses.CountAsync(d => !d.Reviews.Any()),
+            DeferredPending = await diagnoses.CountAsync(d => !d.Reviews.Any() && d.IsDeferred),
             DeferralRate = Pct(deferredTotal, totalDiagnoses),
             ReferralRate = Pct(referred, closedVisits),
-            OverrideRate = Pct(overrides, reviews),
-            GradeDistribution = gradeDist.ToDictionary(
+            OverrideRate = Pct(overrides, totalReviews),
+            GradeDistribution = gradeDistribution.ToDictionary(
                 x => DiagnosesService.GradeLabel(x.Grade), x => x.Count),
-            ActiveModel = await _repository.ModelVersions.Where(m => m.IsActive)
-                .Select(m => m.Name).FirstOrDefaultAsync() ?? "(chưa kích hoạt)"
+            ActiveModel = await _repository.ModelVersions.AsNoTracking()
+                .Where(m => m.IsActive)
+                .Select(m => m.Name)
+                .FirstOrDefaultAsync() ?? "(chưa kích hoạt)"
         });
     }
 
-    /* --------------------------- UC-63 CẤU HÌNH ------------------------- */
+    /* --------------------------- UC-58 CẤU HÌNH ------------------------- */
     public async Task<ActionResult<List<SystemConfigDto>>> Configs()
     {
         var rows = await _repository.SystemConfigs.AsNoTracking()
@@ -74,7 +118,7 @@ public class AdminService : BaseService, IAdminService
     }
 
     /// <summary>
-    /// UC-63 — đổi ngưỡng.
+    /// UC-58 — đổi ngưỡng.
     /// Giá trị mới CHỈ áp dụng cho các ca chạy SAU thời điểm này; kết quả đã lưu
     /// giữ nguyên ngưỡng tại thời điểm chạy (A1 của UC-28, BR-17).
     /// </summary>
@@ -116,7 +160,7 @@ public class AdminService : BaseService, IAdminService
     }
 
     /// <summary>
-    /// UC-63 bước 4 — ước tính ảnh hưởng TRƯỚC khi đổi ngưỡng.
+    /// UC-58 bước 4 — ước tính ảnh hưởng TRƯỚC khi đổi ngưỡng.
     ///
     /// Đây là điểm cân bằng giữa mức tự động và mức an toàn: hạ ngưỡng thì ít ca
     /// chuyển bác sĩ hơn (nhanh hơn nhưng rủi ro hơn), nâng ngưỡng thì ngược lại.
@@ -162,7 +206,7 @@ public class AdminService : BaseService, IAdminService
         });
     }
 
-    /* --------------------------- UC-64, 65 MODEL ------------------------ */
+    /* --------------------------- UC-59, 60 MODEL ------------------------ */
     public async Task<ActionResult<List<ModelVersionDto>>> Models()
     {
         var models = await _repository.ModelVersions.AsNoTracking()
@@ -183,17 +227,32 @@ public class AdminService : BaseService, IAdminService
         return Ok(items);
     }
 
-    /// <summary>UC-64 — đăng ký phiên bản mới.</summary>
+    /// <summary>UC-59 — đăng ký phiên bản mới.</summary>
     public async Task<ActionResult<ModelVersionDto>> RegisterModel(RegisterModelRequest req)
     {
-        if (await _repository.ModelVersions.AnyAsync(m => m.Name == req.Name))
-            throw AppException.Conflict(Msg.PhoneTaken, "Tên phiên bản mô hình đã tồn tại.");
+        var sha256 = req.Sha256.Trim().ToLowerInvariant();
+        if (sha256.Length != 64 || sha256.Any(c => !Uri.IsHexDigit(c)))
+            throw AppException.BadRequest(Msg.InvalidData, "SHA-256 phải gồm đúng 64 ký tự hệ 16.");
+
+        foreach (var metric in new[] { req.Qwk, req.Dice, req.IoU })
+        {
+            if (metric is decimal value && (value < 0 || value > 1))
+                throw AppException.BadRequest(Msg.InvalidData, "QWK, Dice và IoU phải nằm trong khoảng 0 đến 1.");
+        }
+
+        if (req.Qwk is null && req.Dice is null && req.IoU is null)
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Cần nhập ít nhất một chỉ số đánh giá QWK, Dice hoặc IoU cho phiên bản mô hình.");
+
+        if (await _repository.ModelVersions.AnyAsync(m => m.Name == req.Name.Trim()))
+            throw AppException.Conflict(Msg.InvalidData, "Tên phiên bản mô hình đã tồn tại.");
 
         var model = new ModelVersion
         {
             Name = req.Name.Trim(),
             FilePath = req.FilePath.Trim(),
-            Sha256 = req.Sha256.Trim().ToLowerInvariant(),
+            Sha256 = sha256,
             Qwk = req.Qwk,
             Dice = req.Dice,
             IoU = req.IoU,
@@ -214,49 +273,81 @@ public class AdminService : BaseService, IAdminService
     }
 
     /// <summary>
-    /// UC-64 — kích hoạt phiên bản.
+    /// UC-59 — kích hoạt phiên bản.
     /// BR-15: chỉ một phiên bản kích hoạt tại một thời điểm.
     /// </summary>
     public async Task<IActionResult> ActivateModel(int id, ConcurrencyRequest req)
     {
-        var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.Id == id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy phiên bản mô hình.");
-
-        _repository.ApplyOriginalRowVersion(model, req.RowVersion);
-
-        if (model.IsActive)
-            return Ok(new
-            {
-                message = "Phiên bản này đang được sử dụng.",
-                rowVersion = model.ToRowVersion()
-            });
-
-        await using var tx = await _repository.Database.BeginTransactionAsync();
-
-        // Gỡ phiên bản cũ TRƯỚC khi bật cái mới — unique index chỉ cho phép
-        // đúng một bản ghi IsActive = 1 tại mọi thời điểm.
-        var current = await _repository.ModelVersions.Where(m => m.IsActive).ToListAsync();
-        foreach (var m in current) m.IsActive = false;
-        await _repository.SaveChangesAsync();
-
-        model.IsActive = true;
-        model.WasActivated = true;   // BR-16: từ nay cấm xoá
-        model.ActivatedAt = DateTime.UtcNow;
-
-        await _audit.LogAsync(AuditAction.ModelActivate, nameof(ModelVersion), model.Id,
-            new { active = current.FirstOrDefault()?.Name }, new { active = model.Name });
-        await _repository.SaveChangesAsync();
-        await tx.CommitAsync();
-
-        return Ok(new
+        var strategy = _repository.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            message = $"Đã kích hoạt {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản mới; " +
-                      "kết quả đã lưu giữ nguyên phiên bản cũ.",
-            rowVersion = model.ToRowVersion()
+            await using var tx = await _repository.Database.BeginTransactionAsync();
+            try
+            {
+                var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.Id == id)
+                    ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy phiên bản mô hình.");
+
+                _repository.ApplyOriginalRowVersion(model, req.RowVersion);
+
+                if (model.Qwk is null && model.Dice is null && model.IoU is null)
+                    throw AppException.BadRequest(
+                        Msg.RequiredFields,
+                        "Phiên bản chưa có chỉ số đánh giá nên không thể kích hoạt.");
+
+                if (model.IsActive)
+                {
+                    await tx.RollbackAsync();
+                    return Ok(new
+                    {
+                        message = "Phiên bản này đang được sử dụng.",
+                        rowVersion = model.ToRowVersion()
+                    });
+                }
+
+                // Gỡ phiên bản cũ trước khi bật bản mới. Unique index tại CSDL
+                // vẫn là chốt chặn cuối để chỉ có một IsActive = 1.
+                var current = await _repository.ModelVersions
+                    .Where(m => m.IsActive && m.Id != model.Id)
+                    .ToListAsync();
+                foreach (var activeModel in current)
+                    activeModel.IsActive = false;
+
+                model.IsActive = true;
+                model.WasActivated = true;
+                model.ActivatedAt = _clock.UtcNow;
+
+                await _audit.LogAsync(
+                    AuditAction.ModelActivate,
+                    nameof(ModelVersion),
+                    model.Id,
+                    new { active = current.FirstOrDefault()?.Name },
+                    new { active = model.Name });
+                await _repository.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return Ok(new
+                {
+                    message = $"Đã kích hoạt {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản mới; " +
+                              "kết quả đã lưu giữ nguyên phiên bản cũ.",
+                    rowVersion = model.ToRowVersion()
+                });
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await tx.RollbackAsync();
+                throw AppException.Conflict(
+                    Msg.StaleVersion,
+                    "Trạng thái phiên bản mô hình đã thay đổi. Vui lòng tải lại trước khi kích hoạt.");
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         });
     }
 
-    /// <summary>UC-65 — xoá phiên bản CHƯA TỪNG kích hoạt (BR-16).</summary>
+    /// <summary>UC-60 — xoá phiên bản CHƯA TỪNG kích hoạt (BR-16).</summary>
     public async Task<IActionResult> DeleteModel(int id, string rowVersion)
     {
         var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.Id == id)
@@ -281,10 +372,10 @@ public class AdminService : BaseService, IAdminService
         return Ok(new { message = "Đã xóa phiên bản mô hình." });
     }
 
-    /* ---------------------------- UC-66 AUDIT --------------------------- */
+    /* ---------------------------- UC-61 AUDIT --------------------------- */
 
     /// <summary>
-    /// UC-66 — nhật ký audit, KEYSET pagination.
+    /// UC-61 — nhật ký audit, KEYSET pagination.
     ///
     /// Bảng này lớn nhất và được lật sâu nhất, mà OFFSET phải quét bỏ n dòng
     /// đầu nên trang sâu rất chậm. Cũng cố ý KHÔNG trả tổng số: COUNT(*) trên

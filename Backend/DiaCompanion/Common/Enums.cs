@@ -23,7 +23,7 @@ public enum DeferReason : byte
     MissingBranch = 4
 }
 
-public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Cancelled = 3 }
+public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Cancelled = 3, Skipped = 4 }
 public enum MetricType : byte { Glucose = 1, HbA1c = 2, SystolicBp = 3, DiastolicBp = 4 }
 public enum MetricContext : byte { BeforeMeal = 1, AfterMeal = 2}
 public enum SymptomSeverity : byte { Mild = 1, Moderate = 2, Severe = 3 }
@@ -53,6 +53,20 @@ public static class AuditAction
     public const string ReviewOverride   = "REVIEW_OVERRIDE";
     public const string VisitClose       = "VISIT_CLOSE";
     public const string PrescriptionIssue= "PRESCRIPTION_ISSUE";
+    public const string PrescriptionUpdate = "PRESCRIPTION_UPDATE";
+    public const string MedicationConfirm  = "MEDICATION_CONFIRM";
+    public const string MetricCreate       = "METRIC_CREATE";
+    public const string MetricUpdate       = "METRIC_UPDATE";
+    public const string MetricDelete       = "METRIC_DELETE";
+    public const string LifestyleCreate    = "LIFESTYLE_CREATE";
+    public const string LifestyleUpdate    = "LIFESTYLE_UPDATE";
+    public const string LifestyleDelete    = "LIFESTYLE_DELETE";
+    public const string SymptomReport      = "SYMPTOM_REPORT";
+    public const string SymptomReply       = "SYMPTOM_REPLY";
+    public const string FeedbackCreate     = "FEEDBACK_CREATE";
+    public const string BlogCreate         = "BLOG_CREATE";
+    public const string BlogUpdate         = "BLOG_UPDATE";
+    public const string BlogState          = "BLOG_STATE";
     public const string Void             = "VOID";
     public const string ConfigChange     = "CONFIG_CHANGE";
     public const string ModelRegister    = "MODEL_REGISTER";

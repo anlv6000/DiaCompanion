@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
-/* ===================== NHẮC TÁI KHÁM (UC-41, UC-42) ===================== */
+/* ===================== NHẮC TÁI KHÁM (UC-48) ===================== */
 
 /// <summary>
 /// UC-41 — ngày tái khám của bệnh nhân.

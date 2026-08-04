@@ -3,7 +3,7 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
-/* ========================= ENGAGEMENT (UC-53..62) ======================= */
+/* ========================= ENGAGEMENT (UC-49..52) ======================= */
 
 public class NotificationDto
 {

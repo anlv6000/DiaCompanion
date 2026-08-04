@@ -1,200 +1,321 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-59..62 — blog giáo dục sức khỏe.</summary>
+/// <summary>UC-54..57 — blog giáo dục sức khỏe.</summary>
 public class BlogService : BaseService, IBlogService
 {
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
     private readonly IClinicClock _clock;
+    private readonly IAuditService _audit;
 
+    public BlogService(
+        IRepository repository,
+        ICurrentUser me,
+        IClinicClock clock,
+        IAuditService audit)
+    {
+        _repository = repository;
+        _me = me;
+        _clock = clock;
+        _audit = audit;
+    }
 
-    public BlogService(IRepository repository, ICurrentUser me, IClinicClock clock) { _repository = repository; _me = me; _clock = clock; }
-
-    /// <summary>UC-59 — bệnh nhân chỉ thấy bài ĐÃ ĐĂNG.</summary>
+    /// <summary>UC-54 — người dùng đã đăng nhập chỉ thấy bài đang được xuất bản.</summary>
     public async Task<ActionResult<PagedResult<BlogPostDto>>> Published(
-        [FromQuery] string? q, [FromQuery] BlogCategory? category, [FromQuery] PageQuery page)
+        string? q,
+        BlogCategory? category,
+        PageQuery page)
     {
-        var query = _repository.BlogPosts.AsNoTracking().Where(b => b.IsPublished);
+        var query = _repository.BlogPosts.AsNoTracking()
+            .Where(b => b.IsPublished);
 
-        if (!string.IsNullOrWhiteSpace(q) && q.Trim().Length >= 2)
+        if (!string.IsNullOrWhiteSpace(q))
         {
-            var norm = VietnameseText.RemoveDiacritics(q);
-            query = query.Where(b => EF.Functions.Like(b.Title, $"%{q}%")
-                                  || EF.Functions.Like(b.Summary!, $"%{norm}%"));
+            var keyword = q.Trim();
+            query = query.Where(b =>
+                EF.Functions.Like(b.Title, $"%{keyword}%")
+                || (b.Summary != null && EF.Functions.Like(b.Summary, $"%{keyword}%"))
+                || EF.Functions.Like(b.Body, $"%{keyword}%"));
         }
-        if (category is BlogCategory c) query = query.Where(b => b.Category == c);
+
+        if (category is BlogCategory selectedCategory)
+            query = query.Where(b => b.Category == selectedCategory);
 
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(b => b.PublishedAt)
-            .Skip(page.Skip).Take(page.PageSize)
-            .Select(b => new BlogPostDto
-            {
-                Id = b.Id,
-                Title = b.Title,
-                Summary = b.Summary,
-                Category = (byte)b.Category,
-                IsPublished = b.IsPublished,
-                PublishedAt = _clock.ToLocal(b.PublishedAt),
-                AuthorName = b.Author!.FullName,
-                CreatedAt = b.CreatedAt
-            }).ToListAsync();
+        query = ApplySort(query, page, publishedView: true);
 
-        return Ok(new PagedResult<BlogPostDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
-    }
-    public async Task<ActionResult<BlogPostDto>> Get(int id)
-    {
-        var b = await _repository.BlogPosts.AsNoTracking().Include(x => x.Author)
-            .FirstOrDefaultAsync(x => x.Id == id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
-
-        // Bài nháp chỉ nhân viên xem được
-        if (!b.IsPublished && !_me.IsInRole(UserRole.Admin, UserRole.Doctor))
-            throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
-
-        return Ok(Map(b, includeBody: true));
-    }
-
-    /// <summary>UC-60 — danh sách quản trị, GỒM CẢ BÀI NHÁP.</summary>
-    public async Task<ActionResult<PagedResult<BlogPostDto>>> Manage(
-        [FromQuery] bool? published, [FromQuery] PageQuery page)
-    {
-        var query = _repository.BlogPosts.AsNoTracking().AsQueryable();
-
-        if (published is bool p)
-            query = query.Where(b => b.IsPublished == p);
-
-        var total = await query.CountAsync();
-
-        // Chạy SQL lấy dữ liệu UTC từ DB trước
         var posts = await query
             .Include(b => b.Author)
-            .OrderByDescending(b => b.UpdatedAt ?? b.CreatedAt)
             .Skip(page.Skip)
             .Take(page.PageSize)
             .ToListAsync();
 
-        // Sau khi SQL xong mới đổi UTC -> giờ Việt Nam
-        var items = posts.Select(b => Map(b, includeBody: false)).ToList();
-
         return Ok(new PagedResult<BlogPostDto>
         {
-            Items = items,
+            Items = posts.Select(b => Map(b, includeBody: false)).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
             TotalItems = total
         });
     }
 
-    /// <summary>UC-61 — soạn bài mới (lưu ở trạng thái nháp).</summary>
+    public async Task<ActionResult<BlogPostDto>> Get(int id)
+    {
+        var post = await _repository.BlogPosts.AsNoTracking()
+            .Include(x => x.Author)
+            .FirstOrDefaultAsync(x => x.Id == id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+
+        if (!post.IsPublished && !_me.IsInRole(UserRole.Admin, UserRole.Doctor))
+            throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+
+        return Ok(Map(post, includeBody: true));
+    }
+
+    /// <summary>UC-55 — danh sách bài đăng và bản nháp có tìm kiếm, lọc, sắp xếp, phân trang.</summary>
+    public async Task<ActionResult<PagedResult<BlogPostDto>>> Manage(
+        string? q,
+        bool? published,
+        BlogCategory? category,
+        int? authorId,
+        PageQuery page)
+    {
+        var query = _repository.BlogPosts.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var keyword = q.Trim();
+            query = query.Where(b =>
+                EF.Functions.Like(b.Title, $"%{keyword}%")
+                || (b.Summary != null && EF.Functions.Like(b.Summary, $"%{keyword}%"))
+                || EF.Functions.Like(b.Body, $"%{keyword}%"));
+        }
+
+        if (published is bool isPublished)
+            query = query.Where(b => b.IsPublished == isPublished);
+        if (category is BlogCategory selectedCategory)
+            query = query.Where(b => b.Category == selectedCategory);
+        if (authorId is int selectedAuthorId)
+            query = query.Where(b => b.AuthorId == selectedAuthorId);
+
+        var total = await query.CountAsync();
+        query = ApplySort(query, page, publishedView: false);
+
+        var posts = await query
+            .Include(b => b.Author)
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .ToListAsync();
+
+        return Ok(new PagedResult<BlogPostDto>
+        {
+            Items = posts.Select(b => Map(b, includeBody: false)).ToList(),
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
+        });
+    }
+
+    /// <summary>UC-56 — tạo bài mới ở trạng thái nháp.</summary>
     public async Task<ActionResult<BlogPostDto>> Create(SaveBlogRequest req)
     {
         var post = new BlogPost
         {
             AuthorId = _me.RequireId(),
             Title = req.Title.Trim(),
-            Summary = req.Summary,
-            Body = req.Body,
+            Summary = req.Summary?.Trim(),
+            Body = req.Body.Trim(),
             Category = req.Category,
-            IsPublished = false
+            IsPublished = false,
+            CreatedAt = _clock.UtcNow
         };
+
         _repository.BlogPosts.Add(post);
+        await _repository.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            AuditAction.BlogCreate,
+            nameof(BlogPost),
+            post.Id,
+            null,
+            new { post.Title, category = post.Category.ToString(), post.AuthorId });
         await _repository.SaveChangesAsync();
 
         return Ok(await GetDtoAsync(post.Id));
     }
 
-    /// <summary>UC-61 — sửa bài.</summary>
+    /// <summary>UC-56 — sửa nội dung bài với optimistic concurrency.</summary>
     public async Task<ActionResult<BlogPostDto>> Update(int id, SaveBlogRequest req)
     {
-        var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
-        _repository.ApplyOriginalRowVersion(b, req.RowVersion);
+        _repository.ApplyOriginalRowVersion(post, req.RowVersion);
+        var before = new
+        {
+            post.Title,
+            post.Summary,
+            post.Body,
+            category = post.Category.ToString()
+        };
 
-        b.Title = req.Title.Trim();
-        b.Summary = req.Summary;
-        b.Body = req.Body;
-        b.Category = req.Category;
-        b.UpdatedAt = DateTime.UtcNow;
+        post.Title = req.Title.Trim();
+        post.Summary = req.Summary?.Trim();
+        post.Body = req.Body.Trim();
+        post.Category = req.Category;
+        post.UpdatedAt = _clock.UtcNow;
 
+        await _audit.LogAsync(
+            AuditAction.BlogUpdate,
+            nameof(BlogPost),
+            post.Id,
+            before,
+            new
+            {
+                post.Title,
+                post.Summary,
+                post.Body,
+                category = post.Category.ToString()
+            });
         await _repository.SaveChangesAsync();
+
         return Ok(await GetDtoAsync(id));
     }
 
-    /// <summary>UC-62 — đăng hoặc gỡ bài.</summary>
+    /// <summary>UC-57 — đăng hoặc gỡ bài với kiểm tra phiên bản hiện tại.</summary>
     public async Task<IActionResult> Publish(int id, bool value, ConcurrencyRequest req)
     {
-        var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
-        _repository.ApplyOriginalRowVersion(b, req.RowVersion);
+        _repository.ApplyOriginalRowVersion(post, req.RowVersion);
 
-        b.IsPublished = value;
-        b.PublishedAt = value ? (b.PublishedAt ?? DateTime.UtcNow) : b.PublishedAt;
-        b.UpdatedAt = DateTime.UtcNow;
+        if (post.IsPublished == value)
+            return Ok(new
+            {
+                message = value ? "Bài viết đang ở trạng thái đã đăng." : "Bài viết đang ở trạng thái bản nháp.",
+                rowVersion = post.ToRowVersion()
+            });
 
+        var oldState = post.IsPublished;
+        post.IsPublished = value;
+        post.PublishedAt = value ? (post.PublishedAt ?? _clock.UtcNow) : post.PublishedAt;
+        post.UpdatedAt = _clock.UtcNow;
+
+        await _audit.LogAsync(
+            AuditAction.BlogState,
+            nameof(BlogPost),
+            post.Id,
+            new { isPublished = oldState },
+            new { isPublished = post.IsPublished });
         await _repository.SaveChangesAsync();
+
         return Ok(new
         {
             message = value ? "Đã đăng bài viết." : "Đã gỡ bài viết.",
-            rowVersion = b.ToRowVersion()
+            rowVersion = post.ToRowVersion()
         });
     }
 
     /// <summary>
-    /// UC-62 — xoá bài.
-    /// BR-08: bài NHÁP xoá cứng được vì không chứa dữ liệu bệnh nhân;
-    /// bài ĐÃ ĐĂNG chỉ xoá mềm vì bệnh nhân có thể đã đọc và lưu liên kết.
+    /// UC-57 — bản nháp được xóa cứng; bài từng công bố được xóa mềm để giữ liên kết và audit.
     /// </summary>
     public async Task<IActionResult> Delete(int id, string rowVersion)
     {
-        var b = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
-        _repository.ApplyOriginalRowVersion(b, rowVersion);
+        _repository.ApplyOriginalRowVersion(post, rowVersion);
 
-        if (b.IsPublished)
+        if (post.IsPublished || post.PublishedAt != null)
         {
-            b.IsDeleted = true;
-            b.DeletedAt = DateTime.UtcNow;
+            post.IsDeleted = true;
+            post.DeletedAt = _clock.UtcNow;
+            post.UpdatedAt = _clock.UtcNow;
+
+            await _audit.LogAsync(
+                AuditAction.BlogState,
+                nameof(BlogPost),
+                post.Id,
+                new { post.IsPublished, isDeleted = false },
+                new { post.IsPublished, isDeleted = true },
+                "Ẩn bài viết đã từng được công bố");
             await _repository.SaveChangesAsync();
-            return Ok(new { message = "Đã ẩn bài viết đã đăng." });
+
+            return Ok(new
+            {
+                message = "Đã ẩn bài viết đã đăng.",
+                rowVersion = post.ToRowVersion()
+            });
         }
 
-        _repository.BlogPosts.Remove(b);
+        await _audit.LogAsync(
+            AuditAction.BlogState,
+            nameof(BlogPost),
+            post.Id,
+            new { post.Title, isDraft = true },
+            null,
+            "Xóa cứng bản nháp chưa từng công bố");
+        _repository.BlogPosts.Remove(post);
         await _repository.SaveChangesAsync();
         return Ok(new { message = "Đã xóa bài nháp." });
     }
 
-    private async Task<BlogPostDto> GetDtoAsync(int id)
+    private static IQueryable<BlogPost> ApplySort(
+        IQueryable<BlogPost> query,
+        PageQuery page,
+        bool publishedView)
     {
-        var b = await _repository.BlogPosts.AsNoTracking().Include(x => x.Author).FirstAsync(x => x.Id == id);
-        return Map(b, includeBody: true);
+        return page.Sort?.Trim().ToLowerInvariant() switch
+        {
+            "title" => page.Desc
+                ? query.OrderByDescending(b => b.Title).ThenByDescending(b => b.Id)
+                : query.OrderBy(b => b.Title).ThenBy(b => b.Id),
+            "author" => page.Desc
+                ? query.OrderByDescending(b => b.Author!.FullName).ThenByDescending(b => b.Id)
+                : query.OrderBy(b => b.Author!.FullName).ThenBy(b => b.Id),
+            "category" => page.Desc
+                ? query.OrderByDescending(b => b.Category).ThenByDescending(b => b.Id)
+                : query.OrderBy(b => b.Category).ThenBy(b => b.Id),
+            "published" => page.Desc
+                ? query.OrderByDescending(b => b.PublishedAt).ThenByDescending(b => b.Id)
+                : query.OrderBy(b => b.PublishedAt).ThenBy(b => b.Id),
+            _ when publishedView => query
+                .OrderByDescending(b => b.PublishedAt)
+                .ThenByDescending(b => b.Id),
+            _ => query
+                .OrderByDescending(b => b.UpdatedAt ?? b.CreatedAt)
+                .ThenByDescending(b => b.Id)
+        };
     }
 
-    private BlogPostDto Map(BlogPost b, bool includeBody) => new()
+    private async Task<BlogPostDto> GetDtoAsync(int id)
     {
-        Id = b.Id,
-        Title = b.Title,
-        Summary = b.Summary,
-        Body = includeBody ? b.Body : null,
-        Category = (byte)b.Category,
-        IsPublished = b.IsPublished,
-        // DB lưu UTC -> response trả giờ Việt Nam
-        PublishedAt = b.PublishedAt.HasValue
-        ? _clock.ToLocal(b.PublishedAt.Value)
-        : null,
-        AuthorName = b.Author?.FullName ?? "",
-        CreatedAt = (DateTime)_clock.ToLocal(b.CreatedAt),
-        RowVersion = b.ToRowVersion()
+        var post = await _repository.BlogPosts.AsNoTracking()
+            .Include(x => x.Author)
+            .FirstAsync(x => x.Id == id);
+        return Map(post, includeBody: true);
+    }
 
+    private BlogPostDto Map(BlogPost post, bool includeBody) => new()
+    {
+        Id = post.Id,
+        Title = post.Title,
+        Summary = post.Summary,
+        Body = includeBody ? post.Body : null,
+        Category = (byte)post.Category,
+        IsPublished = post.IsPublished,
+        PublishedAt = _clock.ToLocal(post.PublishedAt),
+        AuthorName = post.Author?.FullName ?? "",
+        CreatedAt = _clock.ToLocal(post.CreatedAt)!.Value,
+        UpdatedAt = _clock.ToLocal(post.UpdatedAt),
+        RowVersion = post.ToRowVersion()
     };
 }

@@ -13,6 +13,8 @@ public class PrescriptionItem
     public byte TimesPerDay { get; set; }
     public short DurationDays { get; set; }
     [MaxLength(300)] public string? Instruction { get; set; }
+    /// <summary>Không xoá cứng dòng thuốc đã có lịch sử dùng thuốc; chỉ ngừng hiệu lực.</summary>
+    public bool IsActive { get; set; } = true;
 
     public ICollection<MedicationLog> Logs { get; set; } = new List<MedicationLog>();
 }

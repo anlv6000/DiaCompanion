@@ -41,8 +41,11 @@ public class ClinicClock : IClinicClock
     public DateTime ToUtc(DateTime local) =>
         TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), _tz);
 
-    public DateTime? ToLocal(DateTime? utc) =>
-    TimeZoneInfo.ConvertTimeFromUtc(
-        DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc),
-        _tz);
+    public DateTime? ToLocal(DateTime? utc)
+    {
+        if (utc is null) return null;
+        return TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc),
+            _tz);
+    }
 }
