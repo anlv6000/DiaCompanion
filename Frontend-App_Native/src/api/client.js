@@ -42,6 +42,14 @@ export class ApiError extends Error {
     this.code = body?.messageCode;
     this.detail = body?.detail;
   }
+
+  get isConflict() {
+    return this.status === 409;
+  }
+}
+
+export function isConflict(error) {
+  return error instanceof ApiError && error.status === 409;
 }
 
 async function parseError(res) {
@@ -94,5 +102,5 @@ export const http = {
   get: (p) => request(p),
   post: (p, body) => request(p, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
   put: (p, body) => request(p, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
-  del: (p) => request(p, { method: "DELETE" }),
+  del: (p, body) => request(p, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) }),
 };

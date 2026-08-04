@@ -8,6 +8,7 @@ import { Screen, Card, Button, Field, Input, LoadState } from "../components/ui"
 import { colors } from "../theme/colors";
 import { font, spacing } from "../theme/typography";
 import { fmtDateOnly } from "../lib/format";
+import { isConflict } from "../api/client";
 
 /**
  * Nhật ký lối sống: ăn uống + vận động, mỗi ngày một bản ghi.
@@ -26,8 +27,18 @@ export default function LifestyleScreen() {
       {
         text: "Xóa", style: "destructive",
         onPress: async () => {
-          try { await data.lifestyle.remove(item.id); toast.push("Đã ẩn bản ghi.", "success"); logs.reload(); }
-          catch (e) { toast.push(e.message, "error"); }
+          try {
+            await data.lifestyle.remove(item.id, item.rowVersion);
+            toast.push("Đã ẩn bản ghi.", "success");
+            await logs.reload();
+          } catch (e) {
+            if (isConflict(e)) {
+              toast.push("Nhật ký vừa được thay đổi ở nơi khác. Đã tải lại dữ liệu mới.", "error");
+              await logs.reload();
+            } else {
+              toast.push(e.message, "error");
+            }
+          }
         },
       },
     ]);
@@ -97,16 +108,23 @@ function LifestyleForm({ value, onClose, onSaved }) {
     if (!mealNote.trim() && !exerciseMinutes) { toast.push("Ghi ít nhất bữa ăn hoặc vận động.", "error"); return; }
     setBusy(true);
     try {
-      await data.lifestyle.save({
+      const body = {
         logLocalDate: isNew ? null : value.logLocalDate,
         mealNote: mealNote || null,
         mealTags: mealTags || null,
         exerciseType: exerciseType || null,
         exerciseMinutes: exerciseMinutes ? Number(exerciseMinutes) : null,
-      });
+        rowVersion: isNew ? undefined : value.rowVersion,
+      };
+      if (isNew) await data.lifestyle.create(body);
+      else await data.lifestyle.update(value.id, body);
       toast.push("Đã lưu nhật ký.", "success");
       onSaved();
     } catch (e) {
+      if (isConflict(e)) {
+        toast.push("Nhật ký vừa được thay đổi ở nơi khác. Hãy tải lại và sửa lại trên dữ liệu mới.", "error");
+        return;
+      }
       toast.push(e.message, "error");
     } finally {
       setBusy(false);

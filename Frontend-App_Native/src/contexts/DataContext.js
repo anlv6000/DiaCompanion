@@ -38,14 +38,14 @@ export function DataProvider({ children }) {
 
     profile: {
       me: () => profileApi.me(),
-      updateAddress: (address) => profileApi.updateAddress(address),
+      updateMine: (body) => profileApi.updateMine(body),
     },
 
     metrics: {
       list: (params) => metricsApi.list(params),
       create: (body) => metricsApi.create(body),
       update: (id, body) => metricsApi.update(id, body),
-      remove: (id) => metricsApi.remove(id),
+      remove: (id, rowVersion, pairRowVersion) => metricsApi.remove(id, rowVersion, pairRowVersion),
       summary: (days) => {
         if (!patientId) return Promise.reject(new Error("Chưa xác định được hồ sơ bệnh nhân."));
         return metricsApi.summary(patientId, days);
@@ -54,13 +54,14 @@ export function DataProvider({ children }) {
 
     lifestyle: {
       list: (days) => lifestyleApi.list(days),
-      save: (body) => lifestyleApi.save(body),
-      remove: (id) => lifestyleApi.remove(id),
+      create: (body) => lifestyleApi.create(body),
+      update: (id, body) => lifestyleApi.update(id, body),
+      remove: (id, rowVersion) => lifestyleApi.remove(id, rowVersion),
     },
 
     medication: {
       today: () => medicationApi.today(),
-      setTaken: (id, taken) => medicationApi.setTaken(id, taken),
+      setStatus: (id, status, rowVersion) => medicationApi.setStatus(id, status, rowVersion),
     },
 
     recheck: {
@@ -68,10 +69,7 @@ export function DataProvider({ children }) {
     },
 
     progression: {
-      mine: (months) => {
-        if (!patientId) return Promise.reject(new Error("Chưa xác định được hồ sơ bệnh nhân."));
-        return progressionApi.mine(patientId, months);
-      },
+      mine: (months) => progressionApi.mine(months),
     },
 
     symptom: {
