@@ -125,3 +125,21 @@ OUTER APPLY
 WHERE sr.ResponsibleDoctorId IS NULL
   AND recent.DoctorId IS NOT NULL;
 GO
+
+
+/* fix delete role 2 */
+UPDATE dbo.Users
+SET Role = 4,
+    UpdatedAt = SYSUTCDATETIME()
+WHERE Role = 2;
+
+
+
+ALTER TABLE dbo.Users
+DROP CONSTRAINT CK_Users_Role;
+GO
+
+ALTER TABLE dbo.Users
+ADD CONSTRAINT CK_Users_Role
+CHECK (Role IN (0, 1, 3, 4));
+GO

@@ -1,5 +1,5 @@
 namespace DiaCompanion.Api.Common;
-
+//2 is receptionist
 public enum UserRole : byte { Admin = 0, Doctor = 1, Patient = 3, Receptionist = 4 };
 
 /// <summary>
