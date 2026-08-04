@@ -125,7 +125,7 @@ export function AppRoutes() {
       <Route
         path="/triage"
         element={
-          <RequireAuth roles={["Doctor", "Admin"]}>
+          <RequireAuth roles={["Doctor"]}>
             <TriagePage />
           </RequireAuth>
         }
@@ -133,23 +133,15 @@ export function AppRoutes() {
       <Route
         path="/patients"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
             <PatientsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/patients/new"
-        element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
-            <PatientFormPage />
           </RequireAuth>
         }
       />
       <Route
         path="/patients/:id/edit"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
             <PatientEditRoute />
           </RequireAuth>
         }
@@ -157,7 +149,7 @@ export function AppRoutes() {
       <Route
         path="/patients/:id"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
             <PatientDetailRoute />
           </RequireAuth>
         }
@@ -165,7 +157,7 @@ export function AppRoutes() {
       <Route
         path="/fundus/:imageId"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor"]}>
             <FundusRoute />
           </RequireAuth>
         }
@@ -173,7 +165,7 @@ export function AppRoutes() {
       <Route
         path="/recheck"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin", "Receptionist"]}>
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
             <RecheckPage />
           </RequireAuth>
         }
@@ -206,7 +198,7 @@ export function AppRoutes() {
       <Route
         path="/reception/visits"
         element={
-          <RequireAuth roles={["Receptionist", "Admin"]}>
+          <RequireAuth roles={["Receptionist"]}>
             <ReceptionVisitsPage />
           </RequireAuth>
         }
@@ -214,7 +206,7 @@ export function AppRoutes() {
       <Route
         path="/reception/shifts"
         element={
-          <RequireAuth roles={["Receptionist", "Admin"]}>
+          <RequireAuth roles={["Receptionist"]}>
             <ReceptionShiftsPage />
           </RequireAuth>
         }
@@ -222,7 +214,7 @@ export function AppRoutes() {
       <Route
         path="/progression"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor"]}>
             <ProgressionPage />
           </RequireAuth>
         }
@@ -230,7 +222,7 @@ export function AppRoutes() {
       <Route
         path="/progression/:id"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor"]}>
             <ProgressionOneRoute />
           </RequireAuth>
         }
@@ -246,7 +238,7 @@ export function AppRoutes() {
       <Route
         path="/reports/visit/:visitId"
         element={
-          <RequireAuth roles={["Doctor", "Nurse", "Admin"]}>
+          <RequireAuth roles={["Doctor"]}>
             <VisitReportRoute />
           </RequireAuth>
         }

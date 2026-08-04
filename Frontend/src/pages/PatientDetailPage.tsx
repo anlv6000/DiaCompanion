@@ -60,10 +60,9 @@ export function PatientDetailPage({ id }: { id: number }) {
   const tab = sp.get("tab") || "profile";
   const patient = useAsync(() => data.patients.get(id), [id]);
   const isReceptionist = user?.role === "Receptionist";
-  const visibleTabs = TABS.filter(
-    (item) =>
-      !(isReceptionist && (item.key === "images" || item.key === "monitoring")),
-  );
+  const visibleTabs = isReceptionist
+    ? TABS.filter((item) => item.key === "profile" || item.key === "visits")
+    : TABS;
   const activeTab = visibleTabs.some((item) => item.key === tab)
     ? tab
     : "profile";
@@ -87,10 +86,12 @@ export function PatientDetailPage({ id }: { id: number }) {
                   <Icon name="edit" />
                   Sửa hồ sơ
                 </Button>
-                <Button onClick={() => navigate(`/progression/${id}`)}>
-                  <Icon name="chart" />
-                  Diễn tiến
-                </Button>
+                {user?.role === "Doctor" && (
+                  <Button onClick={() => navigate(`/progression/${id}`)}>
+                    <Icon name="chart" />
+                    Diễn tiến
+                  </Button>
+                )}
               </>
             }
           />
@@ -98,9 +99,13 @@ export function PatientDetailPage({ id }: { id: number }) {
           <div style={{ marginTop: 12 }}>
             {activeTab === "profile" && <ProfileTab patient={patient.data} />}
             {activeTab === "visits" && <VisitsTab patientId={id} />}
-            {activeTab === "images" && <ImagesTab patientId={id} />}
-            {activeTab === "prescriptions" && <PrescriptionsTab patientId={id} />}
-            {activeTab === "monitoring" && <MonitoringTab patientId={id} />}
+            {activeTab === "images" && user?.role === "Doctor" && <ImagesTab patientId={id} />}
+            {activeTab === "prescriptions" && user?.role === "Doctor" && (
+              <PrescriptionsTab patientId={id} />
+            )}
+            {activeTab === "monitoring" && user?.role === "Doctor" && (
+              <MonitoringTab patientId={id} />
+            )}
           </div>
         </>
       )}
@@ -202,7 +207,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
         </Panel>
       )}
 
-      {/* Void hồ sơ: chỉ Bác sĩ hoặc Admin. Nút ẩn với Điều dưỡng. */}
+      {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Bác sĩ. */}
       {can.voidPatient(user?.role) && (
         <Panel title="Thu hồi hồ sơ" className="danger-zone">
           <p>

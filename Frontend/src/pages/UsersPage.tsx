@@ -62,7 +62,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Tài khoản nhân viên"
-        subtitle="Quản lý Admin, Bác sĩ và Điều dưỡng."
+        subtitle="Quản lý tài khoản Admin, Bác sĩ và Lễ tân."
         actions={
           <Button kind="primary" onClick={() => setEditor("new")}>
             <Icon name="plus" />

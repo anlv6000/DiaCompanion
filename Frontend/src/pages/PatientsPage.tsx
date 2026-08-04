@@ -37,13 +37,13 @@ export function PatientsPage() {
     () =>
       data.patients.list({
         q: dq.trim().length >= 2 ? dq : undefined,
-        diabetesType: type,
-        grade,
+        diabetesType: isReceptionist ? undefined : type,
+        grade: isReceptionist ? undefined : grade,
         page,
         pageSize: 25,
         sort: "name",
       }),
-    [dq, type, grade, page],
+    [dq, type, grade, page, isReceptionist],
   );
 
   return (
@@ -79,41 +79,45 @@ export function PatientsPage() {
               placeholder="Tối thiểu 2 ký tự"
             />
           </Field>
-          <Field labelText="Loại tiểu đường" className="inline">
-            <select
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Tất cả</option>
-              {diabetesTypes.map(
-                (x, i) =>
-                  i > 0 && (
+          {!isReceptionist && (
+            <>
+              <Field labelText="Loại tiểu đường" className="inline">
+                <select
+                  value={type}
+                  onChange={(e) => {
+                    setType(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Tất cả</option>
+                  {diabetesTypes.map(
+                    (x, i) =>
+                      i > 0 && (
+                        <option key={i} value={i}>
+                          {x}
+                        </option>
+                      ),
+                  )}
+                </select>
+              </Field>
+              <Field labelText="Mức DR xác nhận" className="inline">
+                <select
+                  value={grade}
+                  onChange={(e) => {
+                    setGrade(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Tất cả</option>
+                  {grades.map((x, i) => (
                     <option key={i} value={i}>
                       {x}
                     </option>
-                  ),
-              )}
-            </select>
-          </Field>
-          <Field labelText="Mức DR xác nhận" className="inline">
-            <select
-              value={grade}
-              onChange={(e) => {
-                setGrade(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Tất cả</option>
-              {grades.map((x, i) => (
-                <option key={i} value={i}>
-                  {x}
-                </option>
-              ))}
-            </select>
-          </Field>
+                  ))}
+                </select>
+              </Field>
+            </>
+          )}
           <Button
             onClick={() => {
               setQ("");
@@ -217,6 +221,9 @@ export function PatientFormPage({ id }: { id?: number }) {
   const data = useData();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const isReceptionist = user?.role === "Receptionist";
+  const isDoctor = user?.role === "Doctor";
   const detail = useAsync(
     () => (id ? data.patients.get(id) : Promise.resolve(null)),
     [id],
@@ -288,101 +295,116 @@ export function PatientFormPage({ id }: { id?: number }) {
     <>
       <PageHeader
         title={edit ? "Cập nhật hồ sơ bệnh nhân" : "Tạo hồ sơ bệnh nhân"}
-        subtitle="Thông tin lâm sàng được lưu vết; không xóa cứng hồ sơ."
+        subtitle={
+          edit && isReceptionist
+            ? "Lễ tân chỉ cập nhật thông tin hành chính và liên hệ."
+            : edit && isDoctor
+              ? "Bác sĩ chỉ cập nhật thông tin lâm sàng của bệnh nhân."
+              : "Tạo hồ sơ và cấp tài khoản bệnh nhân tại quầy tiếp đón."
+        }
       />
       <Panel>
         <form onSubmit={save}>
           <div className="form-row three">
-            <Field labelText="Họ tên" required>
-              <input
-                value={form.fullName}
-                onChange={(e) => patch("fullName", e.target.value)}
-              />
-            </Field>
-            <Field labelText="Giới tính" required>
-              <select
-                value={form.gender}
-                onChange={(e) => patch("gender", Number(e.target.value))}
-              >
-                {genders.map((x, i) => (
-                  <option value={i} key={i}>
-                    {x}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field labelText="Ngày sinh" required>
-              <input
-                type="date"
-                max={new Date().toISOString().slice(0, 10)}
-                value={form.dateOfBirth}
-                onChange={(e) => patch("dateOfBirth", e.target.value)}
-              />
-            </Field>
-            <Field
-              labelText="Số điện thoại"
-              required
-              help="Đây là định danh đăng nhập của bệnh nhân."
-            >
-              <input
-                className="mono"
-                value={form.phone}
-                onChange={(e) => patch("phone", e.target.value)}
-              />
-            </Field>
-            <Field labelText="Loại tiểu đường">
-              <select
-                value={form.diabetesType}
-                onChange={(e) => patch("diabetesType", Number(e.target.value))}
-              >
-                {diabetesTypes.map((x, i) => (
-                  <option value={i} key={i}>
-                    {x}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field labelText="Thời gian mắc (năm)">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={form.diabetesDurationYears ?? ""}
-                onChange={(e) =>
-                  patch(
-                    "diabetesDurationYears",
-                    e.target.value === "" ? null : Number(e.target.value),
-                  )
-                }
-              />
-            </Field>
-            <Field labelText="HbA1c nền (%)">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="30"
-                value={form.baselineHbA1c ?? ""}
-                onChange={(e) =>
-                  patch(
-                    "baselineHbA1c",
-                    e.target.value === "" ? null : Number(e.target.value),
-                  )
-                }
-              />
-            </Field>
-            <Field labelText="Địa chỉ">
-              <input
-                value={form.address || ""}
-                onChange={(e) => patch("address", e.target.value)}
-              />
-            </Field>
-            <Field labelText="Ghi chú">
-              <textarea
-                value={form.note || ""}
-                onChange={(e) => patch("note", e.target.value)}
-              />
-            </Field>
+            {(!edit || isReceptionist) && (
+              <>
+                <Field labelText="Họ tên" required>
+                  <input
+                    value={form.fullName}
+                    onChange={(e) => patch("fullName", e.target.value)}
+                  />
+                </Field>
+                <Field labelText="Giới tính" required>
+                  <select
+                    value={form.gender}
+                    onChange={(e) => patch("gender", Number(e.target.value))}
+                  >
+                    {genders.map((x, i) => (
+                      <option value={i} key={i}>
+                        {x}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field labelText="Ngày sinh" required>
+                  <input
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    value={form.dateOfBirth}
+                    onChange={(e) => patch("dateOfBirth", e.target.value)}
+                  />
+                </Field>
+                <Field
+                  labelText="Số điện thoại"
+                  required
+                  help="Đây là định danh đăng nhập của bệnh nhân."
+                >
+                  <input
+                    className="mono"
+                    value={form.phone}
+                    onChange={(e) => patch("phone", e.target.value)}
+                  />
+                </Field>
+                <Field labelText="Địa chỉ">
+                  <input
+                    value={form.address || ""}
+                    onChange={(e) => patch("address", e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
+
+            {(!edit || isDoctor) && (
+              <>
+                <Field labelText="Loại tiểu đường">
+                  <select
+                    value={form.diabetesType}
+                    onChange={(e) => patch("diabetesType", Number(e.target.value))}
+                  >
+                    {diabetesTypes.map((x, i) => (
+                      <option value={i} key={i}>
+                        {x}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field labelText="Thời gian mắc (năm)">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.diabetesDurationYears ?? ""}
+                    onChange={(e) =>
+                      patch(
+                        "diabetesDurationYears",
+                        e.target.value === "" ? null : Number(e.target.value),
+                      )
+                    }
+                  />
+                </Field>
+                <Field labelText="HbA1c nền (%)">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="3"
+                    max="20"
+                    value={form.baselineHbA1c ?? ""}
+                    onChange={(e) =>
+                      patch(
+                        "baselineHbA1c",
+                        e.target.value === "" ? null : Number(e.target.value),
+                      )
+                    }
+                  />
+                </Field>
+                <Field labelText="Ghi chú lâm sàng">
+                  <textarea
+                    value={form.note || ""}
+                    onChange={(e) => patch("note", e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
           </div>
           {!edit && (
             <label className="checkbox">

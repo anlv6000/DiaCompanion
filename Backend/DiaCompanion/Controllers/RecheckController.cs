@@ -35,7 +35,7 @@ public class RecheckController : BaseApiController
 
     /// <summary>Xem ngày tái khám của một bệnh nhân cụ thể (phía phòng khám).</summary>
     [HttpGet("patient/{patientId:int}")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<RecheckDto>> ForPatient(int patientId)
     {
         return await _service.ForPatient(patientId);
@@ -49,7 +49,7 @@ public class RecheckController : BaseApiController
     /// được coi là chưa quay lại khi chưa có lượt khám nào mới hơn lượt đã đóng.
     /// </summary>
     [HttpGet("due")]
-    [Authorize(Roles = Roles.FrontDesk)]
+    [Authorize(Roles = Roles.DoctorOrReception)]
     public async Task<ActionResult<PagedResult<RecheckDto>>> Due(
     [FromQuery] bool overdueOnly = false,
     [FromQuery] int withinDays = 30,
@@ -61,7 +61,7 @@ public class RecheckController : BaseApiController
 
     /// <summary>Số bệnh nhân quá hạn, để hiện badge trên thanh điều hướng.</summary>
     [HttpGet("overdue-count")]
-    [Authorize(Roles = Roles.Staff)]
+    [Authorize(Roles = Roles.DoctorOrReception)]
     public async Task<IActionResult> OverdueCount()
     {
         return await _service.OverdueCount();

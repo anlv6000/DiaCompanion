@@ -129,7 +129,7 @@ GO
 
 /* fix delete role 2 */
 UPDATE dbo.Users
-SET Role = 4,
+SET Role = 1,
     UpdatedAt = SYSUTCDATETIME()
 WHERE Role = 2;
 

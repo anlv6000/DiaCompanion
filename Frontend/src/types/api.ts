@@ -1,4 +1,4 @@
-export type Role = "Admin" | "Doctor" | "Nurse" | "Patient" | "Receptionist";
+export type Role = "Admin" | "Doctor" | "Patient" | "Receptionist";
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
   items: T[];
