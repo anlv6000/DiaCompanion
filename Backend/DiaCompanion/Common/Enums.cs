@@ -31,7 +31,7 @@ public enum SymptomSeverity : byte { Mild = 1, Moderate = 2, Severe = 3 }
 public enum NotificationType : byte { Recheck = 1, Medication = 2, Result = 3, Metric = 4, Blog = 5, Visit = 6 }
 
 public enum BlogCategory : byte { Knowledge = 1, Nutrition = 2, Warning = 3 }
-public enum OtpPurpose : byte { Login = 1, ResetPassword = 2 }
+public enum OtpPurpose : byte { Login = 1, ResetPassword = 2, ChangePhone = 3 }
 
 public static class AuditAction
 {
@@ -46,6 +46,7 @@ public static class AuditAction
     public const string UserLock         = "USER_LOCK";
     public const string PatientCreate    = "PATIENT_CREATE";
     public const string PatientUpdate    = "PATIENT_UPDATE";
+    public const string PatientPhoneChange = "PATIENT_PHONE_CHANGE";
     public const string ImageUpload      = "IMAGE_UPLOAD";
     public const string QualityCheck     = "QUALITY_CHECK";
     public const string AiRun            = "AI_RUN";

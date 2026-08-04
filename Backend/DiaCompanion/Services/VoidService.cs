@@ -67,11 +67,11 @@ public class VoidService : IVoidService
         var currentRole = _me.Role;
 
         // Chỉ Admin được thu hồi toàn bộ hồ sơ bệnh nhân
-        if (currentRole != UserRole.Admin)
+        if (currentRole != UserRole.Admin && currentRole != UserRole.Doctor)
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
-                "Chỉ quản trị viên được thu hồi hồ sơ bệnh nhân.");
+                "Chỉ quản trị viên hoặc bác sĩ được thu hồi hồ sơ bệnh nhân.");
         }
 
         var patient = await _repository.Patients

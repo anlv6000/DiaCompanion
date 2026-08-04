@@ -16,10 +16,12 @@ public class PatientsService : BaseService, IPatientsService
     private readonly IPasswordHasher _hasher;
     private readonly IVoidService _void;
     private readonly IClinicClock _clock;
+    private readonly IOtpService _otp;
 
     public PatientsService(IRepository repository, ICurrentUser me, IAuditService audit,
-                              IPasswordHasher hasher, IVoidService voidSvc, IClinicClock clock)
-    { _repository = repository; _me = me; _audit = audit; _hasher = hasher; _void = voidSvc; _clock = clock; }
+                              IPasswordHasher hasher, IVoidService voidSvc, IClinicClock clock,
+                              IOtpService otp)
+    { _repository = repository; _me = me; _audit = audit; _hasher = hasher; _void = voidSvc; _clock = clock; _otp = otp; }
 
     /// <summary>
     /// UC-12 — tìm kiếm và lọc, phân trang offset (QT-14).
@@ -272,10 +274,7 @@ public class PatientsService : BaseService, IPatientsService
             response);
     }
 
-    /// <summary>
-    /// UC-15 — cập nhật hồ sơ theo phạm vi vai trò.
-    /// Receptionist chỉ sửa thông tin hành chính; Doctor chỉ sửa thông tin lâm sàng.
-    /// </summary>
+    /// <summary>UC-15 — cập nhật hồ sơ.</summary>
     public async Task<ActionResult<PatientDetailDto>> Update(int id, UpdatePatientRequest req)
     {
         var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
@@ -283,128 +282,9 @@ public class PatientsService : BaseService, IPatientsService
 
         _repository.ApplyOriginalRowVersion(p, req.RowVersion);
 
-        if (_me.Role == UserRole.Receptionist)
-        {
-            var phone = req.Phone.Trim();
-            if (phone != p.Phone &&
-                await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
-            {
-                throw AppException.Conflict(
-                    Msg.PhoneTaken,
-                    "Số điện thoại này đã được dùng cho một hồ sơ khác.");
-            }
-
-            var before = new { p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.Address };
-
-            p.FullName = req.FullName.Trim();
-            p.Gender = req.Gender;
-            p.DateOfBirth = req.DateOfBirth;
-            p.Phone = phone;
-            p.Address = req.Address;
-            p.UpdatedAt = DateTime.UtcNow;
-
-            // Số điện thoại là định danh đăng nhập nên tài khoản phải cập nhật đồng bộ.
-            if (p.UserId is int uid)
-            {
-                var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
-                if (u is not null)
-                {
-                    u.Phone = phone;
-                    u.FullName = p.FullName;
-                    u.UpdatedAt = DateTime.UtcNow;
-                }
-            }
-
-            await _audit.LogAsync(
-                AuditAction.PatientUpdate,
-                nameof(Patient),
-                p.Id,
-                before,
-                new { p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.Address, Scope = "Administrative" });
-        }
-        else if (_me.Role == UserRole.Doctor)
-        {
-            if (req.BaselineHbA1c is decimal hba1c && (hba1c < 3 || hba1c > 20))
-            {
-                throw AppException.BadRequest(
-                    Msg.RequiredFields,
-                    "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
-            }
-
-            var before = new
-            {
-                p.DiabetesType,
-                p.DiabetesDurationYears,
-                p.BaselineHbA1c,
-                p.Note
-            };
-
-            p.DiabetesType = req.DiabetesType;
-            p.DiabetesDurationYears = req.DiabetesDurationYears;
-            p.BaselineHbA1c = req.BaselineHbA1c;
-            p.Note = req.Note;
-            p.UpdatedAt = DateTime.UtcNow;
-
-            await _audit.LogAsync(
-                AuditAction.PatientUpdate,
-                nameof(Patient),
-                p.Id,
-                before,
-                new
-                {
-                    p.DiabetesType,
-                    p.DiabetesDurationYears,
-                    p.BaselineHbA1c,
-                    p.Note,
-                    Scope = "Clinical"
-                });
-        }
-        else
-        {
-            throw AppException.Forbidden(
-                Msg.Forbidden,
-                "Vai trò hiện tại không được cập nhật hồ sơ bệnh nhân.");
-        }
-
-        await _repository.SaveChangesAsync();
-        return Ok(await ToDetailAsync(p));
-    }
-
-    /// <summary>UC-17 — bệnh nhân tự cập nhật thông tin liên hệ.</summary>
-    public async Task<IActionResult> UpdateMine(UpdateMyProfileRequest req)
-    {
-        var pid = RequireMyPatientId(_me);
-        var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
-        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
-
-        var requestedPhone = req.Phone.Trim();
-
-        if (await _repository.Patients.AnyAsync(x => x.Phone == requestedPhone && x.Id != pid))
-        {
-            throw AppException.Conflict(
-                Msg.PhoneTaken,
-                "Số điện thoại này đã được dùng cho một hồ sơ khác. " +
-                "Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
-        }
-
-        if (
-            await _repository.Users.AnyAsync(
-                u => u.Phone == requestedPhone && u.IsActive && u.Id != p.UserId))
-        {
-            throw AppException.Conflict(
-                Msg.PhoneTaken,
-                "Số điện thoại này đã có tài khoản đang hoạt động.");
-        }
-
-        if (req.BaselineHbA1c is decimal hba1c &&
-    (hba1c < 3 || hba1c > 20))
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
-        }
-
-        var phone = requestedPhone;
+        var phone = req.Phone.Trim();
+        if (phone != p.Phone && await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
 
         var before = new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c };
 
@@ -416,6 +296,7 @@ public class PatientsService : BaseService, IPatientsService
         p.DiabetesType = req.DiabetesType;
         p.DiabetesDurationYears = req.DiabetesDurationYears;
         p.BaselineHbA1c = req.BaselineHbA1c;
+        p.Note = req.Note;
         p.UpdatedAt = DateTime.UtcNow;
 
         // Tài khoản đăng nhập phải đi theo, nếu không bệnh nhân đổi số xong
@@ -427,14 +308,189 @@ public class PatientsService : BaseService, IPatientsService
         }
 
         await _audit.LogAsync(AuditAction.PatientUpdate, nameof(Patient), p.Id, before,
-          new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
+            new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
         await _repository.SaveChangesAsync();
+
+        return Ok(await ToDetailAsync(p));
+    }
+
+
+/// <summary>
+/// Bệnh nhân tự cập nhật họ tên, giới tính, ngày sinh và địa chỉ.
+/// Số điện thoại phải đi qua OTP; dữ liệu lâm sàng không nhận từ mobile.
+/// </summary>
+public async Task<IActionResult> UpdateMine(UpdateMyProfileRequest req)
+{
+    var pid = RequireMyPatientId(_me);
+    var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
+    _repository.ApplyOriginalRowVersion(p, req.RowVersion);
+
+    var fullName = req.FullName.Trim();
+    if (string.IsNullOrWhiteSpace(fullName))
+        throw AppException.BadRequest(Msg.RequiredFields, "Họ tên không được để trống.");
+
+    if (req.DateOfBirth > DateOnly.FromDateTime(_clock.LocalNow.Date))
+        throw AppException.BadRequest(Msg.RequiredFields, "Ngày sinh không được nằm trong tương lai.");
+
+    var before = new { p.FullName, p.Gender, p.DateOfBirth, p.Address };
+
+    p.FullName = fullName;
+    p.FullNameSearch = VietnameseText.RemoveDiacritics(fullName);
+    p.Gender = req.Gender;
+    p.DateOfBirth = req.DateOfBirth;
+    p.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
+    p.UpdatedAt = DateTime.UtcNow;
+
+    if (p.UserId is int uid)
+    {
+        var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
+        if (u is not null)
+        {
+            u.FullName = fullName;
+            u.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    await _audit.LogAsync(
+        AuditAction.PatientUpdate,
+        nameof(Patient),
+        p.Id,
+        before,
+        new { p.FullName, p.Gender, p.DateOfBirth, p.Address });
+
+    await _repository.SaveChangesAsync();
+
+    return Ok(new
+    {
+        message = "Cập nhật thông tin cá nhân thành công.",
+        rowVersion = p.ToRowVersion()
+    });
+}
+
+public async Task<IActionResult> RequestPhoneChangeOtp(
+    RequestPhoneChangeOtpRequest req,
+    IWebHostEnvironment env)
+{
+    var pid = RequireMyPatientId(_me);
+    var p = await _repository.Patients.AsNoTracking().FirstAsync(x => x.Id == pid);
+    var newPhone = NormalizePhone(req.NewPhone);
+
+    if (newPhone == p.Phone)
+        throw AppException.BadRequest(
+            Msg.RequiredFields,
+            "Số điện thoại mới phải khác số đang sử dụng.");
+
+    await EnsurePhoneAvailableAsync(newPhone, pid, p.UserId);
+
+    var code = await _otp.IssueAsync(newPhone, OtpPurpose.ChangePhone, p.UserId);
+
+    await _audit.LogAsync(
+        AuditAction.OtpIssued,
+        nameof(Patient),
+        p.Id,
+        detail: $"Cấp OTP đổi số điện thoại sang {MaskPhone(newPhone)}");
+    await _repository.SaveChangesAsync();
+
+    return Ok(new
+    {
+        message = "Mã xác minh đã được gửi tới số điện thoại mới.",
+        devCode = env.IsDevelopment() ? code : null,
+        note = env.IsDevelopment()
+            ? "Mã chỉ được trả trực tiếp trong môi trường Development."
+            : null
+    });
+}
+
+public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest req)
+{
+    var strategy = _repository.Database.CreateExecutionStrategy();
+
+    return await strategy.ExecuteAsync<IActionResult>(async () =>
+    {
+        await using var tx = await _repository.Database.BeginTransactionAsync();
+
+        var pid = RequireMyPatientId(_me);
+        var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
+        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
+
+        var newPhone = NormalizePhone(req.NewPhone);
+        if (newPhone == p.Phone)
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Số điện thoại mới phải khác số đang sử dụng.");
+
+        await EnsurePhoneAvailableAsync(newPhone, pid, p.UserId);
+
+        if (!await _otp.VerifyAsync(newPhone, req.Code.Trim(), OtpPurpose.ChangePhone))
+            throw AppException.BadRequest(
+                Msg.OtpInvalid,
+                "Mã xác minh không đúng hoặc đã hết hạn.");
+
+        var oldPhone = p.Phone;
+        p.Phone = newPhone;
+        p.UpdatedAt = DateTime.UtcNow;
+
+        if (p.UserId is int uid)
+        {
+            var u = await _repository.Users.FirstAsync(x => x.Id == uid);
+            u.Phone = newPhone;
+            u.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _audit.LogAsync(
+            AuditAction.PatientPhoneChange,
+            nameof(Patient),
+            p.Id,
+            new { Phone = MaskPhone(oldPhone) },
+            new { Phone = MaskPhone(newPhone) });
+
+        await _repository.SaveChangesAsync();
+        await tx.CommitAsync();
+
         return Ok(new
         {
-            message = "Cập nhật thông tin thành công.",
+            message = "Đổi số điện thoại thành công. Từ lần đăng nhập sau, hãy dùng số mới.",
+            phone = newPhone,
             rowVersion = p.ToRowVersion()
         });
+    });
+}
+
+private async Task EnsurePhoneAvailableAsync(string phone, int patientId, int? userId)
+{
+    if (await _repository.Patients.AnyAsync(
+        x => x.Phone == phone && x.Id != patientId && !x.IsVoided))
+    {
+        throw AppException.Conflict(
+            Msg.PhoneTaken,
+            "Số điện thoại này đã được dùng cho một hồ sơ bệnh nhân khác.");
     }
+
+    if (await _repository.Users.AnyAsync(
+        u => u.Phone == phone && u.IsActive && u.Id != userId))
+    {
+        throw AppException.Conflict(
+            Msg.PhoneTaken,
+            "Số điện thoại này đã có tài khoản đang hoạt động.");
+    }
+}
+
+private static string NormalizePhone(string value)
+{
+    var phone = value.Trim().Replace(" ", "").Replace("-", "");
+    if (phone.Length < 9 || phone.Length > 20 || phone.Any(c => !char.IsDigit(c) && c != '+'))
+        throw AppException.BadRequest(
+            Msg.RequiredFields,
+            "Số điện thoại không đúng định dạng.");
+
+    return phone;
+}
+
+private static string MaskPhone(string phone)
+{
+    if (phone.Length <= 4) return new string('*', phone.Length);
+    return new string('*', phone.Length - 4) + phone[^4..];
+}
 
     /// <summary>
     /// Cấp lại mật khẩu tạm tại quầy — thay cho luồng liên kết tài khoản cũ.

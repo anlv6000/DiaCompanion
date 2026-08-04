@@ -39,6 +39,9 @@ export function DataProvider({ children }) {
     profile: {
       me: () => profileApi.me(),
       updateMine: (body) => profileApi.updateMine(body),
+      requestPhoneChangeOtp: (newPhone) => profileApi.requestPhoneChangeOtp(newPhone),
+      confirmPhoneChange: (newPhone, code, rowVersion) =>
+        profileApi.confirmPhoneChange(newPhone, code, rowVersion),
     },
 
     metrics: {
