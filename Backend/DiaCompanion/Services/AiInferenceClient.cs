@@ -5,61 +5,126 @@ using DiaCompanion.Api.Common;
 namespace DiaCompanion.Api.Services;
 
 /// <summary>
-/// NF-01..NF-08. Cầu nối tới dịch vụ suy luận Python.
+/// NF-01..NF-08. Cầu nối tới dịch vụ suy luận Python (FastAPI).
 ///
 /// NGUYÊN TẮC (NT-3): dịch vụ này TRẢ VỀ DỰ ĐOÁN, không bao giờ ghi kết luận.
 /// FinalGrade chỉ được ghi bởi thao tác duyệt/ghi đè của bác sĩ.
+///
+/// Kiến trúc: dịch vụ Python phơi 3 endpoint riêng. Client gọi lần lượt rồi GỘP
+/// thành một AiInferenceResponse cho phần còn lại của backend dùng như cũ:
+///   POST /infer/dr       -> dr_grade, confidence, probabilities
+///   POST /infer/lesion   -> lesion_grade, count_*, area_*, lesion_mask_path
+///   POST /infer/fractal  -> fractal_dimension, fractal_note, vessel_mask_path
 /// </summary>
 public interface IAiInferenceClient
 {
     Task<AiInferenceResponse> RunAsync(string imageRelativePath, string modelPath, CancellationToken ct = default);
 }
 
+/// <summary>Kết quả AI đã GỘP từ 3 model — giữ nguyên shape mà DiagnosesService dùng.</summary>
 public class AiInferenceResponse
 {
-    [JsonPropertyName("dr_grade")]        public byte DrGrade { get; set; }
-    [JsonPropertyName("confidence")]      public decimal Confidence { get; set; }
-    [JsonPropertyName("probabilities")]   public decimal[]? Probabilities { get; set; }
-    [JsonPropertyName("lesion_grade")]    public byte? LesionGradeImplied { get; set; }
-    [JsonPropertyName("lesion_mask_path")]public string? LesionMaskPath { get; set; }
-    [JsonPropertyName("count_ma")]        public int? CountMA { get; set; }
-    [JsonPropertyName("count_he")]        public int? CountHE { get; set; }
-    [JsonPropertyName("count_ex")]        public int? CountEX { get; set; }
-    [JsonPropertyName("count_se")]        public int? CountSE { get; set; }
-    [JsonPropertyName("area_ma")]         public decimal? AreaMA { get; set; }
-    [JsonPropertyName("area_he")]         public decimal? AreaHE { get; set; }
-    [JsonPropertyName("area_ex")]         public decimal? AreaEX { get; set; }
-    [JsonPropertyName("area_se")]         public decimal? AreaSE { get; set; }
+    [JsonPropertyName("dr_grade")]         public byte DrGrade { get; set; }
+    [JsonPropertyName("confidence")]       public decimal Confidence { get; set; }
+    [JsonPropertyName("probabilities")]    public decimal[]? Probabilities { get; set; }
+    [JsonPropertyName("lesion_grade")]     public byte? LesionGradeImplied { get; set; }
+    [JsonPropertyName("lesion_mask_path")] public string? LesionMaskPath { get; set; }
+    [JsonPropertyName("count_ma")]         public int? CountMA { get; set; }
+    [JsonPropertyName("count_he")]         public int? CountHE { get; set; }
+    [JsonPropertyName("count_ex")]         public int? CountEX { get; set; }
+    [JsonPropertyName("count_se")]         public int? CountSE { get; set; }
+    [JsonPropertyName("area_ma")]          public decimal? AreaMA { get; set; }
+    [JsonPropertyName("area_he")]          public decimal? AreaHE { get; set; }
+    [JsonPropertyName("area_ex")]          public decimal? AreaEX { get; set; }
+    [JsonPropertyName("area_se")]          public decimal? AreaSE { get; set; }
     [JsonPropertyName("fractal_dimension")] public decimal? FractalDimension { get; set; }
     [JsonPropertyName("vessel_mask_path")]  public string? VesselMaskPath { get; set; }
     [JsonPropertyName("fractal_note")]      public string? FractalNote { get; set; }
     [JsonPropertyName("inference_ms")]      public int? InferenceMs { get; set; }
 }
 
+// --- Các DTO khớp response TỪNG endpoint Python (snake_case) -----------------
+
+file class DrResult
+{
+    [JsonPropertyName("dr_grade")]      public byte DrGrade { get; set; }
+    [JsonPropertyName("confidence")]    public decimal Confidence { get; set; }
+    [JsonPropertyName("probabilities")] public decimal[]? Probabilities { get; set; }
+    [JsonPropertyName("inference_ms")]  public int? InferenceMs { get; set; }
+}
+
+file class LesionResult
+{
+    [JsonPropertyName("lesion_grade")]     public byte? LesionGrade { get; set; }
+    [JsonPropertyName("count_ma")]         public int? CountMA { get; set; }
+    [JsonPropertyName("count_he")]         public int? CountHE { get; set; }
+    [JsonPropertyName("count_ex")]         public int? CountEX { get; set; }
+    [JsonPropertyName("count_se")]         public int? CountSE { get; set; }
+    [JsonPropertyName("area_ma")]          public decimal? AreaMA { get; set; }
+    [JsonPropertyName("area_he")]          public decimal? AreaHE { get; set; }
+    [JsonPropertyName("area_ex")]          public decimal? AreaEX { get; set; }
+    [JsonPropertyName("area_se")]          public decimal? AreaSE { get; set; }
+    [JsonPropertyName("lesion_mask_path")] public string? LesionMaskPath { get; set; }
+    [JsonPropertyName("inference_ms")]     public int? InferenceMs { get; set; }
+}
+
+file class FractalResult
+{
+    [JsonPropertyName("fractal_dimension")] public decimal? FractalDimension { get; set; }
+    [JsonPropertyName("fractal_note")]      public string? FractalNote { get; set; }
+    [JsonPropertyName("vessel_mask_path")]  public string? VesselMaskPath { get; set; }
+    [JsonPropertyName("inference_ms")]      public int? InferenceMs { get; set; }
+}
+
 public class AiInferenceClient : IAiInferenceClient
 {
     private readonly HttpClient _http;
-    private readonly IConfiguration _cfg;
     private readonly ILogger<AiInferenceClient> _log;
 
-    public AiInferenceClient(HttpClient http, IConfiguration cfg, ILogger<AiInferenceClient> log)
-    { _http = http; _cfg = cfg; _log = log; }
+    public AiInferenceClient(HttpClient http, ILogger<AiInferenceClient> log)
+    { _http = http; _log = log; }
 
-    public async Task<AiInferenceResponse> RunAsync(string imageRelativePath, string modelPath, CancellationToken ct = default)
+    public async Task<AiInferenceResponse> RunAsync(
+        string imageRelativePath, string modelPath, CancellationToken ct = default)
     {
-        // Chế độ stub để chạy được toàn hệ thống khi chưa dựng dịch vụ Python.
-        // Bật/tắt bằng AiService:UseStub trong appsettings.
-        if (_cfg.GetValue<bool>("AiService:UseStub"))
-            return Stub(imageRelativePath);
+        var payload = new { image_path = imageRelativePath, model_path = modelPath };
 
         try
         {
-            var payload = new { image_path = imageRelativePath, model_path = modelPath };
-            using var resp = await _http.PostAsJsonAsync("/infer", payload, ct);
-            resp.EnsureSuccessStatusCode();
+            // Gọi 3 endpoint. Có thể chạy song song vì độc lập nhau.
+            var drTask      = PostAsync<DrResult>("/infer/dr", payload, ct);
+            var lesionTask  = PostAsync<LesionResult>("/infer/lesion", payload, ct);
+            var fractalTask = PostAsync<FractalResult>("/infer/fractal", payload, ct);
 
-            return await resp.Content.ReadFromJsonAsync<AiInferenceResponse>(cancellationToken: ct)
-                ?? throw AppException.BadRequest(Msg.AiUnavailable, "Dịch vụ suy luận trả về dữ liệu rỗng.");
+            await Task.WhenAll(drTask, lesionTask, fractalTask);
+
+            var dr = drTask.Result;
+            var lesion = lesionTask.Result;
+            var fractal = fractalTask.Result;
+
+            // Tổng thời gian suy luận = cộng dồn 3 model (nếu có).
+            var totalMs = (dr.InferenceMs ?? 0) + (lesion.InferenceMs ?? 0) + (fractal.InferenceMs ?? 0);
+
+            return new AiInferenceResponse
+            {
+                // Model 1 — DR
+                DrGrade = dr.DrGrade,
+                Confidence = dr.Confidence,
+                Probabilities = dr.Probabilities,
+                // Model 2 — Lesion
+                LesionGradeImplied = lesion.LesionGrade,
+                LesionMaskPath = lesion.LesionMaskPath,
+                CountMA = lesion.CountMA, CountHE = lesion.CountHE,
+                CountEX = lesion.CountEX, CountSE = lesion.CountSE,
+                AreaMA = lesion.AreaMA, AreaHE = lesion.AreaHE,
+                AreaEX = lesion.AreaEX, AreaSE = lesion.AreaSE,
+                // Model 3 — Fractal
+                FractalDimension = fractal.FractalDimension,
+                VesselMaskPath = fractal.VesselMaskPath,
+                FractalNote = fractal.FractalNote,
+                // Tổng hợp
+                InferenceMs = totalMs > 0 ? totalMs : null
+            };
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -70,29 +135,12 @@ public class AiInferenceClient : IAiInferenceClient
         }
     }
 
-    /// <summary>
-    /// Sinh kết quả tất định theo đường dẫn ảnh, để demo và kiểm thử lặp lại được.
-    /// Cố ý tạo đủ các tình huống: tin cậy thấp, bất đồng cao, và ca bình thường.
-    /// </summary>
-    private static AiInferenceResponse Stub(string path)
+    private async Task<T> PostAsync<T>(string route, object payload, CancellationToken ct)
     {
-        var seed = Math.Abs(path.GetHashCode());
-        var grade = (byte)(seed % 5);
-        var lesion = (byte)((grade + (seed % 3 == 0 ? 2 : 0)) % 5);
-
-        return new AiInferenceResponse
-        {
-            DrGrade = grade,
-            Confidence = Math.Round(0.58m + (seed % 40) / 100m, 4),
-            Probabilities = new[] { 0.05m, 0.10m, 0.25m, 0.45m, 0.15m },
-            LesionGradeImplied = lesion,
-            LesionMaskPath = path.Replace(".jpg", "_lesion.png"),
-            CountMA = seed % 40, CountHE = seed % 18, CountEX = seed % 12, CountSE = seed % 5,
-            AreaMA = (seed % 40) * 0.000012m, AreaHE = (seed % 18) * 0.000085m,
-            AreaEX = (seed % 12) * 0.000110m, AreaSE = (seed % 5) * 0.000140m,
-            FractalDimension = Math.Round(1.42m + (seed % 25) / 100m, 4),
-            VesselMaskPath = path.Replace(".jpg", "_vessel.png"),
-            InferenceMs = 3200 + seed % 4000
-        };
+        using var resp = await _http.PostAsJsonAsync(route, payload, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct)
+            ?? throw AppException.BadRequest(Msg.AiUnavailable,
+                $"Dịch vụ suy luận trả về dữ liệu rỗng ở {route}.");
     }
 }

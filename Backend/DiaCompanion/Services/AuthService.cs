@@ -40,7 +40,7 @@ public class AuthService : BaseService, IAuthService
             await _audit.LogAsync(AuditAction.LoginFailed, "User", user?.Id,
                 detail: $"Đăng nhập thất bại: {req.Email ?? req.Phone}");
             await _repository.SaveChangesAsync();
-            throw AppException.Unauthorized(Msg.BadCredentials, "Email hoặc mật khẩu không đúng.");
+            throw AppException.Unauthorized(Msg.BadCredentials, "Tài khoản đăng nhập hoặc mật khẩu không đúng.");
         }
 
         if (!user.IsActive)
@@ -121,28 +121,54 @@ public class AuthService : BaseService, IAuthService
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-    /// <summary>UC-05 — đổi mật khẩu khi đã đăng nhập.</summary>
-    public async Task<IActionResult> ChangePassword(ChangePasswordRequest req)
+
+/// <summary>
+/// UC-05 — đổi mật khẩu khi đã đăng nhập.
+/// Tài khoản dùng mật khẩu tạm chỉ cần nhập mật khẩu mới.
+/// Tài khoản bình thường vẫn phải nhập và xác minh mật khẩu hiện tại.
+/// </summary>
+public async Task<IActionResult> ChangePassword(ChangePasswordRequest req)
+{
+    _hasher.EnsureStrong(req.NewPassword);
+
+    var id = _me.RequireId();
+    var user = await _repository.Users.FirstAsync(u => u.Id == id);
+    var wasTemporaryPassword = user.MustChangePassword;
+
+    if (!wasTemporaryPassword)
     {
-        _hasher.EnsureStrong(req.NewPassword);
+        if (string.IsNullOrWhiteSpace(req.CurrentPassword))
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Vui lòng nhập mật khẩu hiện tại.");
 
-        var id = _me.RequireId();
-        var user = await _repository.Users.FirstAsync(u => u.Id == id);
-
-        if (!user.MustChangePassword)
-        {
-            if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
-                throw AppException.BadRequest(Msg.BadCredentials, "Mật khẩu hiện tại không đúng.");
-        }
-        user.PasswordHash = _hasher.Hash(req.NewPassword);
-        // Gỡ cờ mật khẩu tạm — đây là điều kiện để bệnh nhân vào được hồ sơ
-        user.MustChangePassword = false;
-        user.UpdatedAt = DateTime.UtcNow;
-
-        await _audit.LogAsync(AuditAction.PasswordChange, "User", user.Id);
-        await _repository.SaveChangesAsync();
-        return Ok(new { message = "Đổi mật khẩu thành công." });
+        if (!_hasher.Verify(req.CurrentPassword, user.PasswordHash))
+            throw AppException.BadRequest(
+                Msg.BadCredentials,
+                "Mật khẩu hiện tại không đúng.");
     }
+
+    user.PasswordHash = _hasher.Hash(req.NewPassword);
+    user.MustChangePassword = false;
+    user.UpdatedAt = DateTime.UtcNow;
+
+    await _audit.LogAsync(
+        AuditAction.PasswordChange,
+        "User",
+        user.Id,
+        detail: wasTemporaryPassword
+            ? "Đổi mật khẩu tạm lần đầu"
+            : "Đổi mật khẩu chủ động");
+
+    await _repository.SaveChangesAsync();
+
+    return Ok(new
+    {
+        message = "Đổi mật khẩu thành công.",
+        mustChangePassword = false,
+        defaultRoute = DefaultRoute(user.Role)
+    });
+}
     public async Task<IActionResult> Logout()
     {
         await _audit.LogAsync(AuditAction.Logout, "User", _me.Id);

@@ -80,22 +80,6 @@ export function TriagePage() {
       <div className="two-pane">
         <Panel title="Ca chờ xử lý">
           <div className="toolbar">
-            <Field labelText="Bác sĩ" className="inline">
-              <select
-                value={doctor}
-                onChange={(e) => {
-                  setDoctor(e.target.value);
-                  resetPaging();
-                }}
-              >
-                <option value="">Tất cả bác sĩ</option>
-                {docs.data?.map((d) => (
-                  <option value={d.id} key={d.id}>
-                    {d.fullName}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <Field labelText="Phạm vi" className="inline">
               <select
                 value={deferred}

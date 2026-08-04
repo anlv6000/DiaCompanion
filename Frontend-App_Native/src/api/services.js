@@ -15,7 +15,10 @@ export const authApi = {
   resetPassword: (phone, code, newPassword) =>
     http.post("/api/auth/reset-password", { phone, code, newPassword }),
   changePassword: (currentPassword, newPassword) =>
-    http.post("/api/auth/change-password", { currentPassword, newPassword }),
+    http.post("/api/auth/change-password", {
+      ...(currentPassword ? { currentPassword } : {}),
+      newPassword,
+    }),
   logout: () => http.post("/api/auth/logout"),
   me: () => http.get("/api/auth/me"),
 };
