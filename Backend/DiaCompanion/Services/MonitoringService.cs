@@ -869,6 +869,21 @@ public class MonitoringService : BaseService, IMonitoringService
             && req.ExerciseMinutes is null
             && string.IsNullOrWhiteSpace(req.ExerciseType))
             throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng nhập thông tin bữa ăn hoặc vận động.");
+        if(req.ExerciseMinutes is null)
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Số phút vận động phải là số từ 0 đến 600. Bạn phải nhập số");
+        }
+
+        if (req.ExerciseMinutes.HasValue &&
+       (req.ExerciseMinutes.Value < 0 || req.ExerciseMinutes.Value > 600))
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Số phút vận động phải là số từ 0 đến 600.");
+        }
+       
     }
 
     private static MedicationLogDto MapMedication(MedicationLog m) => new()
