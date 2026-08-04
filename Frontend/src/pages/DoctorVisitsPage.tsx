@@ -663,7 +663,11 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
         patientId: visit.patientId,
         visitId: visit.id,
         note: note.trim() || null,
-        items: items.map(({ id, ...x }) => x),
+        items: items.map(({ id, instruction, instructions, ...x }) => ({
+          ...x,
+          instruction: instruction ?? null,
+          instructions: instructions ?? instruction ?? null,
+        })),
       });
       toast.push("Đã lưu đơn thuốc.", "success");
       setItems([

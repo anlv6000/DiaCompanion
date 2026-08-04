@@ -54,9 +54,18 @@ const TABS = [
 export function PatientDetailPage({ id }: { id: number }) {
   const data = useData();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [sp, setSp] = useSearchParams();
   const tab = sp.get("tab") || "profile";
   const patient = useAsync(() => data.patients.get(id), [id]);
+  const isReceptionist = user?.role === "Receptionist";
+  const visibleTabs = TABS.filter(
+    (item) =>
+      !(isReceptionist && (item.key === "images" || item.key === "monitoring")),
+  );
+  const activeTab = visibleTabs.some((item) => item.key === tab)
+    ? tab
+    : "profile";
   const setTab = (t: string) => setSp({ tab: t }, { replace: true });
 
   return (
@@ -84,13 +93,13 @@ export function PatientDetailPage({ id }: { id: number }) {
               </>
             }
           />
-          <Tabs items={TABS} active={tab} onChange={setTab} />
+          <Tabs items={visibleTabs} active={activeTab} onChange={setTab} />
           <div style={{ marginTop: 12 }}>
-            {tab === "profile" && <ProfileTab patient={patient.data} />}
-            {tab === "visits" && <VisitsTab patientId={id} />}
-            {tab === "images" && <ImagesTab patientId={id} />}
-            {tab === "prescriptions" && <PrescriptionsTab patientId={id} />}
-            {tab === "monitoring" && <MonitoringTab patientId={id} />}
+            {activeTab === "profile" && <ProfileTab patient={patient.data} />}
+            {activeTab === "visits" && <VisitsTab patientId={id} />}
+            {activeTab === "images" && <ImagesTab patientId={id} />}
+            {activeTab === "prescriptions" && <PrescriptionsTab patientId={id} />}
+            {activeTab === "monitoring" && <MonitoringTab patientId={id} />}
           </div>
         </>
       )}
@@ -246,6 +255,7 @@ function VisitsTab({ patientId }: { patientId: number }) {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const isReceptionist = user?.role === "Receptionist";
   const list = useAsync(
     () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
     [patientId],
@@ -1007,9 +1017,6 @@ function PrescriptionEditor({
   const data = useData();
   const toast = useToast();
   const isNew = value === "new";
-  const [visit, setVisit] = useState(
-    isNew ? "" : value.visitId ? String(value.visitId) : "",
-  );
   const [note, setNote] = useState(isNew ? "" : value.note || "");
   const [items, setItems] = useState<PrescriptionItemDto[]>(
     isNew
@@ -1027,6 +1034,7 @@ function PrescriptionEditor({
   const [busy, setBusy] = useState(false);
   const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) =>
     setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const visitId = value !== "new" ? value.visitId ?? null : null;
   const save = async () => {
     if (
       !items.length ||
@@ -1042,7 +1050,7 @@ function PrescriptionEditor({
       // để biết dòng nào cập nhật, dòng nào thêm mới (id rỗng), dòng nào đã xoá.
       const body = {
         patientId,
-        visitId: visit ? Number(visit) : null,
+        visitId,
         note: note || null,
         items: isNew
           ? items.map(({ id, ...x }) => x)
@@ -1071,16 +1079,6 @@ function PrescriptionEditor({
         </>
       }
     >
-      <Field labelText="Gắn lượt khám">
-        <select value={visit} onChange={(e) => setVisit(e.target.value)}>
-          <option value="">Không gắn</option>
-          {visits.map((v) => (
-            <option value={v.id} key={v.id}>
-              #{v.id} · {fmtDate(v.visitDate, true)}
-            </option>
-          ))}
-        </select>
-      </Field>
       <DataTable
         headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}
       >

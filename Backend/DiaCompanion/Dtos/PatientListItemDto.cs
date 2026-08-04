@@ -11,7 +11,7 @@ public class PatientListItemDto
     public string Code { get; set; } = "";
     public string FullName { get; set; } = "";
     public int Age { get; set; }
-    public byte Gender { get; set; }
+    public byte? Gender { get; set; }
     public string Phone { get; set; } = "";
     public byte DiabetesType { get; set; }
     public short? DiabetesDurationYears { get; set; }
