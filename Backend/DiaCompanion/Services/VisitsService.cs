@@ -277,7 +277,7 @@ public class VisitsService : BaseService, IVisitsService
             v.Id);
 
         var dueDate = _clock.ToLocal(v.ClosedAt)!.Value.AddMonths(v.RecheckMonths.Value);
-        var referralNote = v.Referral >= ReferralType.Ophthalmology
+        var referralNote = v.Referral.HasValue && v.Referral.Value >= ReferralType.Ophthalmology
             ? " Bạn cũng cần đến Khoa Mắt theo chỉ định của bác sĩ."
             : "";
 
@@ -449,111 +449,6 @@ public class VisitsService : BaseService, IVisitsService
             throw AppException.NotFound(
                 Msg.PatientNotFound,
                 "Tài khoản chưa được liên kết với hồ sơ bệnh nhân.");
-        }
-
-        return patientId.Value;
-    }
-
-    public async Task CreateAsync(int userId, CreateFeedbackRequest req)
-    {
-        var patientId = await GetPatientIdAsync(userId);
-
-        ValidateRequest(req);
-
-        if (req.VisitId is int visitId)
-        {
-            await ValidateVisitAsync(
-                patientId,
-                visitId);
-
-            await CheckDuplicateAsync(
-                patientId,
-                visitId);
-        }
-
-        var feedback = new Feedback
-        {
-            PatientId = patientId,
-            VisitId = req.VisitId,
-            Rating = req.Rating,
-            Tags = string.IsNullOrWhiteSpace(req.Tags) ? null : req.Tags.Trim(),
-            Comment = string.IsNullOrWhiteSpace(req.Comment) ? null : req.Comment.Trim()
-        };
-
-        _repository.Feedbacks.Add(feedback);
-
-        await _repository.SaveChangesAsync();
-    }
-
-
-    private static void ValidateRequest(
-        CreateFeedbackRequest req)
-    {
-        if (req.Rating is < 1 or > 5)
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "Đánh giá phải từ 1 đến 5 sao.");
-        }
-
-        if (string.IsNullOrWhiteSpace(req.Comment))
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "Vui lòng nhập nội dung phản hồi.");
-        }
-    }
-
-    private async Task ValidateVisitAsync(
-        int patientId,
-        int visitId)
-    {
-        var ownsVisit = await _repository.Visits
-            .AsNoTracking()
-            .AnyAsync(v =>
-                v.Id == visitId &&
-                v.PatientId == patientId &&
-                v.Status == VisitStatus.Completed);
-
-        if (!ownsVisit)
-        {
-            throw AppException.NotFound(
-                Msg.LoadFailed,
-                "Không tìm thấy lượt khám phù hợp.");
-        }
-    }
-
-    private async Task CheckDuplicateAsync(
-        int patientId,
-        int visitId)
-    {
-        var existed = await _repository.Feedbacks
-            .AsNoTracking()
-            .AnyAsync(f =>
-                f.PatientId == patientId &&
-                f.VisitId == visitId);
-
-        if (existed)
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "Bạn đã gửi phản hồi cho lượt khám này.");
-        }
-    }
-
-    private async Task<int> GetPatientIdAsync(int userId)
-    {
-        var patientId = await _repository.Patients
-            .AsNoTracking()
-            .Where(p => p.UserId == userId)
-            .Select(p => (int?)p.Id)
-            .FirstOrDefaultAsync();
-
-        if (patientId is null)
-        {
-            throw AppException.NotFound(
-                Msg.PatientNotFound,
-                "Không tìm thấy hồ sơ bệnh nhân.");
         }
 
         return patientId.Value;

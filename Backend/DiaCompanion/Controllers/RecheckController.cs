@@ -8,7 +8,7 @@ using DiaCompanion.Api.Services;
 namespace DiaCompanion.Api.Controllers;
 
 /// <summary>
-/// UC-41, UC-42 — nhắc tái tầm soát.
+/// UC-48 — nhắc tái tầm soát.
 ///
 /// Thay cho chức năng đặt lịch theo khung giờ đã bỏ. Ngày tái khám được TÍNH
 /// từ lượt khám hoàn tất gần nhất (ClosedAt + RecheckMonths, BR-19), không lưu
@@ -24,7 +24,7 @@ public class RecheckController : BaseApiController
     public RecheckController(IRecheckService service) => _service = service;
 
 
-    /// <summary>UC-41 — bệnh nhân xem lần tái khám tiếp theo của mình.</summary>
+    /// <summary>UC-48 — bệnh nhân xem lần tái khám tiếp theo của mình.</summary>
     [HttpGet("me")]
     [Authorize(Roles = Roles.Patient)]
     public async Task<ActionResult<RecheckDto>> Mine()
@@ -43,7 +43,7 @@ public class RecheckController : BaseApiController
 
 
     /// <summary>
-    /// UC-42 — danh sách bệnh nhân đến hạn tái tầm soát, để phòng khám gọi nhắc.
+    /// UC-48 — danh sách bệnh nhân đến hạn tái tầm soát, để phòng khám gọi nhắc.
     ///
     /// Toàn bộ tính từ dữ liệu lượt khám, không có bảng lịch hẹn. Bệnh nhân
     /// được coi là chưa quay lại khi chưa có lượt khám nào mới hơn lượt đã đóng.

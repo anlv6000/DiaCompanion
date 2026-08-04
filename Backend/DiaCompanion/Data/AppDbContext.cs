@@ -178,12 +178,13 @@ public class AppDbContext : DbContext
 
         b.Entity<PrescriptionItem>(e =>
         {
+            e.Property(x => x.IsActive).HasDefaultValue(true);
             // QT-6: NO ACTION, tuyệt đối không cascade. Xoá cứng một đơn thuốc
             // sẽ kéo mất MedicationLogs — tức là xoá sạch lịch sử tuân thủ thuốc
             // mà bác sĩ dùng để đánh giá nguy cơ tiến triển.
             e.HasOne(x => x.Prescription).WithMany(p => p.Items)
                 .HasForeignKey(x => x.PrescriptionId).OnDelete(DeleteBehavior.NoAction);
-            e.HasIndex(x => x.PrescriptionId);
+            e.HasIndex(x => new { x.PrescriptionId, x.IsActive });
         });
 
         b.Entity<MedicationLog>(e =>
@@ -191,6 +192,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Status).HasConversion<byte>();
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasIndex(x => new { x.PatientId, x.ScheduledAt });
+            e.HasIndex(x => new { x.Status, x.ScheduledAt, x.ReminderSentAt });
             e.HasOne(x => x.PrescriptionItem).WithMany(i => i.Logs)
                 .HasForeignKey(x => x.PrescriptionItemId).OnDelete(DeleteBehavior.NoAction);
         });
@@ -225,6 +227,9 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.PatientId, x.CreatedAt });
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.ResponsibleDoctor).WithMany()
+                .HasForeignKey(x => x.ResponsibleDoctorId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.ResponsibleDoctorId, x.CreatedAt });
         });
 
         b.Entity<Notification>(e =>
@@ -244,7 +249,11 @@ public class AppDbContext : DbContext
         b.Entity<Feedback>(e =>
         {
             e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => new { x.PatientId, x.VisitId })
+                .IsUnique()
+                .HasFilter("[VisitId] IS NOT NULL AND [IsDeleted] = 0");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Visit>().WithMany().HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.NoAction);
         });
 
         /* ------------------------------------------------------ AuditLogs */

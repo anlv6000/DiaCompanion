@@ -1,33 +1,50 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-53..57 — thông báo, triệu chứng, phản hồi.</summary>
+/// <summary>UC-49..52 — thông báo, triệu chứng và phản hồi dịch vụ.</summary>
 public class EngagementService : BaseService, IEngagementService
 {
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
     private readonly ISymptomAdviceService _advice;
     private readonly INotificationService _notify;
+    private readonly IAuditService _audit;
+    private readonly IClinicClock _clock;
 
-    public EngagementService(IRepository repository, ICurrentUser me,
-                                ISymptomAdviceService advice, INotificationService notify)
-    { _repository = repository; _me = me; _advice = advice; _notify = notify; }
-
-    /* -------------------------- THÔNG BÁO (UC-54) -------------------------- */
-    public async Task<ActionResult<PagedResult<NotificationDto>>> Notifications([FromQuery] PageQuery page)
+    public EngagementService(
+        IRepository repository,
+        ICurrentUser me,
+        ISymptomAdviceService advice,
+        INotificationService notify,
+        IAuditService audit,
+        IClinicClock clock)
     {
-        var uid = _me.RequireId();
-        var query = _repository.Notifications.AsNoTracking().Where(n => n.UserId == uid);
+        _repository = repository;
+        _me = me;
+        _advice = advice;
+        _notify = notify;
+        _audit = audit;
+        _clock = clock;
+    }
+
+    public async Task<ActionResult<PagedResult<NotificationDto>>> Notifications(PageQuery page)
+    {
+        var userId = _me.RequireId();
+        var now = _clock.UtcNow;
+        var query = _repository.Notifications.AsNoTracking()
+            .Where(n => n.UserId == userId && (n.ExpiresAt == null || n.ExpiresAt > now));
 
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(n => n.CreatedAt)
-            .Skip(page.Skip).Take(page.PageSize)
+        var items = await query
+            .OrderByDescending(n => n.CreatedAt)
+            .Skip(page.Skip)
+            .Take(page.PageSize)
             .Select(n => new NotificationDto
             {
                 Id = n.Id,
@@ -41,167 +58,344 @@ public class EngagementService : BaseService, IEngagementService
             }).ToListAsync();
 
         return Ok(new PagedResult<NotificationDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
+        });
     }
+
     public async Task<IActionResult> UnreadCount()
     {
-        var uid = _me.RequireId();
-        return Ok(new { count = await _repository.Notifications.CountAsync(n => n.UserId == uid && !n.IsRead) });
+        var userId = _me.RequireId();
+        var now = _clock.UtcNow;
+        var count = await _repository.Notifications.CountAsync(n =>
+            n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > now));
+        return Ok(new { count });
     }
+
     public async Task<IActionResult> MarkRead(long id)
     {
-        var uid = _me.RequireId();
-        var n = await _repository.Notifications.FirstOrDefaultAsync(x => x.Id == id && x.UserId == uid)
+        var userId = _me.RequireId();
+        var notification = await _repository.Notifications
+            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy thông báo.");
 
-        n.IsRead = true;
-        n.ReadAt = DateTime.UtcNow;
-        await _repository.SaveChangesAsync();
+        if (!notification.IsRead)
+        {
+            notification.IsRead = true;
+            notification.ReadAt = _clock.UtcNow;
+            await _repository.SaveChangesAsync();
+        }
+
         return Ok(new { message = "Đã đánh dấu đã đọc." });
     }
+
     public async Task<IActionResult> MarkAllRead()
     {
-        var uid = _me.RequireId();
-        await _repository.Notifications.Where(n => n.UserId == uid && !n.IsRead)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true)
-                                      .SetProperty(n => n.ReadAt, DateTime.UtcNow));
+        var userId = _me.RequireId();
+        var now = _clock.UtcNow;
+        await _repository.Notifications
+            .Where(n => n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > now))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, now));
         return Ok(new { message = "Đã đánh dấu tất cả đã đọc." });
     }
 
-    /* ------------------------- TRIỆU CHỨNG (UC-55) ------------------------- */
-
-    /// <summary>
-    /// UC-55 — bệnh nhân báo triệu chứng.
-    ///
-    /// Hai nguồn khuyến cáo TÁCH BIỆT:
-    ///   AutoAdvice  — hệ thống sinh NGAY theo mức độ, bất biến, là lưới an toàn
-    ///                 để bệnh nhân nặng không ngồi chờ tin nhắn.
-    ///   DoctorReply — bác sĩ trả lời sau, trong giờ làm việc.
-    /// Nếu dùng chung một cột thì trả lời của bác sĩ sẽ ghi đè khuyến cáo tự động
-    /// và mất vết nguồn gốc — không chấp nhận được với dữ liệu y tế.
-    /// </summary>
+    /// <summary>UC-50 — hệ thống sinh hướng dẫn ngay và chuyển đúng bác sĩ phụ trách.</summary>
     public async Task<ActionResult<SymptomReportDto>> ReportSymptom(CreateSymptomRequest req)
     {
-        var pid = RequireMyPatientId(_me);
+        var patientId = RequireMyPatientId(_me);
+        var responsibleDoctorId = await _repository.Visits.AsNoTracking()
+            .Where(v => v.PatientId == patientId && v.DoctorId != null)
+            .OrderByDescending(v => v.VisitDate)
+            .ThenByDescending(v => v.Id)
+            .Select(v => v.DoctorId)
+            .FirstOrDefaultAsync();
 
         var report = new SymptomReport
         {
-            PatientId = pid,
+            PatientId = patientId,
+            ResponsibleDoctorId = responsibleDoctorId,
             Symptoms = req.Symptoms.Trim(),
             Severity = req.Severity,
-            Description = req.Description,
-            OnsetNote = req.OnsetNote,
-            AutoAdvice = _advice.Generate(req.Severity)   // BR-20
+            Description = req.Description?.Trim(),
+            OnsetNote = req.OnsetNote?.Trim(),
+            AutoAdvice = _advice.Generate(req.Severity),
+            CreatedAt = _clock.UtcNow
         };
 
-        _repository.SymptomReports.Add(report);
-
-        // Báo cho bác sĩ của lượt khám gần nhất — định nghĩa "bác sĩ phụ trách"
-        var doctorId = await _repository.Visits.Where(v => v.PatientId == pid && v.DoctorId != null)
-            .OrderByDescending(v => v.VisitDate).Select(v => v.DoctorId).FirstOrDefaultAsync();
-
-        if (doctorId is int did)
+        var strategy = _repository.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            var patient = await _repository.Patients.FirstAsync(p => p.Id == pid);
-            _notify.Push(did, NotificationType.Result,
-                req.Severity == SymptomSeverity.Severe ? "Báo triệu chứng NẶNG" : "Bệnh nhân báo triệu chứng",
-                $"{patient.FullName} ({patient.Code}): {report.Symptoms}",
-                nameof(SymptomReport), report.Id);
-        }
+            await using var transaction = await _repository.Database.BeginTransactionAsync();
+            try
+            {
+                _repository.SymptomReports.Add(report);
+                await _repository.SaveChangesAsync();
 
-        await _repository.SaveChangesAsync();
-        return Ok(Map(report, null));
+                if (responsibleDoctorId is int doctorId)
+                {
+                    var patient = await _repository.Patients.AsNoTracking()
+                        .FirstAsync(p => p.Id == patientId);
+                    _notify.Push(
+                        doctorId,
+                        NotificationType.Result,
+                        req.Severity == SymptomSeverity.Severe
+                            ? "Báo triệu chứng NẶNG"
+                            : "Bệnh nhân báo triệu chứng",
+                        $"{patient.FullName} ({patient.Code}): {report.Symptoms}",
+                        nameof(SymptomReport),
+                        report.Id);
+                }
+
+                await _audit.LogAsync(
+                    AuditAction.SymptomReport,
+                    nameof(SymptomReport),
+                    report.Id,
+                    null,
+                    new
+                    {
+                        report.PatientId,
+                        report.ResponsibleDoctorId,
+                        severity = report.Severity.ToString()
+                    });
+
+                await _repository.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        return Ok(await GetSymptomDtoAsync(report.Id));
     }
+
     public async Task<ActionResult<PagedResult<SymptomReportDto>>> Symptoms(
-        [FromQuery] int? patientId, [FromQuery] bool pendingOnly = false, [FromQuery] PageQuery? page = null)
+        int? patientId,
+        bool pendingOnly = false,
+        PageQuery? page = null)
     {
         page ??= new PageQuery();
-        var query = _repository.SymptomReports.AsNoTracking().Include(s => s.Patient).AsQueryable();
+        var query = _repository.SymptomReports.AsNoTracking()
+            .Include(s => s.Patient)
+            .Include(s => s.ResponsibleDoctor)
+            .AsQueryable();
 
         if (_me.Role == UserRole.Patient)
         {
-            // Phải lấy ra biến trước: EF không dịch được lời gọi phương thức
-            // nằm bên trong biểu thức truy vấn.
-            var myPid = RequireMyPatientId(_me);
-            query = query.Where(s => s.PatientId == myPid);
+            var myPatientId = RequireMyPatientId(_me);
+            query = query.Where(s => s.PatientId == myPatientId);
         }
-        else if (patientId is int pid)
+        else if (_me.Role == UserRole.Doctor)
         {
-            query = query.Where(s => s.PatientId == pid);
+            var doctorId = _me.RequireId();
+            query = query.Where(s => s.ResponsibleDoctorId == doctorId);
+            if (patientId is int requestedPatientId)
+                query = query.Where(s => s.PatientId == requestedPatientId);
+        }
+        else
+        {
+            throw AppException.Forbidden(Msg.Forbidden, "Chỉ bệnh nhân và bác sĩ phụ trách được xem báo cáo triệu chứng.");
         }
 
-        if (pendingOnly) query = query.Where(s => s.DoctorReply == null);
+        if (pendingOnly)
+            query = query.Where(s => s.DoctorReply == null);
 
         var total = await query.CountAsync();
-        var rows = await query.OrderByDescending(s => s.Severity).ThenByDescending(s => s.CreatedAt)
-            .Skip(page.Skip).Take(page.PageSize).ToListAsync();
+        var rows = await query
+            .OrderByDescending(s => s.Severity)
+            .ThenByDescending(s => s.CreatedAt)
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .ToListAsync();
 
-        var replierIds = rows.Where(r => r.RepliedBy != null).Select(r => r.RepliedBy!.Value).Distinct().ToList();
-        var repliers = await _repository.Users.Where(u => replierIds.Contains(u.Id))
+        var replierIds = rows
+            .Where(r => r.RepliedBy != null)
+            .Select(r => r.RepliedBy!.Value)
+            .Distinct()
+            .ToList();
+        var repliers = await _repository.Users.AsNoTracking()
+            .Where(u => replierIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.FullName);
 
-        var items = rows.Select(r => Map(r, r.RepliedBy is int rb && repliers.ContainsKey(rb) ? repliers[rb] : null))
-            .ToList();
+        var items = rows.Select(r => MapSymptom(
+            r,
+            r.RepliedBy is int replierId && repliers.TryGetValue(replierId, out var name)
+                ? name
+                : null)).ToList();
 
         return Ok(new PagedResult<SymptomReportDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
+        });
     }
 
-    /// <summary>Bác sĩ trả lời — ghi vào DoctorReply, KHÔNG đụng AutoAdvice.</summary>
     public async Task<IActionResult> Reply(int id, DoctorReplyRequest req)
     {
-        var s = await _repository.SymptomReports.Include(x => x.Patient).FirstOrDefaultAsync(x => x.Id == id)
+        var doctorId = _me.RequireId();
+        var report = await _repository.SymptomReports
+            .Include(s => s.Patient)
+            .FirstOrDefaultAsync(s => s.Id == id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy báo cáo triệu chứng.");
 
-        _repository.ApplyOriginalRowVersion(s, req.RowVersion);
+        if (report.ResponsibleDoctorId != doctorId)
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Chỉ bác sĩ phụ trách tại thời điểm báo cáo được phản hồi triệu chứng này.");
 
-        s.DoctorReply = req.Reply.Trim();
-        s.RepliedBy = _me.RequireId();
-        s.RepliedAt = DateTime.UtcNow;
+        _repository.ApplyOriginalRowVersion(report, req.RowVersion);
+        var oldReply = report.DoctorReply;
+        report.DoctorReply = req.Reply.Trim();
+        report.RepliedBy = doctorId;
+        report.RepliedAt = _clock.UtcNow;
 
-        if (s.Patient is not null)
-            _notify.PushToPatient(s.Patient, NotificationType.Result,
+        if (report.Patient is not null)
+        {
+            _notify.PushToPatient(
+                report.Patient,
+                NotificationType.Result,
                 "Bác sĩ đã trả lời",
-                "Bác sĩ đã phản hồi báo cáo triệu chứng của bạn.",
-                nameof(SymptomReport), s.Id);
+                "Bác sĩ phụ trách đã phản hồi báo cáo triệu chứng của bạn.",
+                nameof(SymptomReport),
+                report.Id);
+        }
 
+        await _audit.LogAsync(
+            AuditAction.SymptomReply,
+            nameof(SymptomReport),
+            report.Id,
+            new { doctorReply = oldReply },
+            new { report.DoctorReply, report.RepliedBy });
         await _repository.SaveChangesAsync();
+
         return Ok(new
         {
             message = "Đã gửi phản hồi tới bệnh nhân.",
-            rowVersion = s.ToRowVersion()
+            rowVersion = report.ToRowVersion()
         });
     }
 
-    /* -------------------------- PHẢN HỒI (UC-56, 57) ----------------------- */
+    /// <summary>UC-51 — chỉ cho phản hồi lượt khám đã hoàn tất của chính bệnh nhân.</summary>
     public async Task<IActionResult> CreateFeedback(CreateFeedbackRequest req)
     {
-        var pid = RequireMyPatientId(_me);
-        _repository.Feedbacks.Add(new Feedback
+        var patientId = RequireMyPatientId(_me);
+
+        if (req.VisitId is int visitId)
         {
-            PatientId = pid,
+            var visit = await _repository.Visits.AsNoTracking()
+                .FirstOrDefaultAsync(v => v.Id == visitId)
+                ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+            if (visit.PatientId != patientId)
+                throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền phản hồi lượt khám này.");
+            if (visit.Status != VisitStatus.Completed)
+                throw AppException.BadRequest(Msg.ApptImmutable, "Chỉ có thể phản hồi sau khi lượt khám đã hoàn tất.");
+            if (await _repository.Feedbacks.AnyAsync(f => f.PatientId == patientId && f.VisitId == visitId))
+                throw AppException.Conflict(Msg.ConcurrentEdit, "Bạn đã gửi phản hồi cho lượt khám này.");
+        }
+
+        var feedback = new Feedback
+        {
+            PatientId = patientId,
             VisitId = req.VisitId,
             Rating = req.Rating,
-            Tags = req.Tags,
-            Comment = req.Comment
+            Tags = req.Tags?.Trim(),
+            Comment = req.Comment?.Trim(),
+            CreatedAt = _clock.UtcNow
+        };
+        var strategy = _repository.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _repository.Database.BeginTransactionAsync();
+            try
+            {
+                _repository.Feedbacks.Add(feedback);
+                await _repository.SaveChangesAsync();
+
+                await _audit.LogAsync(
+                    AuditAction.FeedbackCreate,
+                    nameof(Feedback),
+                    feedback.Id,
+                    null,
+                    new { feedback.PatientId, feedback.VisitId, feedback.Rating });
+                await _repository.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
-        await _repository.SaveChangesAsync();
-        return Ok(new { message = "Cảm ơn bạn đã gửi phản hồi." });
+
+        return Ok(new { message = "Cảm ơn bạn đã gửi phản hồi.", feedbackId = feedback.Id });
     }
 
-    /// <summary>UC-57 — quản trị viên xem phản hồi tổng hợp.</summary>
     public async Task<ActionResult<PagedResult<FeedbackDto>>> Feedbacks(
-        [FromQuery] byte? rating, [FromQuery] PageQuery page)
+        byte? rating,
+        string? q,
+        DateOnly? from,
+        DateOnly? to,
+        PageQuery page)
     {
-        var query = _repository.Feedbacks.AsNoTracking();
-        if (rating is byte r) query = query.Where(f => f.Rating == r);
+        var query = _repository.Feedbacks.AsNoTracking()
+            .Include(f => f.Patient)
+            .AsQueryable();
+
+        if (rating is byte value)
+            query = query.Where(f => f.Rating == value);
+        if (from is DateOnly fromDate)
+        {
+            var fromUtc = _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue));
+            query = query.Where(f => f.CreatedAt >= fromUtc);
+        }
+        if (to is DateOnly toDate)
+        {
+            var toExclusiveUtc = _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
+            query = query.Where(f => f.CreatedAt < toExclusiveUtc);
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var keyword = q.Trim();
+            var normalized = VietnameseText.RemoveDiacritics(keyword);
+            query = query.Where(f =>
+                EF.Functions.Like(f.Patient!.Code, $"%{keyword}%") ||
+                EF.Functions.Like(f.Patient.FullNameSearch!, $"%{normalized}%") ||
+                (f.Comment != null && EF.Functions.Like(f.Comment, $"%{keyword}%")));
+        }
 
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(f => f.CreatedAt)
-            .Skip(page.Skip).Take(page.PageSize)
+        query = page.Sort?.Trim().ToLowerInvariant() switch
+        {
+            "rating" => page.Desc
+                ? query.OrderByDescending(f => f.Rating).ThenByDescending(f => f.CreatedAt)
+                : query.OrderBy(f => f.Rating).ThenByDescending(f => f.CreatedAt),
+            "patient" => page.Desc
+                ? query.OrderByDescending(f => f.Patient!.FullName).ThenByDescending(f => f.CreatedAt)
+                : query.OrderBy(f => f.Patient!.FullName).ThenByDescending(f => f.CreatedAt),
+            _ => page.Desc
+                ? query.OrderBy(f => f.CreatedAt)
+                : query.OrderByDescending(f => f.CreatedAt)
+        };
+
+        var items = await query
+            .Skip(page.Skip)
+            .Take(page.PageSize)
             .Select(f => new FeedbackDto
             {
                 Id = f.Id,
+                PatientId = f.PatientId,
+                PatientCode = f.Patient!.Code,
+                PatientName = f.Patient.FullName,
                 VisitId = f.VisitId,
                 Rating = f.Rating,
                 Tags = f.Tags,
@@ -210,34 +404,57 @@ public class EngagementService : BaseService, IEngagementService
             }).ToListAsync();
 
         return Ok(new PagedResult<FeedbackDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
-    }
-    public async Task<IActionResult> FeedbackSummary()
-    {
-        var all = await _repository.Feedbacks.AsNoTracking().Select(f => f.Rating).ToListAsync();
-        return Ok(new
         {
-            total = all.Count,
-            average = all.Count > 0 ? Math.Round(all.Average(r => (double)r), 2) : 0,
-            distribution = Enumerable.Range(1, 5).ToDictionary(i => i.ToString(), i => all.Count(r => r == i))
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = total
         });
     }
 
-    private static SymptomReportDto Map(SymptomReport s, string? replierName) => new()
+    public async Task<IActionResult> FeedbackSummary()
     {
-        Id = s.Id,
-        Symptoms = s.Symptoms,
-        Severity = (byte)s.Severity,
-        Description = s.Description,
-        OnsetNote = s.OnsetNote,
-        AutoAdvice = s.AutoAdvice,
-        DoctorReply = s.DoctorReply,
+        var ratings = await _repository.Feedbacks.AsNoTracking()
+            .Select(f => f.Rating)
+            .ToListAsync();
+        return Ok(new
+        {
+            total = ratings.Count,
+            average = ratings.Count > 0 ? Math.Round(ratings.Average(r => (double)r), 2) : 0,
+            distribution = Enumerable.Range(1, 5)
+                .ToDictionary(i => i.ToString(), i => ratings.Count(r => r == i))
+        });
+    }
+
+    private async Task<SymptomReportDto> GetSymptomDtoAsync(int id)
+    {
+        var report = await _repository.SymptomReports.AsNoTracking()
+            .Include(s => s.Patient)
+            .Include(s => s.ResponsibleDoctor)
+            .FirstAsync(s => s.Id == id);
+        return MapSymptom(report, null);
+    }
+
+    private static SymptomReportDto MapSymptom(SymptomReport report, string? replierName) => new()
+    {
+        Id = report.Id,
+        Symptoms = report.Symptoms,
+        Severity = (byte)report.Severity,
+        Description = report.Description,
+        OnsetNote = report.OnsetNote,
+        AutoAdvice = report.AutoAdvice,
+        DoctorReply = report.DoctorReply,
         RepliedByName = replierName,
-        RepliedAt = s.RepliedAt,
-        CreatedAt = s.CreatedAt,
-        PatientName = s.Patient?.FullName ?? "",
-        RowVersion = s.ToRowVersion(),
-        // Ba trạng thái để giao diện hiển thị đúng, thay vì chỉ "có/không có trả lời"
-        State = s.DoctorReply is not null ? "Bác sĩ đã trả lời" : "Chờ bác sĩ xem"
+        RepliedAt = report.RepliedAt,
+        CreatedAt = report.CreatedAt,
+        PatientName = report.Patient?.FullName ?? "",
+        ResponsibleDoctorId = report.ResponsibleDoctorId,
+        ResponsibleDoctorName = report.ResponsibleDoctor?.FullName,
+        RowVersion = report.ToRowVersion(),
+        State = report.DoctorReply is not null
+            ? "Bác sĩ đã trả lời"
+            : report.ResponsibleDoctorId is null
+                ? "Chưa xác định bác sĩ phụ trách"
+                : "Chờ bác sĩ xem"
     };
 }

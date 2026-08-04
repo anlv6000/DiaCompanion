@@ -65,6 +65,7 @@ builder.Services.AddScoped<IRecheckService, RecheckService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();
 builder.Services.AddScoped<IVisitsService, VisitsService>();
+builder.Services.AddHostedService<ClinicalReminderWorker>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

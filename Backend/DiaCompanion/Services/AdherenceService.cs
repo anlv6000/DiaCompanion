@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
@@ -9,19 +9,33 @@ namespace DiaCompanion.Api.Services;
 public interface IAdherenceService
 {
     void GenerateSchedule(Prescription prescription, IEnumerable<PrescriptionItem> items);
-    Task<AdherenceSummary> GetAsync(int patientId, int days = 30);
+    Task<AdherenceSummary> GetAsync(
+        int patientId,
+        int days = 30,
+        int? prescriptionId = null,
+        DateOnly? from = null,
+        DateOnly? to = null);
 }
 
-public record AdherenceSummary(int Total, int Taken, int Missed, int Pending, decimal Rate);
+public record AdherenceSummary(
+    int Total,
+    int Taken,
+    int Missed,
+    int Skipped,
+    int Pending,
+    decimal Rate);
 
 public class AdherenceService : IAdherenceService
 {
     private readonly IRepository _repository;
     private readonly IClinicClock _clock;
 
-    public AdherenceService(IRepository repository, IClinicClock clock) { _repository = repository; _clock = clock; }
+    public AdherenceService(IRepository repository, IClinicClock clock)
+    {
+        _repository = repository;
+        _clock = clock;
+    }
 
-    /// <summary>Giờ uống thuốc mặc định theo số lần/ngày (giờ địa phương).</summary>
     private static readonly Dictionary<byte, int[]> DoseHours = new()
     {
         [1] = new[] { 8 },
@@ -29,29 +43,30 @@ public class AdherenceService : IAdherenceService
         [3] = new[] { 8, 12, 20 },
         [4] = new[] { 7, 11, 15, 20 },
         [5] = new[] { 7, 10, 13, 17, 21 },
-        [6] = new[] { 6, 9, 12, 15, 18, 21 },
+        [6] = new[] { 6, 9, 12, 15, 18, 21 }
     };
 
     public void GenerateSchedule(Prescription prescription, IEnumerable<PrescriptionItem> items)
     {
         var startLocal = _clock.LocalNow.Date;
 
-        foreach (var item in items)
+        foreach (var item in items.Where(i => i.IsActive))
         {
-            var hours = DoseHours.TryGetValue(item.TimesPerDay, out var h) ? h : new[] { 8 };
+            var hours = DoseHours.TryGetValue(item.TimesPerDay, out var configured)
+                ? configured
+                : new[] { 8 };
 
             for (var day = 0; day < item.DurationDays; day++)
             {
                 var localDate = startLocal.AddDays(day);
                 foreach (var hour in hours)
                 {
-                    var localDt = localDate.AddHours(hour);
+                    var localDateTime = localDate.AddHours(hour);
                     _repository.MedicationLogs.Add(new MedicationLog
                     {
                         PatientId = prescription.PatientId,
                         PrescriptionItemId = item.Id,
-                        ScheduledAt = _clock.ToUtc(localDt),
-                        // QT-10: lưu ngày ĐỊA PHƯƠNG để gom "hôm nay" không lệch
+                        ScheduledAt = _clock.ToUtc(localDateTime),
                         ScheduledLocalDate = DateOnly.FromDateTime(localDate),
                         Status = MedicationStatus.Pending
                     });
@@ -60,24 +75,38 @@ public class AdherenceService : IAdherenceService
         }
     }
 
-    public async Task<AdherenceSummary> GetAsync(int patientId, int days = 30)
+    public async Task<AdherenceSummary> GetAsync(
+        int patientId,
+        int days = 30,
+        int? prescriptionId = null,
+        DateOnly? from = null,
+        DateOnly? to = null)
     {
-        var fromLocal = _clock.LocalToday.AddDays(-days);
+        if (days is < 1 or > 3650)
+            throw AppException.BadRequest(Msg.InvalidData, "Số ngày phải nằm trong khoảng 1–3650.");
 
-        var logs = await _repository.MedicationLogs
-            .Where(m => m.PatientId == patientId && m.ScheduledLocalDate >= fromLocal)
-            .Select(m => m.Status)
-            .ToListAsync();
+        var toDate = to ?? _clock.LocalToday;
+        var fromDate = from ?? toDate.AddDays(-(days - 1));
+        if (fromDate > toDate)
+            throw AppException.BadRequest(Msg.InvalidData, "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
 
-        var taken = logs.Count(s => s == MedicationStatus.Taken);
-        var missed = logs.Count(s => s == MedicationStatus.Missed);
-        var pending = logs.Count(s => s == MedicationStatus.Pending);
+        var query = _repository.MedicationLogs.AsNoTracking()
+            .Where(m => m.PatientId == patientId
+                        && m.ScheduledLocalDate >= fromDate
+                        && m.ScheduledLocalDate <= toDate
+                        && m.Status != MedicationStatus.Cancelled);
 
-        // Mẫu số chỉ tính liều ĐÃ tới hạn. Nếu tính cả liều tương lai thì tỉ lệ
-        // tuân thủ luôn thấp giả tạo ngay sau khi kê đơn 30 ngày.
-        var due = taken + missed;
+        if (prescriptionId is int pid)
+            query = query.Where(m => m.PrescriptionItem!.PrescriptionId == pid);
+
+        var statuses = await query.Select(m => m.Status).ToListAsync();
+        var taken = statuses.Count(s => s == MedicationStatus.Taken);
+        var missed = statuses.Count(s => s == MedicationStatus.Missed);
+        var skipped = statuses.Count(s => s == MedicationStatus.Skipped);
+        var pending = statuses.Count(s => s == MedicationStatus.Pending);
+        var due = taken + missed + skipped;
         var rate = due == 0 ? 0m : Math.Round(taken * 100m / due, 1);
 
-        return new AdherenceSummary(logs.Count, taken, missed, pending, rate);
+        return new AdherenceSummary(statuses.Count, taken, missed, skipped, pending, rate);
     }
 }

@@ -1,28 +1,36 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
-namespace DiaCompanion.Dtos
+namespace DiaCompanion.Dtos;
+
+public class UpdatePrescriptionRequest
 {
-    public class UpdatePrescriptionRequest
-    {
-        public string? Note { get; set; }
+    [MaxLength(1000)]
+    public string? Note { get; set; }
 
-        [Required]
-        public string RowVersion { get; set; } = "";
-        public List<UpdatePrescriptionItemRequest> Items { get; set; } = [];
-    }
+    [Required]
+    public string RowVersion { get; set; } = "";
 
-    public class UpdatePrescriptionItemRequest
-    {
-        public int Id { get; set; }
+    [Required, MinLength(1)]
+    public List<UpdatePrescriptionItemRequest> Items { get; set; } = [];
+}
 
-        public string DrugName { get; set; } = null!;
+public class UpdatePrescriptionItemRequest
+{
+    /// <summary>ID hiện có; gửi 0 để thêm dòng thuốc mới.</summary>
+    public int Id { get; set; }
 
-        public string Dose { get; set; } = null!;
+    [Required, MaxLength(200)]
+    public string DrugName { get; set; } = "";
 
-        public byte TimesPerDay { get; set; }
+    [Required, MaxLength(100)]
+    public string Dose { get; set; } = "";
 
-        public int DurationDays { get; set; }
+    [Range(1, 6)]
+    public byte TimesPerDay { get; set; }
 
-        public string? Instruction { get; set; }
-    }
+    [Range(1, 365)]
+    public int DurationDays { get; set; }
+
+    [MaxLength(300)]
+    public string? Instruction { get; set; }
 }

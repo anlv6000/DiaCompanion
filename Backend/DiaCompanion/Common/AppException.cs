@@ -50,4 +50,6 @@ public static class Msg
     public const string LoadFailed       = "MSG-24";
     public const string InvalidData      = "MSG-25";
     public const string ConcurrentEdit   = "MSG-43";
+    public const string StaleVersion     = "MSG-43";
+
 }
