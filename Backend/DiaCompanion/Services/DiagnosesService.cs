@@ -151,6 +151,12 @@ public class DiagnosesService : BaseService, IDiagnosesService
     /// UC-29 — diễn tiến: ghép mức DR đã xác nhận, fractal và HbA1c trên một trục
     /// thời gian, nối biến chứng mắt với mức kiểm soát bệnh gốc.
     /// </summary>
+    public Task<ActionResult<ProgressionDto>> ProgressionMine(int months = 24)
+    {
+        var patientId = RequireMyPatientId(_me);
+        return Progression(patientId, months);
+    }
+
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)
     {
         EnsureCanAccessPatient(_me, patientId);
@@ -164,7 +170,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
             {
                 r.CreatedAt,
                 VisitId = r.AiDiagnosis!.FundusImage!.VisitId,
-                Grade = (byte)r.FinalGrade,
+                Grade = r.FinalGrade,
                 Fd = r.AiDiagnosis.FractalDimension
             }).ToListAsync();
 
@@ -180,7 +186,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 Date = g.Key,
                 VisitId = g.Select(x => x.VisitId).FirstOrDefault(),
                 // Mắt nặng hơn đại diện cho lần khám (BR-21)
-                ConfirmedGrade = g.Max(x => x.Grade),
+                ConfirmedGrade = (byte)g.Max(x => x.Grade),
                 FractalDimension = g.Average(x => x.Fd)
             }).ToList();
 
