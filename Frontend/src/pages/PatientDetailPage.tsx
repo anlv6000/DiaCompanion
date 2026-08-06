@@ -491,10 +491,14 @@ function ImagesTab({ patientId }: { patientId: number }) {
   };
   const voidImg = async (reason: string) => {
     if (!voiding) return;
-    await data.images.void(voiding.id, reason, voiding.rowVersion);
-    toast.push("Đã thu hồi ảnh và kết quả liên quan.", "success");
-    setVoiding(null);
-    list.reload();
+    try {
+      await data.images.void(voiding.id, reason, voiding.rowVersion);
+      toast.push("Đã thu hồi ảnh và kết quả liên quan.", "success");
+      setVoiding(null);
+      list.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
   };
 
   return (
@@ -718,10 +722,14 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
 
   const voidRx = async (reason: string) => {
     if (!voiding) return;
-    await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
-    toast.push("Đã void đơn thuốc.", "success");
-    setVoiding(null);
-    list.reload();
+    try {
+      await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
+      toast.push("Đã void đơn thuốc.", "success");
+      setVoiding(null);
+      list.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
   };
 
   return (
