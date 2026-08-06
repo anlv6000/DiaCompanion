@@ -120,6 +120,8 @@ const buildDiagnoses = () => ({
   run: (imageId: number) => diagnosesApi.run(imageId),
   get: (id: number) => diagnosesApi.get(id),
   byImage: (imageId: number) => diagnosesApi.byImage(imageId),
+  lesionMask: (id: number) => diagnosesApi.lesionMask(id),
+  fractalImage: (id: number) => diagnosesApi.fractalImage(id),
   void: (id: number, reason: string, rowVersion: string) =>
     diagnosesApi.void(id, reason, rowVersion),
   progression: (patientId: number, months: number) =>

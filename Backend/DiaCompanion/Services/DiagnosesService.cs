@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -17,11 +18,12 @@ public class DiagnosesService : BaseService, IDiagnosesService
     private readonly IDeferralService _deferral;
     private readonly IConfigService _cfg;
     private readonly IVoidService _void;
+    private readonly IFileStorageService _storage;
 
     public DiagnosesService(IRepository repository, ICurrentUser me, IAuditService audit,
                                IAiInferenceClient ai, IDeferralService deferral,
-                               IConfigService cfg, IVoidService voidSvc)
-    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _cfg = cfg; _void = voidSvc; }
+                               IConfigService cfg, IVoidService voidSvc, IFileStorageService storage)
+    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _cfg = cfg; _void = voidSvc; _storage = storage; }
 
     /// <summary>
     /// UC-25 + UC-27 + UC-28 — chạy suy luận cho một ảnh.
@@ -57,6 +59,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
             throw AppException.BadRequest(Msg.ImageNotGradable,
                 "Ảnh chưa đạt chất lượng nên không thể chạy phân tích AI.");
 
+        var alreadyApproved = await _repository.DiagnosisReviews.AsNoTracking()
+            .AnyAsync(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImageId == imageId, ct);
+        if (alreadyApproved)
+            throw AppException.Conflict(
+                "Kết quả AI đã được phê duyệt",
+                "Không thể chạy lại AI sau khi bác sĩ đã phê duyệt hoặc ghi đè kết quả.");
+
         var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.IsActive, ct)
             ?? throw AppException.BadRequest(Msg.AiUnavailable,
                 "Chưa có phiên bản mô hình nào được kích hoạt.");
@@ -75,53 +84,92 @@ public class DiagnosesService : BaseService, IDiagnosesService
             (DrGrade)result.DrGrade, result.Confidence, lesionGrade,
             confThreshold, disagreeThreshold);
 
-        var diagnosis = new AiDiagnosis
+        // SQL Server đang bật EnableRetryOnFailure/SqlServerRetryingExecutionStrategy.
+        // Vì vậy transaction do ứng dụng tạo phải nằm trọn trong ExecuteAsync để
+        // EF Core có thể chạy lại toàn bộ đơn vị công việc khi xảy ra lỗi tạm thời.
+        var strategy = _repository.Database.CreateExecutionStrategy();
+        var diagnosisId = 0;
+
+        await strategy.ExecuteAsync(async () =>
         {
-            FundusImageId = image.Id,
-            ModelVersionId = model.Id,
-            DrGrade = (DrGrade)result.DrGrade,
-            Confidence = result.Confidence,
-            GradeProbabilities = result.Probabilities is null
-                ? null
-                : System.Text.Json.JsonSerializer.Serialize(result.Probabilities),
-            LesionGradeImplied = lesionGrade,
-            LesionMaskPath = result.LesionMaskPath,
-            CountMA = result.CountMA,
-            CountHE = result.CountHE,
-            CountEX = result.CountEX,
-            CountSE = result.CountSE,
-            AreaMA = result.AreaMA,
-            AreaHE = result.AreaHE,
-            AreaEX = result.AreaEX,
-            AreaSE = result.AreaSE,
+            await using var tx = await _repository.Database
+                .BeginTransactionAsync(IsolationLevel.Serializable, ct);
 
-            Disagreement = deferral.Disagreement,
-            IsDeferred = deferral.IsDeferred,
-            DeferReason = deferral.Reason,
-            ConfidenceThreshold = confThreshold,
-            DisagreementThreshold = disagreeThreshold,
+            // Kiểm tra lại trong transaction để chặn trường hợp một bác sĩ vừa phê duyệt
+            // trong lúc dịch vụ AI đang chạy.
+            alreadyApproved = await _repository.DiagnosisReviews.AsNoTracking()
+                .AnyAsync(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImageId == imageId, ct);
+            if (alreadyApproved)
+                throw AppException.Conflict(
+                    "Kết quả AI đã được phê duyệt",
+                    "Không thể chạy lại AI sau khi bác sĩ đã phê duyệt hoặc ghi đè kết quả.");
 
-            FractalDimension = result.FractalDimension,
-            VesselMaskPath = result.VesselMaskPath,
-            FractalNote = result.FractalNote,
-            InferenceMs = result.InferenceMs
-        };
+            // Chỉ giữ một kết quả AI chưa duyệt đang hoạt động cho mỗi ảnh.
+            // Lần chạy mới tự động void toàn bộ lần chạy cũ để triage không bị spam.
+            var previousRuns = await _repository.AiDiagnoses
+                .Where(d => d.FundusImageId == imageId)
+                .OrderBy(d => d.CreatedAt)
+                .ToListAsync(ct);
 
-        _repository.AiDiagnoses.Add(diagnosis);
-        await _repository.SaveChangesAsync(ct);
+            foreach (var old in previousRuns)
+            {
+                await _void.VoidDiagnosisAsync(
+                    old.Id,
+                    $"Tự động thu hồi khi chạy lại AI cho ảnh #{imageId}.",
+                    old.ToRowVersion());
+            }
 
-        await _audit.LogAsync(AuditAction.AiRun, nameof(AiDiagnosis), diagnosis.Id, null, new
-        {
-            imageId,
-            model = model.Name,
-            grade = diagnosis.DrGrade.ToString(),
-            confidence = diagnosis.Confidence,
-            disagreement = diagnosis.Disagreement,
-            deferred = diagnosis.IsDeferred
+            var diagnosis = new AiDiagnosis
+            {
+                FundusImageId = image.Id,
+                ModelVersionId = model.Id,
+                DrGrade = (DrGrade)result.DrGrade,
+                Confidence = result.Confidence,
+                GradeProbabilities = result.Probabilities is null
+                    ? null
+                    : System.Text.Json.JsonSerializer.Serialize(result.Probabilities),
+                LesionGradeImplied = lesionGrade,
+                LesionMaskPath = result.LesionMaskPath,
+                CountMA = result.CountMA,
+                CountHE = result.CountHE,
+                CountEX = result.CountEX,
+                CountSE = result.CountSE,
+                AreaMA = result.AreaMA,
+                AreaHE = result.AreaHE,
+                AreaEX = result.AreaEX,
+                AreaSE = result.AreaSE,
+
+                Disagreement = deferral.Disagreement,
+                IsDeferred = deferral.IsDeferred,
+                DeferReason = deferral.Reason,
+                ConfidenceThreshold = confThreshold,
+                DisagreementThreshold = disagreeThreshold,
+
+                FractalDimension = result.FractalDimension,
+                VesselMaskPath = result.VesselMaskPath,
+                FractalNote = result.FractalNote,
+                InferenceMs = result.InferenceMs
+            };
+
+            _repository.AiDiagnoses.Add(diagnosis);
+            await _repository.SaveChangesAsync(ct);
+
+            await _audit.LogAsync(AuditAction.AiRun, nameof(AiDiagnosis), diagnosis.Id, null, new
+            {
+                imageId,
+                model = model.Name,
+                grade = diagnosis.DrGrade.ToString(),
+                confidence = diagnosis.Confidence,
+                disagreement = diagnosis.Disagreement,
+                deferred = diagnosis.IsDeferred
+            });
+            await _repository.SaveChangesAsync(ct);
+
+            await tx.CommitAsync(ct);
+            diagnosisId = diagnosis.Id;
         });
-        await _repository.SaveChangesAsync(ct);
 
-        return Ok(await MapAsync(diagnosis.Id));
+        return Ok(await MapAsync(diagnosisId));
     }
 
     /// <summary>Chi tiết một kết quả AI.</summary>
@@ -138,6 +186,46 @@ public class DiagnosesService : BaseService, IDiagnosesService
         var list = new List<AiDiagnosisDto>();
         foreach (var id in ids) list.Add(await MapAsync(id));
         return Ok(list);
+    }
+
+    public Task<IActionResult> LesionMask(int id) => ResultImage(id, useLesionMask: true);
+
+    public Task<IActionResult> FractalImage(int id) => ResultImage(id, useLesionMask: false);
+
+    private async Task<IActionResult> ResultImage(int id, bool useLesionMask)
+    {
+        var diagnosis = await _repository.AiDiagnoses.AsNoTracking()
+            .Include(d => d.FundusImage)
+            .FirstOrDefaultAsync(d => d.Id == id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
+
+        if (diagnosis.FundusImage is null)
+            throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt liên quan.");
+
+        EnsureCanAccessPatient(_me, diagnosis.FundusImage.PatientId);
+
+        var path = useLesionMask ? diagnosis.LesionMaskPath : diagnosis.VesselMaskPath;
+        if (string.IsNullOrWhiteSpace(path))
+            throw AppException.NotFound(
+                Msg.LoadFailed,
+                useLesionMask ? "Lần chạy AI này chưa tạo ảnh mask tổn thương." : "Lần chạy AI này chưa tạo ảnh fractal.");
+
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        var storagePath = normalized.StartsWith("ai_masks/", StringComparison.OrdinalIgnoreCase)
+            ? normalized
+            : $"ai_masks/{normalized}";
+
+        if (!_storage.Exists(storagePath))
+            throw AppException.NotFound(Msg.LoadFailed, "Tệp kết quả AI không còn trên hệ thống.");
+
+        var stream = _storage.OpenRead(storagePath);
+        var contentType = Path.GetExtension(storagePath).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            _ => "image/png"
+        };
+        return File(stream, contentType);
     }
 
     /// <summary>UC-24 phần kết quả — thu hồi một kết quả AI.</summary>
@@ -266,6 +354,8 @@ public class DiagnosesService : BaseService, IDiagnosesService
             DeferReasonLabel = DeferLabel((byte?)d.DeferReason),
             FractalDimension = d.FractalDimension,
             FractalNote = d.FractalNote,
+            HasLesionMask = !string.IsNullOrWhiteSpace(d.LesionMaskPath),
+            HasFractalImage = !string.IsNullOrWhiteSpace(d.VesselMaskPath),
             CreatedAt = d.CreatedAt,
             // NT-3: chỉ "đã xác nhận" khi có review của bác sĩ
             IsConfirmed = review is not null,

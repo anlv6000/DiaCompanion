@@ -29,6 +29,8 @@ public class AiDiagnosisDto
     // Gap 3
     public decimal? FractalDimension { get; set; }
     public string? FractalNote { get; set; }
+    public bool HasLesionMask { get; set; }
+    public bool HasFractalImage { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

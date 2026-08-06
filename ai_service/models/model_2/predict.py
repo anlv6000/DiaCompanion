@@ -158,11 +158,11 @@ def predict(image_path, output_dir):
         color_mask[pred_mask == cls] = color
     color_mask_resized = cv2.resize(color_mask, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
 
-    mask_path = os.path.join(output_dir, "annotated.png")
+    mask_path = os.path.join(output_dir, "mask.png")
     cv2.imwrite(mask_path, color_mask_resized)
 
     annotated_overlay = draw_annotated_overlay(image_bgr, pred_mask, original_w, original_h)
-    annotated_path = os.path.join(output_dir, "mask.png")
+    annotated_path = os.path.join(output_dir, "annotated.png")
     cv2.imwrite(annotated_path, annotated_overlay)
 
     return {
