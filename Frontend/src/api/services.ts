@@ -98,6 +98,8 @@ export const diagnosesApi = {
   get: (id: number) => http.get<T.AiDiagnosisDto>(`/api/diagnoses/${id}`),
   byImage: (imageId: number) =>
     http.get<T.AiDiagnosisDto[]>(`/api/diagnoses/by-image/${imageId}`),
+  lesionMask: (id: number) => http.blob(`/api/diagnoses/${id}/lesion-mask`),
+  fractalImage: (id: number) => http.blob(`/api/diagnoses/${id}/fractal-image`),
   void: (id: number, reason: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/diagnoses/${id}/void`, {
       reason,

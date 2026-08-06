@@ -51,6 +51,23 @@ public class DiagnosesController : BaseApiController
     }
 
 
+    /// <summary>Ảnh mask tổn thương của một lần chạy AI.</summary>
+    [HttpGet("{id:int}/lesion-mask")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<IActionResult> LesionMask(int id)
+    {
+        return await _service.LesionMask(id);
+    }
+
+    /// <summary>Ảnh mạch máu dùng để tính fractal của một lần chạy AI.</summary>
+    [HttpGet("{id:int}/fractal-image")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<IActionResult> FractalImage(int id)
+    {
+        return await _service.FractalImage(id);
+    }
+
+
     /// <summary>UC-24 phần kết quả — thu hồi một kết quả AI.</summary>
     [HttpPut("{id:int}/void")]
     [Authorize(Roles = Roles.DoctorOnly)]

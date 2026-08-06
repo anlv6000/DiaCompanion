@@ -199,6 +199,8 @@ export interface AiDiagnosisDto {
   deferReasonLabel?: string | null;
   fractalDimension?: number | null;
   fractalNote?: string | null;
+  hasLesionMask: boolean;
+  hasFractalImage: boolean;
   createdAt: string;
   isConfirmed: boolean;
   review?: ReviewDto | null;

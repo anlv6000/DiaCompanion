@@ -566,9 +566,7 @@ function VisitImages({
                         Void
                       </Button>
                     )}
-                    {!img.latestDiagnosis && !closed && (
-                      <Button onClick={() => runAi(img.id)}>Chạy AI</Button>
-                    )}
+                    
                   </div>
                 </td>
               </tr>

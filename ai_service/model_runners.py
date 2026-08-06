@@ -174,7 +174,7 @@ def run_lesion(image_path: str) -> dict:
         px = pixels.get(name, 0)
         return round(px / LESION_GRID, 6) if px else 0.0
 
-    mask_path = raw.get("maskPath")
+    mask_path = raw.get("annotatedPath")
     mask_rel = (
         os.path.relpath(mask_path, MASK_OUTPUT_ROOT).replace("\\", "/")
         if mask_path else None

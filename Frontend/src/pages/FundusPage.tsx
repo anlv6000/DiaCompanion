@@ -1,4 +1,11 @@
-import { useState, useEffect } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type CSSProperties,
+} from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,8 +37,22 @@ export function FundusPage({ imageId }: { imageId: number }) {
     ? diagnoses.data?.find((x) => x.id === diagId)
     : diagnoses.data?.[0];
 
-  const [url, setUrl] = useState("");
-  const [zoom, setZoom] = useState(1);
+  const original = useBlobImage(() => data.images.content(imageId), [imageId]);
+  const lesion = useBlobImage(
+    () =>
+      selected?.hasLesionMask
+        ? data.diagnoses.lesionMask(selected.id)
+        : Promise.resolve(null),
+    [selected?.id, selected?.hasLesionMask],
+  );
+  const fractal = useBlobImage(
+    () =>
+      selected?.hasFractalImage
+        ? data.diagnoses.fractalImage(selected.id)
+        : Promise.resolve(null),
+    [selected?.id, selected?.hasFractalImage],
+  );
+
   const [redFree, setRedFree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [override, setOverride] = useState(false);
@@ -40,24 +61,11 @@ export function FundusPage({ imageId }: { imageId: number }) {
   const [voidReview, setVoidReview] = useState(false);
 
   useEffect(() => {
-    let u = "";
-    data.images
-      .content(imageId)
-      .then((b) => {
-        u = URL.createObjectURL(b);
-        setUrl(u);
-      })
-      .catch((e) => toast.push((e as Error).message, "error"));
-    return () => {
-      if (u) URL.revokeObjectURL(u);
-    };
-  }, [imageId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     if (selected) setGrade(selected.drGrade);
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canReview = can.reviewDiagnosis(user?.role);
+  const canRunAgain = canReview && !selected?.isConfirmed;
 
   const downloadOriginal = async () => {
     try {
@@ -76,11 +84,20 @@ export function FundusPage({ imageId }: { imageId: number }) {
   };
 
   const run = async () => {
+    if (selected?.isConfirmed) {
+      toast.push("Kết quả đã được phê duyệt nên không thể chạy lại AI.", "error");
+      return;
+    }
     setBusy(true);
     try {
       const d = await data.diagnoses.run(imageId);
-      toast.push("Đã chạy lại AI.", "success");
-      diagnoses.reload();
+      toast.push(
+        selected
+          ? "Đã chạy lại AI và tự động void lượt chạy cũ."
+          : "Đã chạy AI.",
+        "success",
+      );
+      await diagnoses.reload();
       navigate(`/fundus/${imageId}?diagnosis=${d.id}`, { replace: true });
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -88,6 +105,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
       setBusy(false);
     }
   };
+
   const review = async () => {
     if (!selected) return;
     setBusy(true);
@@ -107,6 +125,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
       setBusy(false);
     }
   };
+
   const voidR = async (r: string) => {
     if (!selected?.review) return;
     await data.triage.voidReview(
@@ -123,195 +142,249 @@ export function FundusPage({ imageId }: { imageId: number }) {
     <>
       <PageHeader
         title={`Trình xem ảnh đáy mắt #${imageId}`}
-        subtitle="Khung ảnh là bề mặt tối duy nhất; kết quả AI luôn kèm trạng thái xác nhận."
+        subtitle="Giữ chuột và kéo ảnh để xem chi tiết theo mọi hướng."
         actions={
           <>
             <Button onClick={() => navigate(-1)}>Quay lại</Button>
             <Button onClick={downloadOriginal}>Tải ảnh gốc</Button>
             {canReview && (
-              <Button kind="primary" busy={busy} onClick={run}>
-                Chạy lại AI
+              <Button
+                kind="primary"
+                busy={busy}
+                disabled={!canRunAgain}
+                onClick={run}
+              >
+                {selected ? "Chạy lại AI" : "Chạy AI"}
               </Button>
             )}
           </>
         }
       />
-      <div className="fundus-layout">
-        <section className="panel">
-          <div className="fundus-toolbar">
-            <Button onClick={() => setZoom((z) => Math.min(4, z + 0.25))}>
-              Phóng to
-            </Button>
-            <Button onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}>
-              Thu nhỏ
-            </Button>
-            <Button onClick={() => setZoom(1)}>100%</Button>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={redFree}
-                onChange={(e) => setRedFree(e.target.checked)}
-              />
-              Red-free
-            </label>
-            <span className="badge mono">{Math.round(zoom * 100)}%</span>
-          </div>
-          <div className="fundus">
-            {url ? (
-              <img
-                className="viewer-image"
-                src={url}
-                alt={`Ảnh đáy mắt ${imageId}`}
-                style={{
-                  transform: `scale(${zoom})`,
-                  filter: redFree
-                    ? "grayscale(1) contrast(1.3) sepia(.1) hue-rotate(65deg)"
-                    : "none",
-                }}
-              />
-            ) : (
-              <div>Đang tải ảnh có kiểm quyền…</div>
-            )}
-          </div>
-        </section>
 
-        <Panel title="Kết quả AI">
-          <LoadState
-            loading={diagnoses.loading}
-            error={diagnoses.error}
-            empty={!selected}
-            onRetry={diagnoses.reload}
-          >
-            {selected && (
-              <>
-                <div className="split">
-                  <GradeBadge grade={selected.drGrade} />
-                  <StatusBadge
-                    text={
-                      selected.isConfirmed ? "Đã xác nhận" : "Chưa xác nhận"
-                    }
-                    kind={selected.isConfirmed ? "ok" : "defer"}
-                  />
-                </div>
-                <div className="detail-grid" style={{ marginTop: 12 }}>
-                  <Info
-                    k="Tin cậy"
-                    v={`${Math.round(selected.confidence * 100)}%`}
-                  />
-                  <Info k="Bất đồng" v={num(selected.disagreement, 3)} />
-                  <Info k="Fractal" v={num(selected.fractalDimension, 4)} />
-                  <Info k="Model" v={selected.modelVersion} />
-                  <Info k="Thời điểm" v={fmtDate(selected.createdAt, true)} />
-                  <Info
-                    k="Phân độ từ tổn thương"
-                    v={
-                      selected.lesionGradeImplied == null
-                        ? "—"
-                        : grades[selected.lesionGradeImplied]
-                    }
-                  />
-                </div>
-                <Panel title="Tổn thương">
-                  <div className="bars">
-                    <Lesion
-                      name="Vi phình mạch (MA)"
-                      value={selected.countMA}
-                    />
-                    <Lesion name="Xuất huyết (HE)" value={selected.countHE} />
-                    <Lesion
-                      name="Xuất tiết cứng (EX)"
-                      value={selected.countEX}
-                    />
-                    <Lesion
-                      name="Xuất tiết mềm (SE)"
-                      value={selected.countSE}
-                    />
-                  </div>
-                </Panel>
-                {selected.isDeferred && (
-                  <div
-                    className="state"
-                    style={{
-                      background: "var(--defer-bg)",
-                      borderColor: "var(--defer)",
-                    }}
-                  >
-                    <b>Chuyển bác sĩ</b>
-                    <div>{selected.deferReasonLabel}</div>
-                  </div>
-                )}
+      {selected?.isConfirmed && (
+        <div className="state ai-rerun-lock">
+          Kết quả này đã được phê duyệt. Hệ thống đã khóa chức năng chạy lại AI.
+        </div>
+      )}
 
-                {selected.review ? (
-                  <Panel title="Xác nhận của bác sĩ">
-                    <div className="detail-grid">
-                      <Info k="Hành động" v={selected.review.actionLabel} />
-                      <Info
-                        k="Phân độ cuối"
-                        v={selected.review.finalGradeLabel}
-                      />
-                      <Info k="Bác sĩ" v={selected.review.doctorName} />
-                      <Info
-                        k="Thời điểm"
-                        v={fmtDate(selected.review.createdAt, true)}
+      <LoadState
+        loading={diagnoses.loading}
+        error={diagnoses.error}
+        empty={false}
+        onRetry={diagnoses.reload}
+      >
+        <div className="ai-result-grid">
+          <PanZoomSquare
+            title="Ảnh gốc"
+            url={original.url}
+            loading={original.loading}
+            error={original.error}
+            imageStyle={{
+              filter: redFree
+                ? "grayscale(1) contrast(1.3) sepia(.1) hue-rotate(65deg)"
+                : "none",
+            }}
+            extraTool={
+              <label className="checkbox ai-viewer-check">
+                <input
+                  type="checkbox"
+                  checked={redFree}
+                  onChange={(e) => setRedFree(e.target.checked)}
+                />
+                Red-free
+              </label>
+            }
+          />
+
+          <PanZoomSquare
+            title="Mask tổn thương"
+            url={lesion.url}
+            loading={lesion.loading}
+            error={lesion.error}
+            emptyText={
+              selected
+                ? "Lần chạy này không có ảnh mask tổn thương."
+                : "Chưa có kết quả AI."
+            }
+          />
+
+          <PanZoomSquare
+            title="Ảnh mạch máu / Fractal"
+            url={fractal.url}
+            loading={fractal.loading}
+            error={fractal.error}
+            emptyText={
+              selected
+                ? "Lần chạy này không có ảnh fractal."
+                : "Chưa có kết quả AI."
+            }
+          />
+
+          <section className="panel ai-diagnosis-square">
+            <div className="panel-h">Chẩn đoán AI</div>
+            <div className="panel-b ai-diagnosis-scroll">
+              <LoadState
+                loading={diagnoses.loading}
+                error={diagnoses.error}
+                empty={!selected}
+                onRetry={diagnoses.reload}
+              >
+                {selected && (
+                  <>
+                    <div className="split">
+                      <GradeBadge grade={selected.drGrade} />
+                      <StatusBadge
+                        text={
+                          selected.isConfirmed ? "Đã xác nhận" : "Chưa xác nhận"
+                        }
+                        kind={selected.isConfirmed ? "ok" : "defer"}
                       />
                     </div>
-                    {selected.review.reason && <p>{selected.review.reason}</p>}
-                    {/* Void review: CHỈ Bác sĩ. */}
-                    {can.voidReview(user?.role) && (
-                      <Button kind="danger" onClick={() => setVoidReview(true)}>
-                        Void review
-                      </Button>
-                    )}
-                  </Panel>
-                ) : (
-                  canReview && (
-                    <Panel title="Xác nhận kết quả">
-                      <label className="checkbox">
-                        <input
-                          type="checkbox"
-                          checked={override}
-                          onChange={(e) => setOverride(e.target.checked)}
+
+                    <div className="detail-grid ai-detail-grid">
+                      <Info
+                        k="Tin cậy"
+                        v={`${Math.round(selected.confidence * 100)}%`}
+                      />
+                      <Info k="Bất đồng" v={num(selected.disagreement, 3)} />
+                      <Info
+                        k="Fractal"
+                        v={num(selected.fractalDimension, 4)}
+                      />
+                      <Info k="Model" v={selected.modelVersion} />
+                      <Info
+                        k="Thời điểm"
+                        v={fmtDate(selected.createdAt, true)}
+                      />
+                      <Info
+                        k="Phân độ từ tổn thương"
+                        v={
+                          selected.lesionGradeImplied == null
+                            ? "—"
+                            : grades[selected.lesionGradeImplied]
+                        }
+                      />
+                    </div>
+
+                    <div className="ai-section">
+                      <b>Tổn thương</b>
+                      <div className="bars">
+                        <Lesion
+                          name="Vi phình mạch (MA)"
+                          value={selected.countMA}
                         />
-                        Ghi đè phân độ AI
-                      </label>
-                      {override && (
-                        <>
-                          <Field labelText="Phân độ cuối">
-                            <select
-                              value={grade}
-                              onChange={(e) => setGrade(Number(e.target.value))}
-                            >
-                              {grades.map((x, i) => (
-                                <option key={i} value={i}>
-                                  {x}
-                                </option>
-                              ))}
-                            </select>
-                          </Field>
-                          <Field labelText="Lý do" required>
-                            <textarea
-                              value={reason}
-                              onChange={(e) => setReason(e.target.value)}
-                            />
-                          </Field>
-                        </>
-                      )}
-                      <Button
-                        kind="primary"
-                        busy={busy}
-                        disabled={override && !reason.trim()}
-                        onClick={review}
+                        <Lesion
+                          name="Xuất huyết (HE)"
+                          value={selected.countHE}
+                        />
+                        <Lesion
+                          name="Xuất tiết cứng (EX)"
+                          value={selected.countEX}
+                        />
+                        <Lesion
+                          name="Xuất tiết mềm (SE)"
+                          value={selected.countSE}
+                        />
+                      </div>
+                    </div>
+
+                    {selected.fractalNote && (
+                      <div className="ai-section">
+                        <b>Ghi chú fractal</b>
+                        <p>{selected.fractalNote}</p>
+                      </div>
+                    )}
+
+                    {selected.isDeferred && (
+                      <div
+                        className="state"
+                        style={{
+                          background: "var(--defer-bg)",
+                          borderColor: "var(--defer)",
+                        }}
                       >
-                        {override ? "Lưu ghi đè" : "Phê duyệt"}
-                      </Button>
-                    </Panel>
-                  )
+                        <b>Chuyển bác sĩ</b>
+                        <div>{selected.deferReasonLabel}</div>
+                      </div>
+                    )}
+
+                    {selected.review ? (
+                      <div className="ai-section">
+                        <b>Xác nhận của bác sĩ</b>
+                        <div className="detail-grid ai-detail-grid">
+                          <Info k="Hành động" v={selected.review.actionLabel} />
+                          <Info
+                            k="Phân độ cuối"
+                            v={selected.review.finalGradeLabel}
+                          />
+                          <Info k="Bác sĩ" v={selected.review.doctorName} />
+                          <Info
+                            k="Thời điểm"
+                            v={fmtDate(selected.review.createdAt, true)}
+                          />
+                        </div>
+                        {selected.review.reason && <p>{selected.review.reason}</p>}
+                        {can.voidReview(user?.role) && (
+                          <Button kind="danger" onClick={() => setVoidReview(true)}>
+                            Void review
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      canReview && (
+                        <div className="ai-section">
+                          <b>Xác nhận kết quả</b>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={override}
+                              onChange={(e) => setOverride(e.target.checked)}
+                            />
+                            Ghi đè phân độ AI
+                          </label>
+                          {override && (
+                            <>
+                              <Field labelText="Phân độ cuối">
+                                <select
+                                  value={grade}
+                                  onChange={(e) =>
+                                    setGrade(Number(e.target.value))
+                                  }
+                                >
+                                  {grades.map((x, i) => (
+                                    <option key={i} value={i}>
+                                      {x}
+                                    </option>
+                                  ))}
+                                </select>
+                              </Field>
+                              <Field labelText="Lý do" required>
+                                <textarea
+                                  value={reason}
+                                  onChange={(e) => setReason(e.target.value)}
+                                />
+                              </Field>
+                            </>
+                          )}
+                          <Button
+                            kind="primary"
+                            busy={busy}
+                            disabled={override && !reason.trim()}
+                            onClick={review}
+                          >
+                            {override ? "Lưu ghi đè" : "Phê duyệt"}
+                          </Button>
+                        </div>
+                      )
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </LoadState>
-        </Panel>
-      </div>
+              </LoadState>
+            </div>
+          </section>
+        </div>
+      </LoadState>
+
       {voidReview && selected?.review && (
         <ConfirmDialog
           title="Void review"
@@ -326,7 +399,157 @@ export function FundusPage({ imageId }: { imageId: number }) {
   );
 }
 
-function Info({ k, v }: { k: string; v: React.ReactNode }) {
+function useBlobImage(
+  loader: () => Promise<Blob | null>,
+  deps: readonly unknown[],
+) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = "";
+    setUrl("");
+    setError("");
+    setLoading(true);
+
+    loader()
+      .then((blob) => {
+        if (!active || !blob) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // loader is intentionally represented by deps supplied by the caller.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { url, loading, error };
+}
+
+function PanZoomSquare({
+  title,
+  url,
+  loading,
+  error,
+  emptyText = "Không có ảnh.",
+  imageStyle,
+  extraTool,
+}: {
+  title: string;
+  url: string;
+  loading: boolean;
+  error: string;
+  emptyText?: string;
+  imageStyle?: CSSProperties;
+  extraTool?: ReactNode;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  }, [url]);
+
+  const changeZoom = (next: number) => {
+    const value = Math.min(6, Math.max(0.5, next));
+    setZoom(value);
+    if (value <= 1) setOffset({ x: 0, y: 0 });
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!url || zoom <= 1) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: offset.x,
+      originY: offset.y,
+    };
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current || drag.current.pointerId !== e.pointerId) return;
+    setOffset({
+      x: drag.current.originX + e.clientX - drag.current.startX,
+      y: drag.current.originY + e.clientY - drag.current.startY,
+    });
+  };
+
+  const stopDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === e.pointerId) drag.current = null;
+  };
+
+  return (
+    <section className="panel ai-image-square">
+      <div className="panel-h ai-square-header">
+        <span>{title}</span>
+        <span className="badge mono">{Math.round(zoom * 100)}%</span>
+      </div>
+      <div className="fundus-toolbar ai-square-toolbar">
+        <Button onClick={() => changeZoom(zoom + 0.25)}>+</Button>
+        <Button onClick={() => changeZoom(zoom - 0.25)}>−</Button>
+        <Button
+          onClick={() => {
+            setZoom(1);
+            setOffset({ x: 0, y: 0 });
+          }}
+        >
+          100%
+        </Button>
+        {extraTool}
+      </div>
+      <div
+        className={`fundus ai-panzoom ${zoom > 1 ? "is-zoomed" : ""}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={stopDrag}
+        onPointerCancel={stopDrag}
+      >
+        {loading ? (
+          <div>Đang tải ảnh có kiểm quyền…</div>
+        ) : error ? (
+          <div className="ai-image-error">{error}</div>
+        ) : url ? (
+          <img
+            className="viewer-image"
+            src={url}
+            draggable={false}
+            alt={title}
+            style={{
+              transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
+              ...imageStyle,
+            }}
+          />
+        ) : (
+          <div>{emptyText}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Info({ k, v }: { k: string; v: ReactNode }) {
   return (
     <div>
       <small>{k}</small>
@@ -334,6 +557,7 @@ function Info({ k, v }: { k: string; v: React.ReactNode }) {
     </div>
   );
 }
+
 function Lesion({ name, value }: { name: string; value?: number | null }) {
   return (
     <div className="split">

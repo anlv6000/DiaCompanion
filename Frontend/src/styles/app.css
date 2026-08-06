@@ -1359,3 +1359,93 @@ a {
   margin-top: 16px;
   flex-wrap: wrap;
 }
+
+/* AI result viewer: 2x2 square layout with independent pan/zoom images. */
+.ai-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.ai-image-square,
+.ai-diagnosis-square {
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ai-square-header {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ai-square-toolbar {
+  flex: 0 0 auto;
+  min-height: 42px;
+  align-items: center;
+}
+.ai-viewer-check {
+  color: #d7dce2;
+}
+.ai-panzoom {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 0 0 6px 6px;
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+.ai-panzoom.is-zoomed {
+  cursor: grab;
+}
+.ai-panzoom.is-zoomed:active {
+  cursor: grabbing;
+}
+.ai-panzoom .viewer-image {
+  max-width: 92%;
+  max-height: 92%;
+  transform-origin: center center;
+  will-change: transform;
+  pointer-events: none;
+}
+.ai-image-error {
+  padding: 18px;
+  text-align: center;
+  color: #f3b7b7;
+}
+.ai-diagnosis-square .panel-h {
+  flex: 0 0 auto;
+}
+.ai-diagnosis-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.ai-detail-grid {
+  margin-top: 12px;
+}
+.ai-section {
+  border-top: 1px solid var(--hairline);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.ai-section > b {
+  display: block;
+  margin-bottom: 8px;
+}
+.ai-rerun-lock {
+  margin-bottom: 12px;
+  background: var(--canvas);
+}
+@media (max-width: 900px) {
+  .ai-result-grid {
+    grid-template-columns: 1fr;
+  }
+  .ai-image-square,
+  .ai-diagnosis-square {
+    aspect-ratio: auto;
+    min-height: min(82vw, 620px);
+  }
+}
