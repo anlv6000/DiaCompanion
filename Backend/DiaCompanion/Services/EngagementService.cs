@@ -3,11 +3,10 @@ using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-49..52 — thông báo, triệu chứng và phản hồi dịch vụ.</summary>
+/// <summary>UC-49..52 — nghiệp vụ thông báo, triệu chứng và phản hồi dịch vụ.</summary>
 public class EngagementService : BaseService, IEngagementService
 {
     private readonly IRepository _repository;
@@ -35,86 +34,45 @@ public class EngagementService : BaseService, IEngagementService
 
     public async Task<ActionResult<PagedResult<NotificationDto>>> Notifications(PageQuery page)
     {
-        var userId = _me.RequireId();
-        var now = _clock.UtcNow;
-        var query = _repository.Notifications.AsNoTracking()
-            .Where(n => n.UserId == userId && (n.ExpiresAt == null || n.ExpiresAt > now));
-
-        var total = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(n => n.CreatedAt)
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .Select(n => new NotificationDto
-            {
-                Id = n.Id,
-                Type = (byte)n.Type,
-                Title = n.Title,
-                Message = n.Message,
-                LinkEntity = n.LinkEntity,
-                LinkEntityId = n.LinkEntityId,
-                IsRead = n.IsRead,
-                CreatedAt = n.CreatedAt
-            }).ToListAsync();
-
+        var result = await _repository.GetNotificationPageAsync(_me.RequireId(), _clock.UtcNow, page);
         return Ok(new PagedResult<NotificationDto>
         {
-            Items = items,
+            Items = result.Items.ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = result.Total
         });
     }
 
     public async Task<IActionResult> UnreadCount()
     {
-        var userId = _me.RequireId();
-        var now = _clock.UtcNow;
-        var count = await _repository.Notifications.CountAsync(n =>
-            n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > now));
+        var count = await _repository.GetUnreadNotificationCountAsync(_me.RequireId(), _clock.UtcNow);
         return Ok(new { count });
     }
 
     public async Task<IActionResult> MarkRead(long id)
     {
-        var userId = _me.RequireId();
-        var notification = await _repository.Notifications
-            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId)
+        var notification = await _repository.GetNotificationForUpdateAsync(id, _me.RequireId())
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy thông báo.");
-
         if (!notification.IsRead)
         {
             notification.IsRead = true;
             notification.ReadAt = _clock.UtcNow;
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
         }
-
         return Ok(new { message = "Đã đánh dấu đã đọc." });
     }
 
     public async Task<IActionResult> MarkAllRead()
     {
-        var userId = _me.RequireId();
-        var now = _clock.UtcNow;
-        await _repository.Notifications
-            .Where(n => n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > now))
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(n => n.IsRead, true)
-                .SetProperty(n => n.ReadAt, now));
+        await _repository.MarkAllNotificationsReadAsync(_me.RequireId(), _clock.UtcNow);
         return Ok(new { message = "Đã đánh dấu tất cả đã đọc." });
     }
 
-    /// <summary>UC-50 — hệ thống sinh hướng dẫn ngay và chuyển đúng bác sĩ phụ trách.</summary>
     public async Task<ActionResult<SymptomReportDto>> ReportSymptom(CreateSymptomRequest req)
     {
         var patientId = RequireMyPatientId(_me);
-        var responsibleDoctorId = await _repository.Visits.AsNoTracking()
-            .Where(v => v.PatientId == patientId && v.DoctorId != null)
-            .OrderByDescending(v => v.VisitDate)
-            .ThenByDescending(v => v.Id)
-            .Select(v => v.DoctorId)
-            .FirstOrDefaultAsync();
-
+        var responsibleDoctorId = await _repository.GetLatestResponsibleDoctorIdAsync(patientId);
         var report = new SymptomReport
         {
             PatientId = patientId,
@@ -127,50 +85,31 @@ public class EngagementService : BaseService, IEngagementService
             CreatedAt = _clock.UtcNow
         };
 
-        var strategy = _repository.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
+        await _repository.ExecuteInTransactionAsync(async () =>
         {
-            await using var transaction = await _repository.Database.BeginTransactionAsync();
-            try
+            _repository.Add(report);
+            await _repository.CommitAsync();
+
+            if (responsibleDoctorId is int doctorId)
             {
-                _repository.SymptomReports.Add(report);
-                await _repository.SaveChangesAsync();
-
-                if (responsibleDoctorId is int doctorId)
-                {
-                    var patient = await _repository.Patients.AsNoTracking()
-                        .FirstAsync(p => p.Id == patientId);
-                    _notify.Push(
-                        doctorId,
-                        NotificationType.Result,
-                        req.Severity == SymptomSeverity.Severe
-                            ? "Báo triệu chứng NẶNG"
-                            : "Bệnh nhân báo triệu chứng",
-                        $"{patient.FullName} ({patient.Code}): {report.Symptoms}",
-                        nameof(SymptomReport),
-                        report.Id);
-                }
-
-                await _audit.LogAsync(
-                    AuditAction.SymptomReport,
+                var patient = await _repository.GetPatientAsync(patientId)
+                    ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+                _notify.Push(
+                    doctorId,
+                    NotificationType.Result,
+                    req.Severity == SymptomSeverity.Severe ? "Báo triệu chứng NẶNG" : "Bệnh nhân báo triệu chứng",
+                    $"{patient.FullName} ({patient.Code}): {report.Symptoms}",
                     nameof(SymptomReport),
-                    report.Id,
-                    null,
-                    new
-                    {
-                        report.PatientId,
-                        report.ResponsibleDoctorId,
-                        severity = report.Severity.ToString()
-                    });
+                    report.Id);
+            }
 
-                await _repository.SaveChangesAsync();
-                await transaction.CommitAsync();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+            await _audit.LogAsync(
+                AuditAction.SymptomReport,
+                nameof(SymptomReport),
+                report.Id,
+                null,
+                new { report.PatientId, report.ResponsibleDoctorId, severity = report.Severity.ToString() });
+            await _repository.CommitAsync();
         });
 
         return Ok(await GetSymptomDtoAsync(report.Id));
@@ -182,74 +121,42 @@ public class EngagementService : BaseService, IEngagementService
         PageQuery? page = null)
     {
         page ??= new PageQuery();
-        var query = _repository.SymptomReports.AsNoTracking()
-            .Include(s => s.Patient)
-            .Include(s => s.ResponsibleDoctor)
-            .AsQueryable();
+        int? patientScope = null;
+        int? doctorScope = null;
 
-        if (_me.Role == UserRole.Patient)
+        if (IsPatientOnly(_me))
         {
-            var myPatientId = RequireMyPatientId(_me);
-            query = query.Where(s => s.PatientId == myPatientId);
+            patientScope = RequireMyPatientId(_me);
         }
-        else if (_me.Role == UserRole.Doctor)
+        else if (_me.IsInRole(Roles.Doctor))
         {
-            var doctorId = _me.RequireId();
-            query = query.Where(s => s.ResponsibleDoctorId == doctorId);
-            if (patientId is int requestedPatientId)
-                query = query.Where(s => s.PatientId == requestedPatientId);
+            doctorScope = _me.RequireId();
+            patientScope = patientId;
         }
         else
         {
-            throw AppException.Forbidden(Msg.Forbidden, "Chỉ bệnh nhân và bác sĩ phụ trách được xem báo cáo triệu chứng.");
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Chỉ bệnh nhân và bác sĩ phụ trách được xem báo cáo triệu chứng.");
         }
 
-        if (pendingOnly)
-            query = query.Where(s => s.DoctorReply == null);
-
-        var total = await query.CountAsync();
-        var rows = await query
-            .OrderByDescending(s => s.Severity)
-            .ThenByDescending(s => s.CreatedAt)
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .ToListAsync();
-
-        var replierIds = rows
-            .Where(r => r.RepliedBy != null)
-            .Select(r => r.RepliedBy!.Value)
-            .Distinct()
-            .ToList();
-        var repliers = await _repository.Users.AsNoTracking()
-            .Where(u => replierIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.FullName);
-
-        var items = rows.Select(r => MapSymptom(
-            r,
-            r.RepliedBy is int replierId && repliers.TryGetValue(replierId, out var name)
-                ? name
-                : null)).ToList();
-
+        var result = await _repository.GetSymptomPageAsync(patientScope, doctorScope, pendingOnly, page);
+        var items = result.Items.Select(x => MapSymptom(x.Report, x.ReplierName)).ToList();
         return Ok(new PagedResult<SymptomReportDto>
         {
             Items = items,
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = result.Total
         });
     }
 
     public async Task<IActionResult> Reply(int id, DoctorReplyRequest req)
     {
         var doctorId = _me.RequireId();
-        var report = await _repository.SymptomReports
-            .Include(s => s.Patient)
-            .FirstOrDefaultAsync(s => s.Id == id)
+        var report = await _repository.GetSymptomReportAsync(id, tracking: true, includePatient: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy báo cáo triệu chứng.");
-
         if (report.ResponsibleDoctorId != doctorId)
-            throw AppException.Forbidden(
-                Msg.Forbidden,
+            throw AppException.Forbidden(Msg.Forbidden,
                 "Chỉ bác sĩ phụ trách tại thời điểm báo cáo được phản hồi triệu chứng này.");
 
         _repository.ApplyOriginalRowVersion(report, req.RowVersion);
@@ -259,7 +166,6 @@ public class EngagementService : BaseService, IEngagementService
         report.RepliedAt = _clock.UtcNow;
 
         if (report.Patient is not null)
-        {
             _notify.PushToPatient(
                 report.Patient,
                 NotificationType.Result,
@@ -267,7 +173,6 @@ public class EngagementService : BaseService, IEngagementService
                 "Bác sĩ phụ trách đã phản hồi báo cáo triệu chứng của bạn.",
                 nameof(SymptomReport),
                 report.Id);
-        }
 
         await _audit.LogAsync(
             AuditAction.SymptomReply,
@@ -275,31 +180,24 @@ public class EngagementService : BaseService, IEngagementService
             report.Id,
             new { doctorReply = oldReply },
             new { report.DoctorReply, report.RepliedBy });
-        await _repository.SaveChangesAsync();
+        if (!await _repository.TryCommitAsync())
+            throw AppException.Conflict(Msg.StaleVersion, "Báo cáo triệu chứng đã thay đổi. Vui lòng tải lại.");
 
-        return Ok(new
-        {
-            message = "Đã gửi phản hồi tới bệnh nhân.",
-            rowVersion = report.ToRowVersion()
-        });
+        return Ok(new { message = "Đã gửi phản hồi tới bệnh nhân.", rowVersion = report.ToRowVersion() });
     }
 
-    /// <summary>UC-51 — chỉ cho phản hồi lượt khám đã hoàn tất của chính bệnh nhân.</summary>
     public async Task<IActionResult> CreateFeedback(CreateFeedbackRequest req)
     {
         var patientId = RequireMyPatientId(_me);
-
         if (req.VisitId is int visitId)
         {
-            var visit = await _repository.Visits.AsNoTracking()
-                .FirstOrDefaultAsync(v => v.Id == visitId)
+            var visit = await _repository.GetVisitForUpdateAsync(visitId)
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
-
             if (visit.PatientId != patientId)
                 throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền phản hồi lượt khám này.");
             if (visit.Status != VisitStatus.Completed)
                 throw AppException.BadRequest(Msg.ApptImmutable, "Chỉ có thể phản hồi sau khi lượt khám đã hoàn tất.");
-            if (await _repository.Feedbacks.AnyAsync(f => f.PatientId == patientId && f.VisitId == visitId))
+            if (await _repository.FeedbackExistsAsync(patientId, visitId))
                 throw AppException.Conflict(Msg.ConcurrentEdit, "Bạn đã gửi phản hồi cho lượt khám này.");
         }
 
@@ -312,29 +210,18 @@ public class EngagementService : BaseService, IEngagementService
             Comment = req.Comment?.Trim(),
             CreatedAt = _clock.UtcNow
         };
-        var strategy = _repository.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _repository.Database.BeginTransactionAsync();
-            try
-            {
-                _repository.Feedbacks.Add(feedback);
-                await _repository.SaveChangesAsync();
 
-                await _audit.LogAsync(
-                    AuditAction.FeedbackCreate,
-                    nameof(Feedback),
-                    feedback.Id,
-                    null,
-                    new { feedback.PatientId, feedback.VisitId, feedback.Rating });
-                await _repository.SaveChangesAsync();
-                await transaction.CommitAsync();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+        await _repository.ExecuteInTransactionAsync(async () =>
+        {
+            _repository.Add(feedback);
+            await _repository.CommitAsync();
+            await _audit.LogAsync(
+                AuditAction.FeedbackCreate,
+                nameof(Feedback),
+                feedback.Id,
+                null,
+                new { feedback.PatientId, feedback.VisitId, feedback.Rating });
+            await _repository.CommitAsync();
         });
 
         return Ok(new { message = "Cảm ơn bạn đã gửi phản hồi.", feedbackId = feedback.Id });
@@ -347,91 +234,38 @@ public class EngagementService : BaseService, IEngagementService
         DateOnly? to,
         PageQuery page)
     {
-        var query = _repository.Feedbacks.AsNoTracking()
-            .Include(f => f.Patient)
-            .AsQueryable();
-
-        if (rating is byte value)
-            query = query.Where(f => f.Rating == value);
-        if (from is DateOnly fromDate)
-        {
-            var fromUtc = _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue));
-            query = query.Where(f => f.CreatedAt >= fromUtc);
-        }
-        if (to is DateOnly toDate)
-        {
-            var toExclusiveUtc = _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
-            query = query.Where(f => f.CreatedAt < toExclusiveUtc);
-        }
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var keyword = q.Trim();
-            var normalized = VietnameseText.RemoveDiacritics(keyword);
-            query = query.Where(f =>
-                EF.Functions.Like(f.Patient!.Code, $"%{keyword}%") ||
-                EF.Functions.Like(f.Patient.FullNameSearch!, $"%{normalized}%") ||
-                (f.Comment != null && EF.Functions.Like(f.Comment, $"%{keyword}%")));
-        }
-
-        var total = await query.CountAsync();
-        query = page.Sort?.Trim().ToLowerInvariant() switch
-        {
-            "rating" => page.Desc
-                ? query.OrderByDescending(f => f.Rating).ThenByDescending(f => f.CreatedAt)
-                : query.OrderBy(f => f.Rating).ThenByDescending(f => f.CreatedAt),
-            "patient" => page.Desc
-                ? query.OrderByDescending(f => f.Patient!.FullName).ThenByDescending(f => f.CreatedAt)
-                : query.OrderBy(f => f.Patient!.FullName).ThenByDescending(f => f.CreatedAt),
-            _ => page.Desc
-                ? query.OrderBy(f => f.CreatedAt)
-                : query.OrderByDescending(f => f.CreatedAt)
-        };
-
-        var items = await query
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .Select(f => new FeedbackDto
-            {
-                Id = f.Id,
-                PatientId = f.PatientId,
-                PatientCode = f.Patient!.Code,
-                PatientName = f.Patient.FullName,
-                VisitId = f.VisitId,
-                Rating = f.Rating,
-                Tags = f.Tags,
-                Comment = f.Comment,
-                CreatedAt = f.CreatedAt
-            }).ToListAsync();
-
+        DateTime? fromUtc = from is DateOnly fromDate
+            ? _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue))
+            : null;
+        DateTime? toExclusiveUtc = to is DateOnly toDate
+            ? _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue))
+            : null;
+        var normalized = string.IsNullOrWhiteSpace(q) ? null : VietnameseText.RemoveDiacritics(q.Trim());
+        var result = await _repository.GetFeedbackPageAsync(rating, q, normalized, fromUtc, toExclusiveUtc, page);
         return Ok(new PagedResult<FeedbackDto>
         {
-            Items = items,
+            Items = result.Items.ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = result.Total
         });
     }
 
     public async Task<IActionResult> FeedbackSummary()
     {
-        var ratings = await _repository.Feedbacks.AsNoTracking()
-            .Select(f => f.Rating)
-            .ToListAsync();
+        var ratings = await _repository.GetFeedbackRatingsAsync();
         return Ok(new
         {
             total = ratings.Count,
             average = ratings.Count > 0 ? Math.Round(ratings.Average(r => (double)r), 2) : 0,
-            distribution = Enumerable.Range(1, 5)
-                .ToDictionary(i => i.ToString(), i => ratings.Count(r => r == i))
+            distribution = Enumerable.Range(1, 5).ToDictionary(i => i.ToString(), i => ratings.Count(r => r == i))
         });
     }
 
     private async Task<SymptomReportDto> GetSymptomDtoAsync(int id)
     {
-        var report = await _repository.SymptomReports.AsNoTracking()
-            .Include(s => s.Patient)
-            .Include(s => s.ResponsibleDoctor)
-            .FirstAsync(s => s.Id == id);
+        var report = await _repository.GetSymptomReportAsync(id, tracking: false, includePatient: true)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy báo cáo triệu chứng.");
         return MapSymptom(report, null);
     }
 
@@ -453,8 +287,6 @@ public class EngagementService : BaseService, IEngagementService
         RowVersion = report.ToRowVersion(),
         State = report.DoctorReply is not null
             ? "Bác sĩ đã trả lời"
-            : report.ResponsibleDoctorId is null
-                ? "Chưa xác định bác sĩ phụ trách"
-                : "Chờ bác sĩ xem"
+            : report.ResponsibleDoctorId is null ? "Chưa xác định bác sĩ phụ trách" : "Chờ bác sĩ xem"
     };
 }

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -62,6 +63,7 @@ builder.Services.AddScoped<IMonitoringService, MonitoringService>();
 builder.Services.AddScoped<IPatientsService, PatientsService>();
 builder.Services.AddScoped<IPrescriptionsService, PrescriptionsService>();
 builder.Services.AddScoped<IRecheckService, RecheckService>();
+builder.Services.AddScoped<IReceptionService, ReceptionService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();
 builder.Services.AddScoped<IVisitsService, VisitsService>();
@@ -150,6 +152,43 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = jwtService.SigningKey,
             // Mặc định .NET cho lệch 5 phút; siết lại để phiên hết hạn đúng lúc
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+        opt.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                if (principal is null
+                    || !string.Equals(principal.FindFirst("token_type")?.Value, "access", StringComparison.Ordinal)
+                    || !int.TryParse(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+                {
+                    context.Fail("Token không hợp lệ.");
+                    return;
+                }
+
+                var repository = context.HttpContext.RequestServices.GetRequiredService<IRepository>();
+                var snapshot = await repository.GetAuthorizationSnapshotAsync(userId, context.HttpContext.RequestAborted);
+                if (snapshot is null || !snapshot.UserIsActive || snapshot.Roles.Count == 0)
+                {
+                    context.Fail("Tài khoản hoặc vai trò không còn hoạt động.");
+                    return;
+                }
+
+                // Không tin role claim cũ trong JWT. Mỗi request xác thực lại role
+                // đang active từ dbo.Roles + dbo.UserRoles trước khi [Authorize(Roles=...)] chạy.
+                if (principal.Identity is ClaimsIdentity identity)
+                {
+                    foreach (var claim in identity.FindAll(ClaimTypes.Role).ToArray()) identity.RemoveClaim(claim);
+                    foreach (var claim in identity.FindAll("patientId").ToArray()) identity.RemoveClaim(claim);
+                    foreach (var claim in identity.FindAll("mustChangePassword").ToArray()) identity.RemoveClaim(claim);
+                    foreach (var claim in identity.FindAll("fullName").ToArray()) identity.RemoveClaim(claim);
+
+                    foreach (var role in snapshot.Roles) identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                    identity.AddClaim(new Claim("fullName", snapshot.FullName));
+                    if (snapshot.PatientId is int patientId) identity.AddClaim(new Claim("patientId", patientId.ToString()));
+                    if (snapshot.MustChangePassword) identity.AddClaim(new Claim("mustChangePassword", "true"));
+                }
+            }
         };
     }); 
 

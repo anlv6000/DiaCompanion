@@ -1,7 +1,6 @@
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
@@ -62,7 +61,7 @@ public class AdherenceService : IAdherenceService
                 foreach (var hour in hours)
                 {
                     var localDateTime = localDate.AddHours(hour);
-                    _repository.MedicationLogs.Add(new MedicationLog
+                    _repository.Add(new MedicationLog
                     {
                         PatientId = prescription.PatientId,
                         PrescriptionItemId = item.Id,
@@ -90,16 +89,8 @@ public class AdherenceService : IAdherenceService
         if (fromDate > toDate)
             throw AppException.BadRequest(Msg.InvalidData, "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
 
-        var query = _repository.MedicationLogs.AsNoTracking()
-            .Where(m => m.PatientId == patientId
-                        && m.ScheduledLocalDate >= fromDate
-                        && m.ScheduledLocalDate <= toDate
-                        && m.Status != MedicationStatus.Cancelled);
-
-        if (prescriptionId is int pid)
-            query = query.Where(m => m.PrescriptionItem!.PrescriptionId == pid);
-
-        var statuses = await query.Select(m => m.Status).ToListAsync();
+        var statuses = await _repository.GetMedicationStatusesAsync(
+            patientId, fromDate, toDate, prescriptionId);
         var taken = statuses.Count(s => s == MedicationStatus.Taken);
         var missed = statuses.Count(s => s == MedicationStatus.Missed);
         var skipped = statuses.Count(s => s == MedicationStatus.Skipped);

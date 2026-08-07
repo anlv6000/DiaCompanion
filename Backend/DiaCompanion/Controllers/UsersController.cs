@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
-using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Services;
 
 namespace DiaCompanion.Api.Controllers;
@@ -19,7 +18,7 @@ public class UsersController : BaseApiController
     [HttpGet]
     [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
-    [FromQuery] string? q, [FromQuery] UserRole? role, [FromQuery] bool? isActive,
+    [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
     [FromQuery] PageQuery page)
     {
         return await _service.List(q, role, isActive, page);

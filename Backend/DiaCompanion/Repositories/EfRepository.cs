@@ -1,45 +1,84 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Infrastructure;
+using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Data;
-using DiaCompanion.Api.Entities;
 
 namespace DiaCompanion.Api.Repositories;
 
-/// <summary>EF Core implementation of the repository/unit-of-work boundary.</summary>
-public sealed class EfRepository : IRepository
+/// <summary>
+/// EF Core implementation. Đây là lớp duy nhất (cùng các partial của nó)
+/// được phép làm việc trực tiếp với AppDbContext trong application layer.
+/// </summary>
+public sealed partial class EfRepository : IRepository
 {
     private readonly AppDbContext _db;
 
     public EfRepository(AppDbContext db) => _db = db;
 
-    public DbSet<User> Users => _db.Users;
-    public DbSet<OtpCode> OtpCodes => _db.OtpCodes;
-    public DbSet<AuditLog> AuditLogs => _db.AuditLogs;
-    public DbSet<SystemConfig> SystemConfigs => _db.SystemConfigs;
-    public DbSet<Patient> Patients => _db.Patients;
-    public DbSet<Visit> Visits => _db.Visits;
-    public DbSet<FundusImage> FundusImages => _db.FundusImages;
-    public DbSet<ModelVersion> ModelVersions => _db.ModelVersions;
-    public DbSet<AiDiagnosis> AiDiagnoses => _db.AiDiagnoses;
-    public DbSet<DiagnosisReview> DiagnosisReviews => _db.DiagnosisReviews;
-    public DbSet<Prescription> Prescriptions => _db.Prescriptions;
-    public DbSet<PrescriptionItem> PrescriptionItems => _db.PrescriptionItems;
-    public DbSet<MedicationLog> MedicationLogs => _db.MedicationLogs;
-    public DbSet<HealthMetric> HealthMetrics => _db.HealthMetrics;
-    public DbSet<LifestyleLog> LifestyleLogs => _db.LifestyleLogs;
-    public DbSet<SymptomReport> SymptomReports => _db.SymptomReports;
-    public DbSet<Notification> Notifications => _db.Notifications;
-    public DbSet<BlogPost> BlogPosts => _db.BlogPosts;
-    public DbSet<Feedback> Feedbacks => _db.Feedbacks;
-    public DbSet<DoctorShift> DoctorShifts => _db.DoctorShifts;
-    public DatabaseFacade Database => _db.Database;
+    public void Add<TEntity>(TEntity entity) where TEntity : class => _db.Set<TEntity>().Add(entity);
 
-    
+    public void AddRange<TEntity>(IEnumerable<TEntity> entities) where TEntity : class =>
+        _db.Set<TEntity>().AddRange(entities);
 
-    public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class => _db.Entry(entity);
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+    public void Remove<TEntity>(TEntity entity) where TEntity : class => _db.Set<TEntity>().Remove(entity);
+
+    public void ApplyOriginalRowVersion<TEntity>(TEntity entity, string rowVersion)
+        where TEntity : class
+    {
+        _db.Entry(entity).Property("RowVer").OriginalValue = RowVersionCodec.Decode(rowVersion);
+    }
+
+    public Task<int> CommitAsync(CancellationToken cancellationToken = default) =>
         _db.SaveChangesAsync(cancellationToken);
+
+    public async Task<bool> TryCommitAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+    }
+
     public Task<bool> CanConnectAsync(CancellationToken cancellationToken = default) =>
         _db.Database.CanConnectAsync(cancellationToken);
+
+    public async Task ExecuteInTransactionAsync(
+        Func<Task> action,
+        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default)
+    {
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(isolationLevel, cancellationToken);
+            try
+            {
+                await action();
+                await tx.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<Task<TResult>> action,
+        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default)
+    {
+        TResult? result = default;
+        await ExecuteInTransactionAsync(async () =>
+        {
+            result = await action();
+        }, isolationLevel, cancellationToken);
+        return result!;
+    }
 }

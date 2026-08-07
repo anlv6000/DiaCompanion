@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Entities;
@@ -64,18 +63,17 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRole = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
         // Chỉ Admin được thu hồi toàn bộ hồ sơ bệnh nhân
-        if (currentRole != UserRole.Admin && currentRole != UserRole.Doctor)
+        if (!_me.IsInRole(Roles.Admin, Roles.Doctor))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
                 "Chỉ quản trị viên hoặc bác sĩ được thu hồi hồ sơ bệnh nhân.");
         }
 
-        var patient = await _repository.Patients
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var patient = await _repository.GetPatientForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.PatientNotFound,
                 "Không tìm thấy hồ sơ bệnh nhân.");
@@ -111,11 +109,7 @@ public class VoidService : IVoidService
          * FundusImage -> AiDiagnosis -> DiagnosisReview
          * Prescription -> MedicationLogs Pending
          */
-        var visits = await _repository.Visits
-            .Where(x =>
-                x.PatientId == patient.Id &&
-                !x.IsVoided)
-            .ToListAsync();
+        var visits = await _repository.GetActiveVisitsForPatientAsync(patient.Id);
 
         foreach (var visit in visits)
         {
@@ -128,12 +122,7 @@ public class VoidService : IVoidService
          * Ảnh không gắn với Visit sẽ không được xử lý qua danh sách visits,
          * nên phải void riêng.
          */
-        var orphanImages = await _repository.FundusImages
-            .Where(x =>
-                x.PatientId == patient.Id &&
-                x.VisitId == null &&
-                !x.IsVoided)
-            .ToListAsync();
+        var orphanImages = await _repository.GetActiveOrphanImagesForPatientAsync(patient.Id);
 
         foreach (var image in orphanImages)
         {
@@ -145,8 +134,7 @@ public class VoidService : IVoidService
         // Khóa tài khoản đăng nhập của bệnh nhân
         if (patient.UserId is int userId)
         {
-            var user = await _repository.Users
-                .FirstOrDefaultAsync(x => x.Id == userId);
+            var user = await _repository.GetUserForUpdateAsync(userId);
 
             if (user is not null && user.IsActive)
             {
@@ -167,20 +155,14 @@ public class VoidService : IVoidService
                 patient.UserId,
                 isVoided = patient.IsVoided,
                 voidedBy = currentUserId,
-                role = currentRole
+                role = currentRoles
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Hồ sơ bệnh nhân hoặc dữ liệu liên quan đã được người khác cập nhật. Vui lòng tải lại trước khi thử lại.");
-        }
 
         return Convert.ToBase64String(patient.RowVer);
     }
@@ -198,8 +180,7 @@ public class VoidService : IVoidService
                 "Vui lòng nhập lý do thu hồi lượt khám.");
         }
 
-        var visit = await _repository.Visits
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var visit = await _repository.GetVisitForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.LoadFailed,
                 "Không tìm thấy lượt khám.");
@@ -213,12 +194,10 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRoleId = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
-        switch (currentRoleId)
+        if (_me.IsInRole(Roles.Doctor))
         {
-            case UserRole.Doctor:
-                {
                     // E4 - Bác sĩ phải là bác sĩ được phân công
                     if (visit.DoctorId != currentUserId)
                     {
@@ -227,11 +206,9 @@ public class VoidService : IVoidService
                             "Bác sĩ chỉ được thu hồi lượt khám do mình phụ trách.");
                     }
 
-                    break;
-                }
-
-            case UserRole.Receptionist:
-                {
+        }
+        else if (_me.IsInRole(Roles.Receptionist))
+        {
                     // E4 - Lễ tân chỉ được void lượt khám đang mở
                     if (visit.Status != VisitStatus.InProgress)
                     {
@@ -241,12 +218,10 @@ public class VoidService : IVoidService
                     }
 
                     // Không được tồn tại bất kỳ ảnh nào của lượt khám
-                    var hasFundusImage = await _repository.FundusImages
-                        .AnyAsync(x => x.VisitId == visit.Id);
+                    var hasFundusImage = await _repository.VisitHasFundusImageAsync(visit.Id);
 
                     // Không được tồn tại bất kỳ đơn thuốc nào của lượt khám
-                    var hasPrescription = await _repository.Prescriptions
-                        .AnyAsync(x => x.VisitId == visit.Id);
+                    var hasPrescription = await _repository.VisitHasPrescriptionAsync(visit.Id);
 
                     if (hasFundusImage || hasPrescription)
                     {
@@ -255,16 +230,10 @@ public class VoidService : IVoidService
                             "Lễ tân không được thu hồi lượt khám đã có ảnh đáy mắt hoặc dữ liệu đơn thuốc.");
                     }
 
-                    break;
-                }
-
-            default:
-                {
-                    // E2 - Insufficient permission
-                    throw AppException.Forbidden(
-                        Msg.Forbidden,
-                        "Bạn không có quyền thu hồi lượt khám.");
-                }
+        }
+        else
+        {
+            throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền thu hồi lượt khám.");
         }
 
         /*
@@ -295,21 +264,14 @@ public class VoidService : IVoidService
             {
                 isVoided = true,
                 voidedBy = currentUserId,
-                roleId = currentRoleId
+                roles = currentRoles
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // E-LU - Lost update / stale version
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Lượt khám đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-        }
 
         // Sau SaveChanges, SQL Server đã tạo RowVer mới
         return Convert.ToBase64String(visit.RowVer);
@@ -322,9 +284,7 @@ public class VoidService : IVoidService
 
         Mark(v, reason);
 
-        var images = await _repository.FundusImages
-            .Where(f => f.VisitId == v.Id)
-            .ToListAsync();
+        var images = await _repository.GetActiveImagesForVisitAsync(v.Id);
 
         foreach (var f in images)
         {
@@ -333,9 +293,7 @@ public class VoidService : IVoidService
                 $"Thu hồi theo lượt khám: {reason}");
         }
 
-        var prescriptions = await _repository.Prescriptions
-            .Where(p => p.VisitId == v.Id)
-            .ToListAsync();
+        var prescriptions = await _repository.GetActivePrescriptionsForVisitAsync(v.Id);
 
         foreach (var p in prescriptions)
         {
@@ -357,19 +315,17 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRole = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
         // Chỉ Admin và Doctor được void ảnh
-        if (currentRole != UserRole.Admin &&
-            currentRole != UserRole.Doctor)
+        if (!_me.IsInRole(Roles.Admin, Roles.Doctor))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
                 "Chỉ quản trị viên hoặc bác sĩ được thu hồi ảnh đáy mắt.");
         }
 
-        var image = await _repository.FundusImages
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var image = await _repository.GetImageForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.LoadFailed,
                 "Không tìm thấy ảnh đáy mắt.");
@@ -388,7 +344,7 @@ public class VoidService : IVoidService
          * Ảnh chưa gắn Visit không xác định được bác sĩ phụ trách,
          * nên chỉ Admin được void.
          */
-        if (currentRole == UserRole.Doctor)
+        if (_me.IsInRole(Roles.Doctor) && !_me.IsInRole(Roles.Admin))
         {
             if (image.VisitId is not int visitId)
             {
@@ -397,10 +353,7 @@ public class VoidService : IVoidService
                     "Bác sĩ không được thu hồi ảnh chưa gắn với lượt khám.");
             }
 
-            var isAssignedDoctor = await _repository.Visits
-                .AnyAsync(x =>
-                    x.Id == visitId &&
-                    x.DoctorId == currentUserId);
+            var isAssignedDoctor = await _repository.IsVisitAssignedToDoctorAsync(visitId, currentUserId);
 
             if (!isAssignedDoctor)
             {
@@ -438,20 +391,14 @@ public class VoidService : IVoidService
                 image.VisitId,
                 isVoided = image.IsVoided,
                 voidedBy = currentUserId,
-                role = currentRole
+                role = currentRoles
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Ảnh đáy mắt đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-        }
 
         return Convert.ToBase64String(image.RowVer);
     }
@@ -465,11 +412,7 @@ public class VoidService : IVoidService
 
         Mark(image, reason);
 
-        var diagnoses = await _repository.AiDiagnoses
-            .Where(x =>
-                x.FundusImageId == image.Id &&
-                !x.IsVoided)
-            .ToListAsync();
+        var diagnoses = await _repository.GetActiveDiagnosesForImageAsync(image.Id);
 
         foreach (var diagnosis in diagnoses)
         {
@@ -493,19 +436,17 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRole = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
         // Chỉ Admin và Doctor được thực hiện
-        if (currentRole != UserRole.Admin &&
-            currentRole != UserRole.Doctor)
+        if (!_me.IsInRole(Roles.Admin, Roles.Doctor))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
                 "Chỉ quản trị viên hoặc bác sĩ được thu hồi kết quả AI.");
         }
 
-        var diagnosis = await _repository.AiDiagnoses
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var diagnosis = await _repository.GetDiagnosisForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.LoadFailed,
                 "Không tìm thấy kết quả AI.");
@@ -518,9 +459,7 @@ public class VoidService : IVoidService
                 "Kết quả AI này đã được thu hồi trước đó.");
         }
 
-        var image = await _repository.FundusImages
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == diagnosis.FundusImageId)
+        var image = await _repository.GetImageForVoidAsync(diagnosis.FundusImageId)
             ?? throw AppException.Conflict(
                 Msg.LoadFailed,
                 "Không tìm thấy ảnh đáy mắt liên quan.");
@@ -542,7 +481,7 @@ public class VoidService : IVoidService
          *
          * Admin không bị giới hạn bởi DoctorId.
          */
-        if (currentRole == UserRole.Doctor)
+        if (_me.IsInRole(Roles.Doctor) && !_me.IsInRole(Roles.Admin))
         {
             if (image.VisitId is not int visitId)
             {
@@ -551,11 +490,7 @@ public class VoidService : IVoidService
                     "Bác sĩ không được thu hồi kết quả AI chưa gắn với lượt khám.");
             }
 
-            var isAssignedDoctor = await _repository.Visits
-                .AnyAsync(x =>
-                    x.Id == visitId &&
-                    x.DoctorId == currentUserId &&
-                    !x.IsVoided);
+            var isAssignedDoctor = await _repository.IsVisitAssignedToDoctorAsync(visitId, currentUserId);
 
             if (!isAssignedDoctor)
             {
@@ -602,21 +537,14 @@ public class VoidService : IVoidService
                 diagnosis.FundusImageId,
                 isVoided = diagnosis.IsVoided,
                 voidedBy = currentUserId,
-                role = currentRole
+                role = currentRoles
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // E-LU - HTTP 409 / MSG-43
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Kết quả AI đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-        }
 
         return Convert.ToBase64String(diagnosis.RowVer);
     }
@@ -630,11 +558,7 @@ public class VoidService : IVoidService
 
         Mark(diagnosis, reason);
 
-        var reviews = await _repository.DiagnosisReviews
-            .Where(x =>
-                x.AiDiagnosisId == diagnosis.Id &&
-                !x.IsVoided)
-            .ToListAsync();
+        var reviews = await _repository.GetActiveReviewsForDiagnosisAsync(diagnosis.Id);
 
         foreach (var review in reviews)
         {
@@ -658,19 +582,17 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRole = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
         // Primary Actor chỉ có Doctor
-        if (currentRole != UserRole.Doctor)
+        if (!_me.IsInRole(Roles.Doctor))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
                 "Chỉ bác sĩ phụ trách mới được thu hồi bản duyệt chẩn đoán.");
         }
 
-        var review = await _repository.DiagnosisReviews
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var review = await _repository.GetReviewForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.LoadFailed,
                 "Không tìm thấy bản duyệt chẩn đoán.");
@@ -693,9 +615,7 @@ public class VoidService : IVoidService
          *      -> DoctorId
          */
 
-        var diagnosis = await _repository.AiDiagnoses
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == review.AiDiagnosisId)
+        var diagnosis = await _repository.GetDiagnosisForVoidAsync(review.AiDiagnosisId)
             ?? throw AppException.Conflict(
                 Msg.LoadFailed,
                 "Không tìm thấy kết quả AI liên quan đến bản duyệt.");
@@ -707,9 +627,7 @@ public class VoidService : IVoidService
                 "Không thể thay đổi bản duyệt của một kết quả AI đã bị thu hồi.");
         }
 
-        var image = await _repository.FundusImages
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == diagnosis.FundusImageId)
+        var image = await _repository.GetImageForVoidAsync(diagnosis.FundusImageId)
             ?? throw AppException.Conflict(
                 Msg.LoadFailed,
                 "Không tìm thấy ảnh đáy mắt liên quan.");
@@ -728,9 +646,7 @@ public class VoidService : IVoidService
                 "Ảnh đáy mắt chưa được liên kết với lượt khám.");
         }
 
-        var visit = await _repository.Visits
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == visitId)
+        var visit = await _repository.GetVisitForVoidAsync(visitId)
             ?? throw AppException.Conflict(
                 Msg.LoadFailed,
                 "Không tìm thấy lượt khám liên quan.");
@@ -788,21 +704,14 @@ public class VoidService : IVoidService
                 review.AiDiagnosisId,
                 isVoided = review.IsVoided,
                 voidedBy = currentUserId,
-                role = currentRole
+                role = currentRoles
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // E-LU - HTTP 409, MSG-43
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Bản duyệt đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-        }
 
         // SQL Server đã sinh RowVer mới sau UPDATE
         return Convert.ToBase64String(review.RowVer);
@@ -822,19 +731,17 @@ public class VoidService : IVoidService
         }
 
         var currentUserId = _me.RequireId();
-        var currentRole = _me.Role;
+        var currentRoles = string.Join(",", _me.Roles);
 
         // E2 - Chỉ Doctor được thực hiện
-        if (currentRole != UserRole.Doctor)
+        if (!_me.IsInRole(Roles.Doctor))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
                 "Chỉ bác sĩ phụ trách mới được thu hồi đơn thuốc.");
         }
 
-        var prescription = await _repository.Prescriptions
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var prescription = await _repository.GetPrescriptionForVoidAsync(id)
             ?? throw AppException.NotFound(
                 Msg.LoadFailed,
                 "Không tìm thấy đơn thuốc.");
@@ -848,9 +755,9 @@ public class VoidService : IVoidService
         }
 
         // Tìm lượt khám liên quan
-        var visit = await _repository.Visits
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(x => x.Id == prescription.VisitId)
+        var visit = (prescription.VisitId is int visitId
+            ? await _repository.GetVisitForVoidAsync(visitId)
+            : null)
             ?? throw AppException.Conflict(
                 Msg.LoadFailed,
                 "Không tìm thấy lượt khám liên quan đến đơn thuốc.");
@@ -905,22 +812,15 @@ public class VoidService : IVoidService
                 prescription.VisitId,
                 isVoided = prescription.IsVoided,
                 voidedBy = currentUserId,
-                role = currentRole,
+                role = currentRoles,
                 cancelledPendingMedicationLogs = cancelledPendingLogs
             },
             normalizedReason);
 
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // E-LU - HTTP 409, MSG-43
+        if (!await _repository.TryCommitAsync())
             throw AppException.Conflict(
                 Msg.StaleVersion,
                 "Đơn thuốc hoặc lịch dùng thuốc đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-        }
 
         return Convert.ToBase64String(prescription.RowVer);
     }
@@ -934,10 +834,7 @@ public class VoidService : IVoidService
 
         Mark(prescription, reason);
 
-        var itemIds = await _repository.PrescriptionItems
-            .Where(x => x.PrescriptionId == prescription.Id)
-            .Select(x => x.Id)
-            .ToListAsync();
+        var itemIds = await _repository.GetPrescriptionItemIdsAsync(prescription.Id);
 
         if (itemIds.Count == 0)
             return 0;
@@ -950,11 +847,7 @@ public class VoidService : IVoidService
          * - Missed/Skipped: sự kiện thực tế đã xảy ra
          * - Các trạng thái lịch sử khác
          */
-        var pendingLogs = await _repository.MedicationLogs
-            .Where(x =>
-                itemIds.Contains(x.PrescriptionItemId) &&
-                x.Status == MedicationStatus.Pending)
-            .ToListAsync();
+        var pendingLogs = await _repository.GetPendingMedicationLogsForItemsAsync(itemIds);
 
         foreach (var log in pendingLogs)
         {

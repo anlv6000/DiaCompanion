@@ -4,11 +4,10 @@ using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Dtos;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-36..45 — đơn thuốc, lịch dùng thuốc và tuân thủ.</summary>
+/// <summary>UC-36..45 — nghiệp vụ đơn thuốc; toàn bộ LINQ/EF nằm trong Repository.</summary>
 public class PrescriptionsService : BaseService, IPrescriptionsService
 {
     private readonly IRepository _repository;
@@ -34,7 +33,6 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         _clock = clock;
     }
 
-    /// <summary>UC-40 — lịch sử đơn thuốc có tìm kiếm, lọc, sắp xếp và phân trang.</summary>
     public async Task<ActionResult<PagedResult<PrescriptionDto>>> List(
         int? patientId,
         string? q,
@@ -43,313 +41,207 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         bool? voided,
         PageQuery page)
     {
-        var pid = _me.Role == UserRole.Patient ? RequireMyPatientId(_me) : patientId;
+        var pid = IsPatientOnly(_me) ? RequireMyPatientId(_me) : patientId;
         if (pid is null)
             throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId.");
 
         EnsureCanAccessPatient(_me, pid.Value);
+        DateTime? fromUtc = from is DateOnly fromDate
+            ? _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue))
+            : null;
+        DateTime? toExclusiveUtc = to is DateOnly toDate
+            ? _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue))
+            : null;
 
-        var query = _repository.Prescriptions
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(p => p.PatientId == pid.Value);
-
-        if (voided is bool isVoided)
-            query = query.Where(p => p.IsVoided == isVoided);
-
-        if (from is DateOnly fromDate)
-        {
-            var fromUtc = _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue));
-            query = query.Where(p => p.IssuedAt >= fromUtc);
-        }
-
-        if (to is DateOnly toDate)
-        {
-            var toExclusiveUtc = _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
-            query = query.Where(p => p.IssuedAt < toExclusiveUtc);
-        }
-
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var keyword = q.Trim();
-            query = query.Where(p =>
-                (p.Note != null && EF.Functions.Like(p.Note, $"%{keyword}%")) ||
-                p.Items.Any(i => EF.Functions.Like(i.DrugName, $"%{keyword}%")));
-        }
-
-        var total = await query.CountAsync();
-
-        query = page.Sort?.Trim().ToLowerInvariant() switch
-        {
-            "doctor" => page.Desc
-                ? query.OrderByDescending(p => p.Doctor!.FullName).ThenByDescending(p => p.Id)
-                : query.OrderBy(p => p.Doctor!.FullName).ThenBy(p => p.Id),
-            "status" => page.Desc
-                ? query.OrderByDescending(p => p.IsVoided).ThenByDescending(p => p.IssuedAt)
-                : query.OrderBy(p => p.IsVoided).ThenByDescending(p => p.IssuedAt),
-            _ => page.Desc
-                ? query.OrderBy(p => p.IssuedAt).ThenBy(p => p.Id)
-                : query.OrderByDescending(p => p.IssuedAt).ThenByDescending(p => p.Id)
-        };
-
-        var rows = await query
-            .Include(p => p.Doctor)
-            .Include(p => p.Items)
-            .AsSplitQuery()
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .ToListAsync();
-
-        var stats = await LoadMedicationStatsAsync(rows.Select(p => p.Id));
-        var items = rows.Select(p => Map(p, stats.GetValueOrDefault(p.Id))).ToList();
+        var result = await _repository.GetPrescriptionPageAsync(
+            pid.Value, q, fromUtc, toExclusiveUtc, voided, page);
+        var stats = await _repository.GetPrescriptionMedicationStatsAsync(result.Items.Select(p => p.Id));
+        var items = result.Items.Select(p => Map(p, stats.GetValueOrDefault(p.Id))).ToList();
 
         return Ok(new PagedResult<PrescriptionDto>
         {
             Items = items,
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = result.Total
         });
     }
 
-    /// <summary>UC-37 — chi tiết đơn thuốc, kể cả đơn đã void để giữ lịch sử lâm sàng.</summary>
     public async Task<ActionResult<PrescriptionDto>> Get(int id)
     {
-        var p = await _repository.Prescriptions
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Include(x => x.Doctor)
-            .Include(x => x.Items)
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var prescription = await _repository.GetPrescriptionAsync(id, tracking: false)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
-
-        EnsureCanAccessPatient(_me, p.PatientId);
-        var stats = await LoadMedicationStatsAsync(new[] { p.Id });
-        return Ok(Map(p, stats.GetValueOrDefault(p.Id)));
+        EnsureCanAccessPatient(_me, prescription.PatientId);
+        var stats = await _repository.GetPrescriptionMedicationStatsAsync(new[] { prescription.Id });
+        return Ok(Map(prescription, stats.GetValueOrDefault(prescription.Id)));
     }
 
-    /// <summary>UC-36 — chỉ bác sĩ được phân công mới được kê đơn cho đúng bệnh nhân của lượt khám.</summary>
     public async Task<ActionResult<PrescriptionDto>> Create(CreatePrescriptionRequest req)
     {
         if (req.Items.Count == 0)
             throw AppException.BadRequest(Msg.EmptyPrescription, "Đơn thuốc phải có ít nhất một dòng thuốc.");
-
         if (req.VisitId is not int visitId)
             throw AppException.BadRequest(Msg.RequiredFields, "Đơn thuốc phải gắn với một lượt khám.");
 
         var doctorId = _me.RequireId();
-        var visit = await _repository.Visits.FirstOrDefaultAsync(v => v.Id == visitId)
+        var visit = await _repository.GetVisitForUpdateAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
-
         EnsureAssignedDoctor(visit, doctorId);
-
         if (visit.PatientId != req.PatientId)
             throw AppException.BadRequest(Msg.InvalidData, "Bệnh nhân không thuộc lượt khám đã chọn.");
-
         if (visit.Status != VisitStatus.InProgress)
             throw AppException.BadRequest(Msg.ApptImmutable, "Không thể tạo đơn mới sau khi lượt khám đã hoàn tất.");
 
-        var strategy = _repository.Database.CreateExecutionStrategy();
-        var prescriptionId = await strategy.ExecuteAsync(async () =>
+        var prescriptionId = await _repository.ExecuteInTransactionAsync(async () =>
         {
-            await using var tx = await _repository.Database.BeginTransactionAsync();
-            try
+            var prescription = new Prescription
             {
-                var prescription = new Prescription
-                {
-                    PatientId = req.PatientId,
-                    VisitId = visit.Id,
-                    DoctorId = doctorId,
-                    IssuedAt = _clock.UtcNow,
-                    Note = req.Note?.Trim()
-                };
+                PatientId = req.PatientId,
+                VisitId = visit.Id,
+                DoctorId = doctorId,
+                IssuedAt = _clock.UtcNow,
+                Note = req.Note?.Trim()
+            };
+            _repository.Add(prescription);
+            await _repository.CommitAsync();
 
-                _repository.Prescriptions.Add(prescription);
-                await _repository.SaveChangesAsync();
-
-                var items = req.Items.Select(i => new PrescriptionItem
-                {
-                    PrescriptionId = prescription.Id,
-                    DrugName = i.DrugName.Trim(),
-                    Dose = i.Dose.Trim(),
-                    TimesPerDay = i.TimesPerDay,
-                    DurationDays = i.DurationDays,
-                    Instruction = i.Instruction?.Trim(),
-                    IsActive = true
-                }).ToList();
-
-                _repository.PrescriptionItems.AddRange(items);
-                await _repository.SaveChangesAsync();
-
-                _adherence.GenerateSchedule(prescription, items);
-                await _audit.LogAsync(
-                    AuditAction.PrescriptionIssue,
-                    nameof(Prescription),
-                    prescription.Id,
-                    null,
-                    new
-                    {
-                        prescription.PatientId,
-                        prescription.VisitId,
-                        itemCount = items.Count,
-                        drugs = items.Select(i => i.DrugName)
-                    });
-
-                await _repository.SaveChangesAsync();
-                await tx.CommitAsync();
-                return prescription.Id;
-            }
-            catch
+            var items = req.Items.Select(i => new PrescriptionItem
             {
-                await tx.RollbackAsync();
-                throw;
-            }
+                PrescriptionId = prescription.Id,
+                DrugName = i.DrugName.Trim(),
+                Dose = i.Dose.Trim(),
+                TimesPerDay = i.TimesPerDay,
+                DurationDays = checked((short)i.DurationDays),
+                Instruction = i.Instruction?.Trim(),
+                IsActive = true
+            }).ToList();
+            _repository.AddRange(items);
+            await _repository.CommitAsync();
+
+            _adherence.GenerateSchedule(prescription, items);
+            await _audit.LogAsync(
+                AuditAction.PrescriptionIssue,
+                nameof(Prescription),
+                prescription.Id,
+                null,
+                new
+                {
+                    prescription.PatientId,
+                    prescription.VisitId,
+                    itemCount = items.Count,
+                    drugs = items.Select(i => i.DrugName)
+                });
+            await _repository.CommitAsync();
+            return prescription.Id;
         });
 
         return Ok(await GetDtoAsync(prescriptionId));
     }
 
-    /// <summary>
-    /// UC-38 — thay thế tập dòng thuốc đang hiệu lực. Dòng bị bỏ khỏi request được ngừng hiệu lực,
-    /// lịch Pending cũ bị hủy, lịch sử Taken/Missed/Skipped được giữ nguyên.
-    /// </summary>
     public async Task<ActionResult<PrescriptionDto>> Update(int id, UpdatePrescriptionRequest req)
     {
         if (req.Items is null || req.Items.Count == 0)
             throw AppException.BadRequest(Msg.EmptyPrescription, "Đơn thuốc phải có ít nhất một dòng thuốc.");
-
         if (req.Items.Where(i => i.Id > 0).GroupBy(i => i.Id).Any(g => g.Count() > 1))
             throw AppException.BadRequest(Msg.InvalidData, "Danh sách cập nhật chứa ID dòng thuốc bị lặp.");
 
-        var strategy = _repository.Database.CreateExecutionStrategy();
-        var prescriptionId = await strategy.ExecuteAsync(async () =>
+        var prescriptionId = await _repository.ExecuteInTransactionAsync(async () =>
         {
-            await using var tx = await _repository.Database.BeginTransactionAsync();
-            try
+            var prescription = await _repository.GetPrescriptionAsync(id, tracking: true)
+                ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
+            var doctorId = _me.RequireId();
+            if (prescription.VisitId is not int visitId)
+                throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc chưa được liên kết với lượt khám.");
+
+            var visit = await _repository.GetVisitForUpdateAsync(visitId)
+                ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám liên quan.");
+            EnsureAssignedDoctor(visit, doctorId);
+            if (visit.PatientId != prescription.PatientId)
+                throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc không khớp bệnh nhân của lượt khám.");
+
+            _repository.ApplyOriginalRowVersion(prescription, req.RowVersion);
+            var before = prescription.Items.Select(i => new
             {
-                var prescription = await _repository.Prescriptions
-                    .Include(p => p.Items)
-                    .FirstOrDefaultAsync(p => p.Id == id)
-                    ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
+                i.Id,
+                i.DrugName,
+                i.Dose,
+                i.TimesPerDay,
+                i.DurationDays,
+                i.Instruction,
+                i.IsActive
+            }).ToList();
 
-                var doctorId = _me.RequireId();
-                if (prescription.VisitId is not int visitId)
-                    throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc chưa được liên kết với lượt khám.");
+            var oldItemsById = prescription.Items.ToDictionary(i => i.Id);
+            var requestedExistingIds = req.Items.Where(i => i.Id > 0).Select(i => i.Id).ToHashSet();
+            var invalidIds = requestedExistingIds.Where(itemId => !oldItemsById.ContainsKey(itemId)).ToList();
+            if (invalidIds.Count > 0)
+                throw AppException.BadRequest(Msg.InvalidData,
+                    $"Có dòng thuốc không thuộc đơn này: {string.Join(", ", invalidIds)}.");
 
-                var visit = await _repository.Visits.FirstOrDefaultAsync(v => v.Id == visitId)
-                    ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám liên quan.");
+            var pendingLogs = await _repository.GetPendingMedicationLogsForItemsAsync(oldItemsById.Keys);
+            foreach (var log in pendingLogs) log.Status = MedicationStatus.Cancelled;
+            foreach (var oldItem in prescription.Items)
+                oldItem.IsActive = requestedExistingIds.Contains(oldItem.Id);
 
-                EnsureAssignedDoctor(visit, doctorId);
-                if (visit.PatientId != prescription.PatientId)
-                    throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc không khớp bệnh nhân của lượt khám.");
-
-                _repository.ApplyOriginalRowVersion(prescription, req.RowVersion);
-
-                var before = prescription.Items.Select(i => new
+            var activeItems = new List<PrescriptionItem>();
+            foreach (var requestItem in req.Items)
+            {
+                PrescriptionItem item;
+                if (requestItem.Id > 0)
                 {
-                    i.Id,
-                    i.DrugName,
-                    i.Dose,
-                    i.TimesPerDay,
-                    i.DurationDays,
-                    i.Instruction,
-                    i.IsActive
-                }).ToList();
-
-                var oldItemsById = prescription.Items.ToDictionary(i => i.Id);
-                var requestedExistingIds = req.Items.Where(i => i.Id > 0).Select(i => i.Id).ToHashSet();
-                var invalidIds = requestedExistingIds.Where(itemId => !oldItemsById.ContainsKey(itemId)).ToList();
-                if (invalidIds.Count > 0)
-                    throw AppException.BadRequest(
-                        Msg.InvalidData,
-                        $"Có dòng thuốc không thuộc đơn này: {string.Join(", ", invalidIds)}.");
-
-                var oldItemIds = oldItemsById.Keys.ToList();
-                var pendingLogs = await _repository.MedicationLogs
-                    .Where(m => oldItemIds.Contains(m.PrescriptionItemId) && m.Status == MedicationStatus.Pending)
-                    .ToListAsync();
-
-                foreach (var log in pendingLogs)
-                    log.Status = MedicationStatus.Cancelled;
-
-                foreach (var oldItem in prescription.Items)
-                    oldItem.IsActive = requestedExistingIds.Contains(oldItem.Id);
-
-                var activeItems = new List<PrescriptionItem>();
-                foreach (var requestItem in req.Items)
+                    item = oldItemsById[requestItem.Id];
+                }
+                else
                 {
-                    PrescriptionItem item;
-                    if (requestItem.Id > 0)
-                    {
-                        item = oldItemsById[requestItem.Id];
-                    }
-                    else
-                    {
-                        item = new PrescriptionItem
-                        {
-                            PrescriptionId = prescription.Id
-                        };
-                        _repository.PrescriptionItems.Add(item);
-                    }
-
-                    item.DrugName = requestItem.DrugName.Trim();
-                    item.Dose = requestItem.Dose.Trim();
-                    item.TimesPerDay = requestItem.TimesPerDay;
-                    item.DurationDays = checked((short)requestItem.DurationDays);
-                    item.Instruction = requestItem.Instruction?.Trim();
-                    item.IsActive = true;
-                    activeItems.Add(item);
+                    item = new PrescriptionItem { PrescriptionId = prescription.Id };
+                    _repository.Add(item);
                 }
 
-                prescription.Note = req.Note?.Trim();
-                prescription.UpdatedAt = _clock.UtcNow;
-
-                // Save lần 1 vừa kiểm tra rowVersion của aggregate, vừa cấp ID cho item mới.
-                await _repository.SaveChangesAsync();
-
-                _adherence.GenerateSchedule(prescription, activeItems);
-                await _audit.LogAsync(
-                    AuditAction.PrescriptionUpdate,
-                    nameof(Prescription),
-                    prescription.Id,
-                    new { items = before },
-                    new
-                    {
-                        items = activeItems.Select(i => new
-                        {
-                            i.Id,
-                            i.DrugName,
-                            i.Dose,
-                            i.TimesPerDay,
-                            i.DurationDays,
-                            i.Instruction,
-                            i.IsActive
-                        }),
-                        cancelledPendingLogs = pendingLogs.Count
-                    });
-
-                await _repository.SaveChangesAsync();
-                await tx.CommitAsync();
-                return prescription.Id;
+                item.DrugName = requestItem.DrugName.Trim();
+                item.Dose = requestItem.Dose.Trim();
+                item.TimesPerDay = requestItem.TimesPerDay;
+                item.DurationDays = checked((short)requestItem.DurationDays);
+                item.Instruction = requestItem.Instruction?.Trim();
+                item.IsActive = true;
+                activeItems.Add(item);
             }
-            catch (DbUpdateConcurrencyException)
-            {
-                await tx.RollbackAsync();
+
+            prescription.Note = req.Note?.Trim();
+            prescription.UpdatedAt = _clock.UtcNow;
+
+            // Commit này vừa kiểm tra RowVersion, vừa cấp Id cho item mới.
+            if (!await _repository.TryCommitAsync())
                 throw AppException.Conflict(
                     Msg.StaleVersion,
                     "Đơn thuốc đã được người khác cập nhật. Vui lòng tải lại dữ liệu trước khi thử lại.");
-            }
-            catch
-            {
-                await tx.RollbackAsync();
-                throw;
-            }
+
+            _adherence.GenerateSchedule(prescription, activeItems);
+            await _audit.LogAsync(
+                AuditAction.PrescriptionUpdate,
+                nameof(Prescription),
+                prescription.Id,
+                new { items = before },
+                new
+                {
+                    items = activeItems.Select(i => new
+                    {
+                        i.Id,
+                        i.DrugName,
+                        i.Dose,
+                        i.TimesPerDay,
+                        i.DurationDays,
+                        i.Instruction,
+                        i.IsActive
+                    }),
+                    cancelledPendingLogs = pendingLogs.Count
+                });
+            await _repository.CommitAsync();
+            return prescription.Id;
         });
 
         return Ok(await GetDtoAsync(prescriptionId));
     }
 
-    /// <summary>UC-39 — void đơn thuốc và trả token mới.</summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         var rowVersion = await _void.VoidPrescriptionAsync(id, req.Reason, req.RowVersion);
@@ -360,7 +252,6 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         });
     }
 
-    /// <summary>UC-45 — tỉ lệ tuân thủ, có thể lọc theo đơn hoặc khoảng ngày.</summary>
     public async Task<IActionResult> Adherence(
         int patientId,
         int days = 30,
@@ -388,67 +279,37 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
 
     private async Task<PrescriptionDto> GetDtoAsync(int id)
     {
-        var prescription = await _repository.Prescriptions
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Include(x => x.Doctor)
-            .Include(x => x.Items)
-            .FirstAsync(x => x.Id == id);
-
-        var stats = await LoadMedicationStatsAsync(new[] { id });
+        var prescription = await _repository.GetPrescriptionAsync(id, tracking: false)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
+        var stats = await _repository.GetPrescriptionMedicationStatsAsync(new[] { id });
         return Map(prescription, stats.GetValueOrDefault(id));
     }
 
-    private async Task<Dictionary<int, MedicationStats>> LoadMedicationStatsAsync(IEnumerable<int> prescriptionIds)
+    private static PrescriptionDto Map(Prescription prescription, PrescriptionMedicationStats? stats)
     {
-        var ids = prescriptionIds.Distinct().ToList();
-        if (ids.Count == 0)
-            return new Dictionary<int, MedicationStats>();
-
-        var rows = await _repository.MedicationLogs.AsNoTracking()
-            .Where(l => ids.Contains(l.PrescriptionItem!.PrescriptionId) && l.Status != MedicationStatus.Cancelled)
-            .GroupBy(l => l.PrescriptionItem!.PrescriptionId)
-            .Select(g => new
-            {
-                PrescriptionId = g.Key,
-                Total = g.Count(),
-                Taken = g.Count(x => x.Status == MedicationStatus.Taken),
-                Missed = g.Count(x => x.Status == MedicationStatus.Missed),
-                Skipped = g.Count(x => x.Status == MedicationStatus.Skipped)
-            })
-            .ToListAsync();
-
-        return rows.ToDictionary(
-            x => x.PrescriptionId,
-            x => new MedicationStats(x.Total, x.Taken, x.Missed, x.Skipped));
-    }
-
-    private static PrescriptionDto Map(Prescription p, MedicationStats? stats)
-    {
-        stats ??= new MedicationStats(0, 0, 0, 0);
+        stats ??= new PrescriptionMedicationStats(0, 0, 0, 0);
         var due = stats.Taken + stats.Missed + stats.Skipped;
         var rate = due == 0 ? 0m : Math.Round(stats.Taken * 100m / due, 1);
-
         return new PrescriptionDto
         {
-            Id = p.Id,
-            PatientId = p.PatientId,
-            VisitId = p.VisitId,
-            DoctorId = p.DoctorId,
-            DoctorName = p.Doctor?.FullName ?? "",
-            IssuedAt = p.IssuedAt,
-            UpdatedAt = p.UpdatedAt,
-            Note = p.Note,
-            IsVoided = p.IsVoided,
-            VoidReason = p.VoidReason,
-            VoidedAt = p.VoidedAt,
+            Id = prescription.Id,
+            PatientId = prescription.PatientId,
+            VisitId = prescription.VisitId,
+            DoctorId = prescription.DoctorId,
+            DoctorName = prescription.Doctor?.FullName ?? "",
+            IssuedAt = prescription.IssuedAt,
+            UpdatedAt = prescription.UpdatedAt,
+            Note = prescription.Note,
+            IsVoided = prescription.IsVoided,
+            VoidReason = prescription.VoidReason,
+            VoidedAt = prescription.VoidedAt,
             ScheduledDoses = stats.Total,
             TakenDoses = stats.Taken,
             MissedDoses = stats.Missed,
             SkippedDoses = stats.Skipped,
             AdherenceRate = rate,
-            RowVersion = p.ToRowVersion(),
-            Items = p.Items
+            RowVersion = prescription.ToRowVersion(),
+            Items = prescription.Items
                 .OrderByDescending(i => i.IsActive)
                 .ThenBy(i => i.Id)
                 .Select(i => new PrescriptionItemDto
@@ -467,10 +328,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
     private static void EnsureAssignedDoctor(Visit visit, int doctorId)
     {
         if (visit.DoctorId != doctorId)
-            throw AppException.Forbidden(
-                Msg.Forbidden,
+            throw AppException.Forbidden(Msg.Forbidden,
                 "Bác sĩ chỉ được thao tác đơn thuốc của lượt khám do mình phụ trách.");
     }
-
-    private sealed record MedicationStats(int Total, int Taken, int Missed, int Skipped);
 }

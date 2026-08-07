@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Entities;
 
@@ -14,10 +13,9 @@ public class User : IHasRowVersion
     [MaxLength(256)] public string? Email { get; set; }
 
     [Required, MaxLength(256)] public string PasswordHash { get; set; } = "";
-    public UserRole Role { get; set; }
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
 
-    /// <summary>BR-10: bắt buộc với vai trò Bác sĩ, cưỡng chế bằng CK_Users_License.</summary>
+    /// <summary>BR-10: bắt buộc khi user được gán role Doctor; kiểm ở tầng nghiệp vụ vì Users không còn cột Role.</summary>
     [MaxLength(50)] public string? LicenseNo { get; set; }
 
     /// <summary>Mật khẩu tạm in ra phiếu phải đổi ở lần đăng nhập đầu.</summary>
@@ -29,6 +27,7 @@ public class User : IHasRowVersion
     public DateTime? UpdatedAt { get; set; }
 
     public Patient? Patient { get; set; }
+    public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 
     public byte[] RowVer { get; set; } = Array.Empty<byte>();
 }

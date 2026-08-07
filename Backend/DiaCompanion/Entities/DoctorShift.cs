@@ -18,7 +18,7 @@ public class DoctorShift : IHasRowVersion
 {
     public int Id { get; set; }
 
-    /// <summary>Bác sĩ trực. FK tới Users (Role = Doctor).</summary>
+    /// <summary>Bác sĩ trực. Quyền Doctor được xác định qua Roles/UserRoles đang active.</summary>
     public int DoctorId { get; set; }
     public User? Doctor { get; set; }
 

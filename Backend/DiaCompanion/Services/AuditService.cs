@@ -31,7 +31,7 @@ public class AuditService : IAuditService
     public Task LogAsync(string action, string entityType, int? entityId = null,
                          object? oldValue = null, object? newValue = null, string? detail = null)
     {
-        _repository.AuditLogs.Add(new AuditLog
+        _repository.Add(new AuditLog
         {
             UserId = _me.Id,
             UserName = _me.FullName,

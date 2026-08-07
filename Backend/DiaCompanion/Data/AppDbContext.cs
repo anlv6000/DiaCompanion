@@ -9,6 +9,8 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
@@ -56,7 +58,6 @@ public class AppDbContext : DbContext
         /* --------------------------------------------------------- Users */
         b.Entity<User>(e =>
         {
-            e.Property(x => x.Role).HasConversion<byte>();
             e.Property(x => x.PublicId).HasDefaultValueSql("NEWID()");
             // QT-2: unique CÓ ĐIỀU KIỆN. Unique thường sẽ khiến số điện thoại của
             // tài khoản đã khoá bị giữ vĩnh viễn, không đăng ký lại được.
@@ -64,6 +65,39 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.Email).IsUnique().HasFilter("[Email] IS NOT NULL AND [IsActive] = 1");
             e.HasIndex(x => x.PublicId).IsUnique();
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
+            e.HasMany(x => x.UserRoles)
+                .WithOne(x => x.User)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        /* -------------------------------------------------------- Roles */
+        b.Entity<Role>(e =>
+        {
+            e.ToTable("Roles");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasColumnType("varchar(50)");
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+
+        b.Entity<UserRole>(e =>
+        {
+            e.ToTable("UserRoles");
+            e.HasKey(x => new { x.UserId, x.RoleId });
+            e.HasIndex(x => new { x.RoleId, x.IsActive, x.UserId })
+                .HasDatabaseName("IX_UserRoles_Role");
+            e.HasIndex(x => new { x.UserId, x.IsActive })
+                .HasDatabaseName("IX_UserRoles_UserActive");
+
+            e.HasOne(x => x.Role)
+                .WithMany(x => x.UserRoles)
+                .HasForeignKey(x => x.RoleId)
+                .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.AssignedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedBy)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         /* ------------------------------------------------------ Patients */

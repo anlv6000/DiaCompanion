@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -40,113 +39,35 @@ public class TriageService : BaseService, ITriageService
     {
         size = size is < 1 or > 100 ? 25 : size;
         var referableGrade = (byte)await _cfg.GetIntAsync(ConfigKeys.ReferableGrade, 2);
-
-        // Ca chưa có review nào còn hiệu lực. Query filter đã loại bản ghi void.
-        var query = _repository.AiDiagnoses.AsNoTracking()
-            .Where(d => !d.Reviews.Any())
-            .Select(d => new
-            {
-                d.Id,
-                d.DrGrade,
-                d.Confidence,
-                d.Disagreement,
-                d.IsDeferred,
-                d.DeferReason,
-                d.CreatedAt,
-                d.RowVer,
-                Eye = d.FundusImage!.Eye,
-                VisitId = d.FundusImage.VisitId,
-                PatientId = d.FundusImage.PatientId,
-                PatientCode = d.FundusImage.Patient!.Code,
-                PatientName = d.FundusImage.Patient.FullName,
-                PatientNameSearch = d.FundusImage.Patient.FullNameSearch,
-                DoctorId = d.FundusImage.Visit != null ? d.FundusImage.Visit.DoctorId : null,
-                DoctorName = d.FundusImage.Visit != null && d.FundusImage.Visit.Doctor != null
-                    ? d.FundusImage.Visit.Doctor.FullName : null
-            });
-
-        // Bác sĩ chỉ được thấy ca thuộc lượt khám do chính mình phụ trách.
-        // Admin có thể lọc theo một bác sĩ để giám sát vận hành.
-        if (_me.Role == UserRole.Doctor)
-        {
-            var currentDoctorId = _me.RequireId();
-            query = query.Where(x => x.DoctorId == currentDoctorId);
-        }
-        else if (_me.Role == UserRole.Admin && doctorId is int did)
-        {
-            query = query.Where(x => x.DoctorId == did);
-        }
-
-        if (deferredOnly == true) query = query.Where(x => x.IsDeferred);
-
-        if (!string.IsNullOrWhiteSpace(q) && q.Trim().Length >= 2)
-        {
-            var norm = VietnameseText.RemoveDiacritics(q);
-            query = query.Where(x =>
-                EF.Functions.Like(x.PatientNameSearch!, $"%{norm}%") ||
-                EF.Functions.Like(x.PatientCode, $"%{q}%"));
-        }
-
-        // Keyset: lấy các bản ghi "sau" con trỏ theo đúng thứ tự sắp xếp.
-        // Sắp xếp gồm cả Id để thứ tự tuyệt đối, không có hai bản ghi bằng nhau.
         var decoded = Cursor.Decode(cursor);
-        if (decoded is (DateTime at, long lastId))
-            query = query.Where(x => x.CreatedAt < at || (x.CreatedAt == at && x.Id < lastId));
+        int? currentDoctorId = _me.IsInRole(Roles.Doctor) ? _me.RequireId() : null;
+        int? filterDoctorId = currentDoctorId is null && _me.IsInRole(Roles.Admin) ? doctorId : null;
+        var data = await _repository.GetTriageQueueAsync(
+            currentDoctorId, filterDoctorId, deferredOnly, q, decoded?.At, decoded?.Id, size);
 
-        var rows = await query
-            .OrderByDescending(x => x.IsDeferred)
-            .ThenByDescending(x => x.Disagreement)
-            .ThenByDescending(x => x.CreatedAt)
-            .ThenByDescending(x => x.Id)
-            .Take(size + 1)   // lấy dư 1 để biết còn trang sau hay không
-            .ToListAsync();
-
-        var hasMore = rows.Count > size;
-        if (hasMore) rows.RemoveAt(rows.Count - 1);
-
-        var items = rows.Select(x => new TriageItemDto
+        var items = data.Items.Select(x => new TriageItemDto
         {
-            AiDiagnosisId = x.Id,
-            PatientId = x.PatientId,
-            PatientCode = x.PatientCode,
-            PatientName = x.PatientName,
-            VisitId = x.VisitId,
-            Eye = (byte)x.Eye,
-            DrGrade = (byte)x.DrGrade,
-            Confidence = x.Confidence,
-            Disagreement = x.Disagreement,
-            IsDeferred = x.IsDeferred,
-            DeferReason = (byte?)x.DeferReason,
-            NeedsReferral = (byte)x.DrGrade >= referableGrade,
-            CreatedAt = x.CreatedAt,
-            DoctorName = x.DoctorName,
-            RowVersion = x.RowVer is null ? null : Convert.ToBase64String(x.RowVer)
+            AiDiagnosisId = x.Id, PatientId = x.PatientId, PatientCode = x.PatientCode,
+            PatientName = x.PatientName, VisitId = x.VisitId, Eye = (byte)x.Eye,
+            DrGrade = (byte)x.DrGrade, Confidence = x.Confidence, Disagreement = x.Disagreement,
+            IsDeferred = x.IsDeferred, DeferReason = (byte?)x.DeferReason,
+            NeedsReferral = (byte)x.DrGrade >= referableGrade, CreatedAt = x.CreatedAt,
+            DoctorName = x.DoctorName, RowVersion = x.RowVer.Length == 0 ? null : Convert.ToBase64String(x.RowVer)
         }).ToList();
-
-        var last = rows.LastOrDefault();
+        var last = data.Items.LastOrDefault();
         return Ok(new KeysetResult<TriageItemDto>
         {
             Items = items,
-            NextCursor = hasMore && last is not null ? Cursor.Encode(last.CreatedAt, last.Id) : null
+            NextCursor = data.HasMore && last is not null ? Cursor.Encode(last.CreatedAt, last.Id) : null
         });
     }
 
     /// <summary>Số ca đang chờ, để hiện badge trên thanh điều hướng.</summary>
     public async Task<IActionResult> Count()
     {
-        var query = _repository.AiDiagnoses.AsNoTracking()
-            .Where(d => !d.Reviews.Any());
-
-        if (_me.Role == UserRole.Doctor)
-        {
-            var doctorId = _me.RequireId();
-            query = query.Where(d => d.FundusImage!.Visit != null &&
-                                     d.FundusImage.Visit.DoctorId == doctorId);
-        }
-
-        var pending = await query.CountAsync();
-        var deferred = await query.CountAsync(d => d.IsDeferred);
-        return Ok(new { pending, deferred });
+        var doctorId = _me.IsInRole(Roles.Doctor) ? _me.RequireId() : (int?)null;
+        var counts = await _repository.GetTriageCountsAsync(doctorId);
+        return Ok(new { pending = counts.Pending, deferred = counts.Deferred });
     }
 
     /// <summary>
@@ -172,7 +93,7 @@ public class TriageService : BaseService, ITriageService
         d.LastReviewActionBy = doctorId;
         d.LastReviewActionAt = DateTime.UtcNow;
 
-        _repository.DiagnosisReviews.Add(review);
+        _repository.Add(review);
         await _audit.LogAsync(AuditAction.ReviewApprove, nameof(AiDiagnosis), d.Id,
             new { aiGrade = (byte)d.DrGrade, confidence = d.Confidence, disagreement = d.Disagreement },
             new { finalGrade = (byte)review.FinalGrade, action = "Approve" });
@@ -205,7 +126,7 @@ public class TriageService : BaseService, ITriageService
         d.LastReviewActionBy = doctorId;
         d.LastReviewActionAt = DateTime.UtcNow;
 
-        _repository.DiagnosisReviews.Add(review);
+        _repository.Add(review);
 
         // Ghi lại đầy đủ tín hiệu tại thời điểm chạy: đây chính là dữ liệu
         // dùng để đánh giá cơ chế deferral có bắt đúng ca khó hay không.
@@ -247,10 +168,7 @@ public class TriageService : BaseService, ITriageService
     /// </summary>
     private async Task<AiDiagnosis> LoadForReviewAsync(int diagnosisId, string? rowVersion)
     {
-        var d = await _repository.AiDiagnoses
-            .Include(x => x.FundusImage)
-            .ThenInclude(x => x!.Visit)
-            .FirstOrDefaultAsync(x => x.Id == diagnosisId)
+        var d = await _repository.GetDiagnosisForReviewAsync(diagnosisId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
 
         var doctorId = _me.RequireId();
@@ -260,7 +178,7 @@ public class TriageService : BaseService, ITriageService
                 Msg.Forbidden,
                 "Bác sĩ chỉ được duyệt kết quả thuộc lượt khám do mình phụ trách.");
 
-        if (await _repository.DiagnosisReviews.AnyAsync(r => r.AiDiagnosisId == diagnosisId))
+        if (await _repository.ReviewExistsForDiagnosisAsync(diagnosisId))
             throw AppException.Conflict(Msg.ConcurrentEdit,
                 "Ca này vừa được một bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
 
@@ -270,33 +188,15 @@ public class TriageService : BaseService, ITriageService
 
     private async Task SaveWithConcurrencyCheckAsync()
     {
-        try
-        {
-            await _repository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
+        if (!await _repository.TryCommitReviewAsync())
             throw AppException.Conflict(Msg.ConcurrentEdit,
                 "Ca này vừa được bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
-        }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-        {
-            // Chốt chặn cuối: unique index UX_Review_PerDiagnosis chặn ở tầng CSDL
-            // kể cả khi hai request lọt qua kiểm tra ứng dụng cùng lúc.
-            throw AppException.Conflict(Msg.ConcurrentEdit,
-                "Ca này vừa được bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
-        }
     }
-
-    private static bool IsUniqueViolation(DbUpdateException ex) =>
-        ex.InnerException is Microsoft.Data.SqlClient.SqlException sql &&
-        sql.Number is 2601 or 2627;
 
     private async Task<ReviewDto> MapReviewAsync(int reviewId)
     {
-        var r = await _repository.DiagnosisReviews.AsNoTracking()
-            .Include(x => x.Doctor)
-            .FirstAsync(x => x.Id == reviewId);
+        var r = await _repository.GetReviewAsync(reviewId)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi duyệt.");
 
         return new ReviewDto
         {
