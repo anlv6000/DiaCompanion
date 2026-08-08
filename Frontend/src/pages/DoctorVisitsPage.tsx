@@ -547,7 +547,7 @@ function VisitImages({
                 </td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user?.role) && (
+                    {can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>Chất lượng</Button>
                     )}
                     <Button
@@ -561,7 +561,7 @@ function VisitImages({
                     >
                       Xem
                     </Button>
-                    {can.voidImage(user?.role) && (
+                    {can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
                         Void
                       </Button>

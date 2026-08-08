@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
@@ -7,7 +6,12 @@ public class CreateStaffRequest
 {
     [Required, EmailAddress] public string Email { get; set; } = "";
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
-    [Required] public UserRole Role { get; set; }
-    /// <summary>BR-10: bắt buộc khi Role = Doctor.</summary>
+
+    /// <summary>Role staff. Chỉ Doctor hoặc Receptionist.</summary>
+    public string? Role { get; set; }
+
+    /// <summary>Tương thích FE cũ; nếu gửi thì chỉ được chứa đúng một role staff.</summary>
+    public List<string>? Roles { get; set; }
+
     public string? LicenseNo { get; set; }
 }

@@ -25,7 +25,7 @@ public class NotificationService : INotificationService
     public void Push(int userId, NotificationType type, string title, string message,
                      string? linkEntity = null, int? linkEntityId = null)
     {
-        _repository.Notifications.Add(new Notification
+        _repository.Add(new Notification
         {
             UserId = userId,
             Type = type,

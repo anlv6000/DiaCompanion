@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -44,40 +43,22 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = ResolvePatientId(patientId);
         size = size is < 1 or > 200 ? 50 : size;
 
-        var query = _repository.HealthMetrics.AsNoTracking().Where(m => m.PatientId == pid);
-        if (type is MetricType t) query = query.Where(m => m.MetricType == t);
-        if (from is DateOnly f) query = query.Where(m => m.RecordedLocalDate >= f);
-        if (to is DateOnly to2) query = query.Where(m => m.RecordedLocalDate <= to2);
-
         var decoded = Cursor.Decode(cursor);
+        DateTime? cursorAt = null;
+        long? cursorId = null;
         if (decoded is (DateTime at, long lastId))
-            query = query.Where(m => m.RecordedAtUtc < at || (m.RecordedAtUtc == at && m.Id < lastId));
+        {
+            cursorAt = at;
+            cursorId = lastId;
+        }
 
-        var rows = await query
-            .OrderByDescending(m => m.RecordedAtUtc).ThenByDescending(m => m.Id)
-            .Take(size + 1).ToListAsync();
+        var page = await _repository.GetHealthMetricPageAsync(
+            pid, type, from, to, cursorAt, cursorId, size);
+        var rows = page.Items;
+        var hasMore = page.HasMore;
 
-        var hasMore = rows.Count > size;
-        if (hasMore) rows.RemoveAt(rows.Count - 1);
-
-        // Với huyết áp, frontend cần token của CẢ HAI dòng để sửa/xóa nguyên tử.
-        // Có thể dòng còn lại nằm ngoài trang hiện tại, nên nạp riêng theo timestamp.
-        var bpTimes = rows
-            .Where(m => m.MetricType is MetricType.SystolicBp or MetricType.DiastolicBp)
-            .Select(m => m.RecordedAtUtc)
-            .Distinct()
-            .ToList();
-
-        var bpRows = bpTimes.Count == 0
-            ? new List<HealthMetric>()
-            : await _repository.HealthMetrics.AsNoTracking()
-                .Where(m => m.PatientId == pid
-                            && bpTimes.Contains(m.RecordedAtUtc)
-                            && (m.MetricType == MetricType.SystolicBp
-                                || m.MetricType == MetricType.DiastolicBp))
-                .ToListAsync();
-
-        var bpByTime = bpRows
+        // Ghép cặp huyết áp ở tầng nghiệp vụ; Repository chỉ chịu trách nhiệm truy vấn dữ liệu.
+        var bpByTime = page.BloodPressureRows
             .GroupBy(m => m.RecordedAtUtc)
             .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -154,15 +135,15 @@ public class MonitoringService : BaseService, IMonitoringService
                 IsAbnormal = await IsAbnormalAsync(MetricType.HbA1c, req.Value, null)
             };
 
-            _repository.HealthMetrics.Add(hba1c);
-            await _repository.SaveChangesAsync();
+            _repository.Add(hba1c);
+            await _repository.CommitAsync();
             await _audit.LogAsync(
                 AuditAction.MetricCreate,
                 nameof(HealthMetric),
                 hba1c.Id,
                 null,
                 new { type = hba1c.MetricType.ToString(), hba1c.Value, hba1c.Unit, hba1c.RecordedAtUtc });
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
             return Ok(ToMetricDto(hba1c));
         }
 
@@ -219,9 +200,9 @@ public class MonitoringService : BaseService, IMonitoringService
                 IsAbnormal = diastolicValue >= 90m
             };
 
-            _repository.HealthMetrics.Add(systolicMetric);
-            _repository.HealthMetrics.Add(diastolicMetric);
-            await _repository.SaveChangesAsync();
+            _repository.Add(systolicMetric);
+            _repository.Add(diastolicMetric);
+            await _repository.CommitAsync();
             await _audit.LogAsync(
                 AuditAction.MetricCreate,
                 nameof(HealthMetric),
@@ -236,7 +217,7 @@ public class MonitoringService : BaseService, IMonitoringService
                     diastolic = diastolicMetric.Value,
                     systolicMetric.RecordedAtUtc
                 });
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
 
             return Ok(new HealthMetricDto
             {
@@ -281,15 +262,15 @@ public class MonitoringService : BaseService, IMonitoringService
             IsAbnormal = await IsAbnormalAsync(MetricType.Glucose, req.Value, req.Context)
         };
 
-        _repository.HealthMetrics.Add(metric);
-        await _repository.SaveChangesAsync();
+        _repository.Add(metric);
+        await _repository.CommitAsync();
         await _audit.LogAsync(
             AuditAction.MetricCreate,
             nameof(HealthMetric),
             metric.Id,
             null,
             new { type = metric.MetricType.ToString(), metric.Value, metric.Unit, metric.Context, metric.RecordedAtUtc });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new HealthMetricDto
         {
@@ -308,7 +289,7 @@ public class MonitoringService : BaseService, IMonitoringService
     /// <summary>UC-42 — sửa chỉ số đã nhập với optimistic concurrency.</summary>
     public async Task<IActionResult> UpdateMetric(int id, CreateMetricRequest req)
     {
-        var m = await _repository.HealthMetrics.FirstOrDefaultAsync(x => x.Id == id)
+        var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
         _repository.ApplyOriginalRowVersion(m, req.RowVersion);
@@ -344,7 +325,7 @@ public class MonitoringService : BaseService, IMonitoringService
                 m.Id,
                 oldMetric,
                 new { type = m.MetricType.ToString(), m.Value, m.Context, m.RecordedAtUtc, m.Note });
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
             return Ok(ToMetricDto(m));
         }
 
@@ -422,7 +403,7 @@ public class MonitoringService : BaseService, IMonitoringService
                     diastolic = diastolicMetric.Value,
                     systolicMetric.RecordedAtUtc
                 });
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
 
             return Ok(new HealthMetricDto
             {
@@ -475,7 +456,7 @@ public class MonitoringService : BaseService, IMonitoringService
             m.Id,
             oldMetric,
             new { type = m.MetricType.ToString(), m.Value, m.Context, m.RecordedAtUtc, m.Note });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new HealthMetricDto
         {
@@ -498,7 +479,7 @@ public class MonitoringService : BaseService, IMonitoringService
     /// </summary>
     public async Task<IActionResult> DeleteMetric(int id, ConcurrencyRequest req)
     {
-        var m = await _repository.HealthMetrics.FirstOrDefaultAsync(x => x.Id == id)
+        var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
         _repository.ApplyOriginalRowVersion(m, req.RowVersion);
@@ -525,16 +506,14 @@ public class MonitoringService : BaseService, IMonitoringService
             m.Id,
             new { type = m.MetricType.ToString(), m.Value, m.RecordedAtUtc, isDeleted = false },
             new { isDeleted = true, deletedAt });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new { message = "Đã ẩn bản ghi. Dữ liệu vẫn được lưu cho bác sĩ đối chiếu." });
     }
     private async Task<HealthMetric> FindBloodPressurePairAsync(HealthMetric metric, MetricType pairType)
     {
-        return await _repository.HealthMetrics.FirstOrDefaultAsync(x =>
-                   x.PatientId == metric.PatientId &&
-                   x.RecordedAtUtc == metric.RecordedAtUtc &&
-                   x.MetricType == pairType)
+        return await _repository.GetBloodPressurePairForUpdateAsync(
+                   metric.PatientId, metric.RecordedAtUtc, pairType)
                ?? throw AppException.BadRequest(Msg.LoadFailed,
                    "Không tìm thấy đủ cặp huyết áp tâm thu và tâm trương.");
     }
@@ -551,11 +530,7 @@ public class MonitoringService : BaseService, IMonitoringService
         var today = _clock.LocalToday;
         var from = today.AddDays(-(days - 1));
 
-        var metrics = await _repository.HealthMetrics.AsNoTracking()
-            .Where(m => m.PatientId == patientId
-                        && m.RecordedLocalDate >= from
-                        && m.RecordedLocalDate <= today)
-            .ToListAsync();
+        var metrics = await _repository.GetHealthMetricsAsync(patientId, from, today);
 
         var glucose = metrics.Where(m => m.MetricType == MetricType.Glucose).ToList();
         var hba1c = metrics.Where(m => m.MetricType == MetricType.HbA1c).ToList();
@@ -688,10 +663,7 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = ResolvePatientId(patientId);
         var from = _clock.LocalToday.AddDays(-days);
 
-        var rows = await _repository.LifestyleLogs.AsNoTracking()
-            .Where(l => l.PatientId == pid && l.LogLocalDate >= from)
-            .OrderByDescending(l => l.LogLocalDate)
-            .ToListAsync();
+        var rows = await _repository.GetLifestyleLogsAsync(pid, from);
 
         var items = rows.Select(MapLifestyle).ToList();
         return Ok(items);
@@ -713,22 +685,22 @@ public class MonitoringService : BaseService, IMonitoringService
             ExerciseMinutes = req.ExerciseMinutes,
             ExerciseType = req.ExerciseType?.Trim()
         };
-        _repository.LifestyleLogs.Add(log);
-        await _repository.SaveChangesAsync();
+        _repository.Add(log);
+        await _repository.CommitAsync();
         await _audit.LogAsync(
             AuditAction.LifestyleCreate,
             nameof(LifestyleLog),
             log.Id,
             null,
             new { log.LogLocalDate, log.MealNote, log.MealTags, log.ExerciseMinutes, log.ExerciseType });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
         return Ok(MapLifestyle(log));
     }
 
     public async Task<ActionResult<LifestyleLogDto>> UpdateLifestyle(int id, CreateLifestyleRequest req)
     {
         var pid = RequireMyPatientId(_me);
-        var log = await _repository.LifestyleLogs.FirstOrDefaultAsync(l => l.Id == id && l.PatientId == pid)
+        var log = await _repository.GetLifestyleLogForUpdateAsync(id, pid)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy nhật ký lối sống.");
 
         _repository.ApplyOriginalRowVersion(log, req.RowVersion);
@@ -756,14 +728,14 @@ public class MonitoringService : BaseService, IMonitoringService
             log.Id,
             oldLifestyle,
             new { log.LogLocalDate, log.MealNote, log.MealTags, log.ExerciseMinutes, log.ExerciseType });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
         return Ok(MapLifestyle(log));
     }
 
     /// <summary>UC-47 — sửa/xoá mềm nhật ký lối sống.</summary>
     public async Task<IActionResult> DeleteLifestyle(int id, ConcurrencyRequest req)
     {
-        var l = await _repository.LifestyleLogs.FirstOrDefaultAsync(x => x.Id == id)
+        var l = await _repository.GetLifestyleLogForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         var myPatientId = RequireMyPatientId(_me);
         if (l.PatientId != myPatientId)
@@ -778,7 +750,7 @@ public class MonitoringService : BaseService, IMonitoringService
             l.Id,
             new { isDeleted = false, l.LogLocalDate },
             new { isDeleted = true, l.DeletedAt });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
         return Ok(new { message = "Đã ẩn bản ghi." });
     }
 
@@ -801,25 +773,8 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = ResolvePatientId(patientId);
         var today = _clock.LocalToday;
 
-        var items = await _repository.MedicationLogs.AsNoTracking()
-            .Where(m => m.PatientId == pid && m.ScheduledLocalDate == today
-                        && m.Status != MedicationStatus.Cancelled)
-            .OrderBy(m => m.ScheduledAt)
-            .Select(m => new MedicationLogDto
-            {
-                Id = m.Id,
-                PrescriptionId = m.PrescriptionItem!.PrescriptionId,
-                PrescriptionItemId = m.PrescriptionItemId,
-                DrugName = m.PrescriptionItem.DrugName,
-                Dose = m.PrescriptionItem.Dose,
-                ScheduledAt = m.ScheduledAt,
-                TakenAt = m.TakenAt,
-                Status = (byte)m.Status,
-                StatusLabel = MedicationStatusLabel(m.Status),
-                RowVersion = Convert.ToBase64String(m.RowVer)
-            }).ToListAsync();
-
-        return Ok(items);
+        var rows = await _repository.GetMedicationLogsForDateAsync(pid, today);
+        return Ok(rows.Select(MapMedication).ToList());
     }
 
     /// <summary>UC-44 — bệnh nhân xác nhận Taken, Skipped hoặc hoàn tác về Pending.</summary>
@@ -829,9 +784,7 @@ public class MonitoringService : BaseService, IMonitoringService
         if (req.Status is not (MedicationStatus.Taken or MedicationStatus.Skipped or MedicationStatus.Pending))
             throw AppException.BadRequest(Msg.InvalidData, "Trạng thái xác nhận thuốc không hợp lệ.");
 
-        var log = await _repository.MedicationLogs
-            .Include(m => m.PrescriptionItem)
-            .FirstOrDefaultAsync(m => m.Id == id)
+        var log = await _repository.GetMedicationLogForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lịch uống thuốc.");
 
         var myPatientId = RequireMyPatientId(_me);
@@ -851,7 +804,7 @@ public class MonitoringService : BaseService, IMonitoringService
             log.Id,
             new { status = oldStatus.ToString() },
             new { status = log.Status.ToString(), log.TakenAt });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(MapMedication(log));
     }
@@ -926,7 +879,7 @@ public class MonitoringService : BaseService, IMonitoringService
 
     private int ResolvePatientId(int? requested)
     {
-        if (_me.Role == UserRole.Patient) return RequireMyPatientId(_me);
+        if (IsPatientOnly(_me)) return RequireMyPatientId(_me);
         var pid = requested ?? throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId.");
         return pid;
     }

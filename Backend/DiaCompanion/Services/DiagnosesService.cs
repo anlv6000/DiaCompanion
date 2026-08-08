@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Data;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
@@ -36,13 +35,8 @@ public class DiagnosesService : BaseService, IDiagnosesService
     /// </summary>
     public async Task<ActionResult<AiDiagnosisDto>> Run(int imageId, CancellationToken ct)
     {
-        var image = await _repository.FundusImages
-
-    .Include(x => x.Visit)
-    .FirstOrDefaultAsync(x => x.Id == imageId, ct)
-    ?? throw AppException.NotFound(
-        Msg.LoadFailed,
-        "Không tìm thấy ảnh đáy mắt.");
+        var image = await _repository.GetFundusImageWithVisitForUpdateAsync(imageId, ct)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt.");
 
 
         var doctorId = _me.RequireId();
@@ -59,14 +53,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
             throw AppException.BadRequest(Msg.ImageNotGradable,
                 "Ảnh chưa đạt chất lượng nên không thể chạy phân tích AI.");
 
-        var alreadyApproved = await _repository.DiagnosisReviews.AsNoTracking()
-            .AnyAsync(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImageId == imageId, ct);
+        var alreadyApproved = await _repository.IsImageReviewedAsync(imageId, ct);
         if (alreadyApproved)
             throw AppException.Conflict(
                 "Kết quả AI đã được phê duyệt",
                 "Không thể chạy lại AI sau khi bác sĩ đã phê duyệt hoặc ghi đè kết quả.");
 
-        var model = await _repository.ModelVersions.FirstOrDefaultAsync(m => m.IsActive, ct)
+        var model = await _repository.GetActiveModelVersionAsync(ct)
             ?? throw AppException.BadRequest(Msg.AiUnavailable,
                 "Chưa có phiên bản mô hình nào được kích hoạt.");
 
@@ -84,33 +77,15 @@ public class DiagnosesService : BaseService, IDiagnosesService
             (DrGrade)result.DrGrade, result.Confidence, lesionGrade,
             confThreshold, disagreeThreshold);
 
-        // SQL Server đang bật EnableRetryOnFailure/SqlServerRetryingExecutionStrategy.
-        // Vì vậy transaction do ứng dụng tạo phải nằm trọn trong ExecuteAsync để
-        // EF Core có thể chạy lại toàn bộ đơn vị công việc khi xảy ra lỗi tạm thời.
-        var strategy = _repository.Database.CreateExecutionStrategy();
         var diagnosisId = 0;
-
-        await strategy.ExecuteAsync(async () =>
+        await _repository.ExecuteInTransactionAsync(async () =>
         {
-            await using var tx = await _repository.Database
-                .BeginTransactionAsync(IsolationLevel.Serializable, ct);
-
-            // Kiểm tra lại trong transaction để chặn trường hợp một bác sĩ vừa phê duyệt
-            // trong lúc dịch vụ AI đang chạy.
-            alreadyApproved = await _repository.DiagnosisReviews.AsNoTracking()
-                .AnyAsync(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImageId == imageId, ct);
-            if (alreadyApproved)
+            if (await _repository.IsImageReviewedAsync(imageId, ct))
                 throw AppException.Conflict(
                     "Kết quả AI đã được phê duyệt",
                     "Không thể chạy lại AI sau khi bác sĩ đã phê duyệt hoặc ghi đè kết quả.");
 
-            // Chỉ giữ một kết quả AI chưa duyệt đang hoạt động cho mỗi ảnh.
-            // Lần chạy mới tự động void toàn bộ lần chạy cũ để triage không bị spam.
-            var previousRuns = await _repository.AiDiagnoses
-                .Where(d => d.FundusImageId == imageId)
-                .OrderBy(d => d.CreatedAt)
-                .ToListAsync(ct);
-
+            var previousRuns = await _repository.GetDiagnosesForImageForUpdateAsync(imageId, ct);
             foreach (var old in previousRuns)
             {
                 await _void.VoidDiagnosisAsync(
@@ -138,36 +113,29 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 AreaHE = result.AreaHE,
                 AreaEX = result.AreaEX,
                 AreaSE = result.AreaSE,
-
                 Disagreement = deferral.Disagreement,
                 IsDeferred = deferral.IsDeferred,
                 DeferReason = deferral.Reason,
                 ConfidenceThreshold = confThreshold,
                 DisagreementThreshold = disagreeThreshold,
-
                 FractalDimension = result.FractalDimension,
                 VesselMaskPath = result.VesselMaskPath,
                 FractalNote = result.FractalNote,
                 InferenceMs = result.InferenceMs
             };
 
-            _repository.AiDiagnoses.Add(diagnosis);
-            await _repository.SaveChangesAsync(ct);
+            _repository.Add(diagnosis);
+            await _repository.CommitAsync(ct);
+            diagnosisId = diagnosis.Id;
 
             await _audit.LogAsync(AuditAction.AiRun, nameof(AiDiagnosis), diagnosis.Id, null, new
             {
-                imageId,
-                model = model.Name,
-                grade = diagnosis.DrGrade.ToString(),
-                confidence = diagnosis.Confidence,
-                disagreement = diagnosis.Disagreement,
+                imageId, model = model.Name, grade = diagnosis.DrGrade.ToString(),
+                confidence = diagnosis.Confidence, disagreement = diagnosis.Disagreement,
                 deferred = diagnosis.IsDeferred
             });
-            await _repository.SaveChangesAsync(ct);
-
-            await tx.CommitAsync(ct);
-            diagnosisId = diagnosis.Id;
-        });
+            await _repository.CommitAsync(ct);
+        }, IsolationLevel.Serializable, ct);
 
         return Ok(await MapAsync(diagnosisId));
     }
@@ -178,10 +146,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
     /// <summary>Các kết quả AI của một ảnh (gồm cả lần chạy lại).</summary>
     public async Task<ActionResult<List<AiDiagnosisDto>>> ByImage(int imageId)
     {
-        var ids = await _repository.AiDiagnoses.AsNoTracking()
-            .Where(d => d.FundusImageId == imageId)
-            .OrderByDescending(d => d.CreatedAt)
-            .Select(d => d.Id).ToListAsync();
+        var ids = await _repository.GetDiagnosisIdsByImageAsync(imageId);
 
         var list = new List<AiDiagnosisDto>();
         foreach (var id in ids) list.Add(await MapAsync(id));
@@ -194,9 +159,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
     private async Task<IActionResult> ResultImage(int id, bool useLesionMask)
     {
-        var diagnosis = await _repository.AiDiagnoses.AsNoTracking()
-            .Include(d => d.FundusImage)
-            .FirstOrDefaultAsync(d => d.Id == id)
+        var diagnosis = await _repository.GetDiagnosisWithImageAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
 
         if (diagnosis.FundusImage is null)
@@ -251,20 +214,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
         var from = DateTime.UtcNow.AddMonths(-months);
 
         // Chỉ lấy mức đã được bác sĩ xác nhận — không đưa kết quả AI thô vào
-        // biểu đồ diễn tiến (BR-13). Query filter đã loại bản ghi void.
-        var confirmed = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis!.FundusImage!.PatientId == patientId && r.CreatedAt >= from)
-            .Select(r => new
-            {
-                r.CreatedAt,
-                VisitId = r.AiDiagnosis!.FundusImage!.VisitId,
-                Grade = r.FinalGrade,
-                Fd = r.AiDiagnosis.FractalDimension
-            }).ToListAsync();
-
-        var hba1c = await _repository.HealthMetrics.AsNoTracking()
-            .Where(m => m.PatientId == patientId && m.MetricType == MetricType.HbA1c && m.RecordedAtUtc >= from)
-            .Select(m => new { m.RecordedAtUtc, m.Value }).ToListAsync();
+        // biểu đồ diễn tiến (BR-13).
+        var confirmed = await _repository.GetConfirmedProgressionAsync(patientId, from);
+        var hba1c = await _repository.GetHba1cProgressionAsync(patientId, from);
 
         // Gom theo NGÀY để ba chuỗi rơi vào cùng một điểm trên biểu đồ
         var points = confirmed
@@ -275,7 +227,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 VisitId = g.Select(x => x.VisitId).FirstOrDefault(),
                 // Mắt nặng hơn đại diện cho lần khám (BR-21)
                 ConfirmedGrade = (byte)g.Max(x => x.Grade),
-                FractalDimension = g.Average(x => x.Fd)
+                FractalDimension = g.Average(x => x.FractalDimension)
             }).ToList();
 
         foreach (var h in hba1c)
@@ -324,15 +276,10 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
     private async Task<AiDiagnosisDto> MapAsync(int id)
     {
-        var d = await _repository.AiDiagnoses.AsNoTracking()
-            .Include(x => x.FundusImage)
-            .Include(x => x.ModelVersion)
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var d = await _repository.GetDiagnosisDetailAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy kết quả AI.");
 
-        var review = await _repository.DiagnosisReviews.AsNoTracking()
-            .Include(r => r.Doctor)
-            .FirstOrDefaultAsync(r => r.AiDiagnosisId == id);
+        var review = await _repository.GetReviewByDiagnosisAsync(id);
 
         return new AiDiagnosisDto
         {

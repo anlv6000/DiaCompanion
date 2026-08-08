@@ -17,4 +17,9 @@ public class CreatePatientRequest
     [MaxLength(1000)] public string? Note { get; set; }
     /// <summary>Mặc định true: tài khoản được cấp ngay lúc tạo hồ sơ.</summary>
     public bool CreateAccount { get; set; } = true;
+
+
+    // NULL = tạo User mới
+    // Có giá trị = dùng User đã tồn tại
+    public int? ExistingUserId { get; set; }
 }

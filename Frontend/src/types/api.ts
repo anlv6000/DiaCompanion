@@ -1,4 +1,5 @@
 export type Role = "Admin" | "Doctor" | "Patient" | "Receptionist";
+export type StaffRole = Exclude<Role, "Patient">;
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
   items: T[];
@@ -35,9 +36,14 @@ export interface LoginRequest {
 export interface LoginResponse {
   token?: string;
   expiresAt?: string;
+  refreshToken?: string;
+  refreshTokenExpiresAt?: string;
   userId: number;
   fullName: string;
-  role: Role;
+  /** Vai trò ưu tiên để tương thích API cũ. Không dùng trường này làm nguồn quyền duy nhất. */
+  role?: Role;
+  /** Toàn bộ role active lấy từ Roles + UserRoles. */
+  roles: Role[];
   patientId?: number | null;
   mustChangePassword: boolean;
   defaultRoute: string;
@@ -55,7 +61,10 @@ export interface StaffUserDto {
   id: number;
   fullName: string;
   email?: string | null;
-  role: Role;
+  /** Vai trò ưu tiên do backend trả để tương thích client cũ. */
+  role?: Role;
+  /** Danh sách role active thực tế của User. */
+  roles: Role[];
   licenseNo?: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
@@ -67,6 +76,13 @@ export interface DoctorDto {
   fullName: string;
   licenseNo?: string | null;
 }
+export interface LinkablePatientUserDto {
+  id: number;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  roles: Role[];
+}
 export interface TempCredentialResponse {
   loginId: string;
   tempPassword: string;
@@ -75,12 +91,17 @@ export interface TempCredentialResponse {
 export interface CreateStaffRequest {
   email: string;
   fullName: string;
-  role: number;
+  /** Role nhân viên được chọn trên UI. */
+  role?: StaffRole;
+  /** FE gửi mảng 1 phần tử để tương thích backend dùng UserRoles. */
+  roles: StaffRole[];
   licenseNo?: string | null;
 }
 export interface UpdateStaffRequest {
   fullName: string;
   licenseNo?: string | null;
+  /** FE gửi tối đa 1 role nhân viên; backend giữ nguyên role Patient nếu User đang có. */
+  roles?: StaffRole[];
   rowVersion: string;
 }
 export interface PatientListItemDto {
@@ -117,12 +138,16 @@ export interface CreatePatientRequest {
   baselineHbA1c?: number | null;
   note?: string | null;
   createAccount: boolean;
+  existingUserId?: number | null;
 }
 export interface CreatePatientResponse {
   patient: PatientDetailDto;
   account?: TempCredentialResponse | null;
 }
-export type UpdatePatientRequest = Omit<CreatePatientRequest, "createAccount"> & {
+export type UpdatePatientRequest = Omit<
+  CreatePatientRequest,
+  "createAccount" | "existingUserId"
+> & {
   rowVersion: string;
 };
 export interface VisitDto {

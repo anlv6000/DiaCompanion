@@ -64,7 +64,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
     if (selected) setGrade(selected.drGrade);
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canReview = can.reviewDiagnosis(user?.role);
+  const canReview = can.reviewDiagnosis(user);
   const canRunAgain = canReview && !selected?.isConfirmed;
 
   const downloadOriginal = async () => {
@@ -324,7 +324,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
                           />
                         </div>
                         {selected.review.reason && <p>{selected.review.reason}</p>}
-                        {can.voidReview(user?.role) && (
+                        {can.voidReview(user) && (
                           <Button kind="danger" onClick={() => setVoidReview(true)}>
                             Void review
                           </Button>

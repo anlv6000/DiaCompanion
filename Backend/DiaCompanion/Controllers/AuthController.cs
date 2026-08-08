@@ -53,6 +53,15 @@ public class AuthController : BaseApiController
     }
 
 
+    /// <summary>Cấp lại access token. Role luôn được đọc lại từ Roles/UserRoles đang active.</summary>
+    [AllowAnonymous]
+    [HttpPost("refresh")]
+    public async Task<ActionResult<LoginResponse>> Refresh(RefreshTokenRequest req)
+    {
+        return await _service.Refresh(req);
+    }
+
+
     /// <summary>UC-04 — quên mật khẩu, đặt lại bằng OTP.</summary>
     [AllowAnonymous]
     [HttpPost("forgot-password")]
