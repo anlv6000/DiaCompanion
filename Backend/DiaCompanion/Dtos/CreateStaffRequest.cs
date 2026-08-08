@@ -7,10 +7,10 @@ public class CreateStaffRequest
     [Required, EmailAddress] public string Email { get; set; } = "";
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
 
-    /// <summary>Giữ tương thích client cũ gửi một role.</summary>
+    /// <summary>Role staff. Chỉ Doctor hoặc Receptionist.</summary>
     public string? Role { get; set; }
 
-    /// <summary>Hỗ trợ một user có nhiều role. Nếu có giá trị thì ưu tiên trường này.</summary>
+    /// <summary>Tương thích FE cũ; nếu gửi thì chỉ được chứa đúng một role staff.</summary>
     public List<string>? Roles { get; set; }
 
     public string? LicenseNo { get; set; }

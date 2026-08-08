@@ -1,3 +1,7 @@
+using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
+using DiaCompanion.Entities;
+
 namespace DiaCompanion.Api.Repositories;
 
 /// <summary>
@@ -16,4 +20,16 @@ public partial interface IRepository : IUnitOfWork
 
     Task<bool> CanConnectAsync(CancellationToken cancellationToken = default);
 
-}
+    Task<User?> GetUserByIdAsync(int userId, CancellationToken ct = default);
+
+    Task<bool> UserAlreadyLinkedToActivePatientAsync(int userId,CancellationToken ct = default);
+
+    Task<bool> UserPhoneExistsExceptUserAsync(string phone,int exceptUserId,CancellationToken ct = default);
+
+     Task<IReadOnlyList<LinkableUserDto>> GetLinkableUsersForPatientAsync(string? keyword, int excludedUserId, CancellationToken ct = default);
+    Task<MedicalRecord?> GetActiveMedicalRecordByPatientIdAsync(int patientId,bool tracking = false,CancellationToken ct = default);
+    Task<Patient?> GetPatientByIdAsync(
+        int patientId,
+        bool tracking = false,
+        CancellationToken ct = default);
+}       

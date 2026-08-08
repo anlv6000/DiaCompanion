@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
+using DiaCompanion.Entities;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DiaCompanion.Api.Services;
 
@@ -43,8 +44,18 @@ public class VisitsService : BaseService, IVisitsService
 
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
-        if (!await _repository.PatientExistsAsync(req.PatientId))
-            throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        var patient = await _repository.GetPatientByIdAsync(
+       req.PatientId,
+       tracking: false);
+
+        if (patient is null)
+        {
+            throw AppException.NotFound(
+                Msg.PatientNotFound,
+                "Không tìm thấy hồ sơ bệnh nhân.");
+        }
+        //if (!await _repository.PatientExistsAsync(req.PatientId))
+        //    throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
         if (!await _repository.IsActiveUserInRoleAsync(req.DoctorId, Roles.Doctor))
             throw AppException.BadRequest(Msg.InvalidData, "Bác sĩ phụ trách không tồn tại, bị khóa hoặc role Doctor không còn active.");
         if (await _repository.HasOpenVisitAsync(req.PatientId))
@@ -54,19 +65,67 @@ public class VisitsService : BaseService, IVisitsService
         var dayOfWeek = (byte)_clock.LocalNow.DayOfWeek;
         if (!await _repository.IsDoctorOnDutyAsync(req.DoctorId, dayOfWeek))
             throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
-
-        var visit = new Visit
-        {
-            PatientId = req.PatientId,
-            DoctorId = req.DoctorId,
-            VisitDate = _clock.UtcNow,
-            Status = VisitStatus.InProgress
-        };
+        Visit? createdVisit = null;
+        //var visit = new Visit
+        //{
+        //    PatientId = req.PatientId,
+        //    DoctorId = req.DoctorId,
+        //    VisitDate = _clock.UtcNow,
+        //    Status = VisitStatus.InProgress
+        //};
 
         await _repository.ExecuteInTransactionAsync(async () =>
         {
+            var medicalRecord =
+            await _repository.GetActiveMedicalRecordByPatientIdAsync(
+                patient.Id,
+                tracking: true);
+            //TH medicalRecord null thì add trước đã
+            if (medicalRecord is null)
+            {
+                medicalRecord = new MedicalRecord
+                {
+                    PatientId = patient.Id,
+
+                    // Giữ cùng format với dữ liệu migration:
+                    // MR-{Patient.Code}
+                    RecordCode = $"MR-{patient.Code}",
+
+                    CreatedAt = _clock.UtcNow,
+
+                    CreatedByUserId = _me.RequireId(),
+
+                    IsVoided = false
+                };
+
+                _repository.Add(medicalRecord);
+
+                // Phải save ở đây để SQL Server sinh MedicalRecord.Id.
+                await _repository.CommitAsync();
+            }
+            // --------------------------------------------------------
+            // MedicalRecord lúc này chắc chắn đã có Id.
+            // Dùng Id đó làm FK cho MedicalVisit.
+            // --------------------------------------------------------
+            var visit = new Visit
+            {
+                PatientId = patient.Id,
+
+                MedicalRecordId = medicalRecord.Id,
+
+                DoctorId = req.DoctorId,
+
+                VisitDate = _clock.UtcNow,
+
+                Status = VisitStatus.InProgress
+            };
+
             _repository.Add(visit);
+
             await _repository.CommitAsync();
+
+            createdVisit = visit;
+
 
             if (visit.DoctorId is int doctorId)
             {
@@ -77,10 +136,22 @@ public class VisitsService : BaseService, IVisitsService
             }
         });
 
-        var dto = await RequireVisitDtoAsync(visit.Id);
-        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
-        dto.CreatedAt = _clock.ToLocal(visit.CreatedAt)!.Value;
-        return CreatedAtAction(nameof(Get), new { id = visit.Id }, dto);
+       
+
+        var dto = await RequireVisitDtoAsync(createdVisit.Id);
+
+        dto.VisitDate =
+            _clock.ToLocal(dto.VisitDate)!.Value;
+
+        dto.CreatedAt =
+            _clock.ToLocal(createdVisit.CreatedAt)!.Value;
+
+
+        return CreatedAtAction(
+            nameof(Get),
+            new { id = createdVisit.Id },
+            dto);
+        
     }
 
     public async Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req)

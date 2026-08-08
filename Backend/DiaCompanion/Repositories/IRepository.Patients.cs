@@ -30,9 +30,10 @@ public partial interface IRepository
         CancellationToken ct = default);
 
     Task<bool> PatientPhoneExistsAsync(string phone, int? exceptPatientId = null, CancellationToken ct = default);
-    Task<bool> ActiveUserPhoneExistsAsync(string phone, int? exceptUserId = null, CancellationToken ct = default);
+    Task<bool> UserPhoneExistsAsync(string phone, int? exceptUserId = null, CancellationToken ct = default);
     Task<User?> GetUserForUpdateAsync(int userId, CancellationToken ct = default);
     Task<string?> GetLastPatientCodeAsync(string prefix, CancellationToken ct = default);
     Task<PatientDetailStats> GetPatientDetailStatsAsync(int patientId, CancellationToken ct = default);
     Task<bool> EnsureUserRoleActiveAsync(User user, string roleName, int? assignedBy, CancellationToken ct = default);
+    Task<bool> SetUserRoleActiveAsync(int userId, string roleName, bool isActive, int? changedBy, CancellationToken ct = default);
 }

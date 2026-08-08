@@ -140,9 +140,11 @@ export function RecheckPage() {
                 ))}
               </DataTable>
               <Pagination
-                page={page}
+                page={list.data.page || page}
                 total={list.data.totalItems}
-                pageSize={25}
+                pageSize={list.data.pageSize || 25}
+                totalPages={list.data.totalPages}
+                rangeLabel={list.data.rangeLabel}
                 onPage={setPage}
               />
             </>

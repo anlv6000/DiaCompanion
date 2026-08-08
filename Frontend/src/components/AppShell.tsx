@@ -6,6 +6,7 @@ import { useAsync } from "@/lib/hooks";
 import { Icon, Modal, LoadState, Button, StatusBadge } from "@/components/ui";
 import { fmtDate, initials } from "@/lib/format";
 import type { Role, NotificationDto } from "@/types/api";
+import { hasAnyRole, rolesLabel } from "@/lib/roles";
 
 /* Khung ứng dụng: điều hướng trái + thanh trên. AppShell là container cấp cao
    của layout nên được phép gọi useData (nạp thông báo, chip model). Các trang
@@ -129,10 +130,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const unread = useAsync(() => data.engagement.unread(), [user?.userId]);
   const dash = useAsync(
     () =>
-      user?.role === "Admin" || user?.role === "Doctor"
+      hasAnyRole(user, ["Admin", "Doctor"])
         ? data.admin.dashboard()
         : Promise.resolve(null),
-    [user?.role],
+    [user?.roles, user?.role],
   );
 
   return (
@@ -141,9 +142,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         <div className="logo">DiaCompanion</div>
         <nav>
           {NAV.map(([group, items]) => {
-            const visible = items.filter((x) =>
-              x.roles.includes(user?.role as Role),
-            );
+            const visible = items.filter((x) => hasAnyRole(user, x.roles));
             if (!visible.length) return null;
             return (
               <Fragment key={group}>
@@ -197,7 +196,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               <span>
                 {user?.fullName}
                 <small style={{ display: "block" }}>
-                  {user?.role?.toUpperCase()}
+                  {rolesLabel(user).toUpperCase()}
                 </small>
               </span>
             </div>

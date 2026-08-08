@@ -1,7 +1,10 @@
-using System.Data;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Data;
+using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
+using DiaCompanion.Entities;
+using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace DiaCompanion.Api.Repositories;
 
@@ -80,5 +83,160 @@ public sealed partial class EfRepository : IRepository
             result = await action();
         }, isolationLevel, cancellationToken);
         return result!;
+    }
+
+
+
+    public Task<User?> GetUserByIdAsync(
+        int userId,
+        CancellationToken ct = default)
+    {
+        // Users.IsActive không còn là trạng thái tài khoản.
+        return _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+    }
+
+    public Task<bool> UserAlreadyLinkedToActivePatientAsync(int userId, CancellationToken ct = default)
+    {
+        return _db.Patients.AnyAsync(
+        p => p.UserId == userId && !p.IsVoided,
+        ct);
+    }
+
+    public Task<bool> UserPhoneExistsExceptUserAsync(
+        string phone,
+        int exceptUserId,
+        CancellationToken ct = default)
+    {
+        return _db.Users.AnyAsync(
+            u => u.Phone == phone && u.Id != exceptUserId,
+            ct);
+    }
+
+    public async Task<IReadOnlyList<LinkableUserDto>>
+    GetLinkableUsersForPatientAsync(
+        string? keyword,
+        int excludedUserId,
+        CancellationToken ct = default)
+    {
+        // 1. Bắt đầu từ Users; trạng thái khóa nằm ở UserRoles, không dùng Users.IsActive.
+        var query = _db.Users
+
+            // 2. Loại chính tài khoản đang đăng nhập.
+            // Ví dụ lễ tân UserId = 20 thì User 20 không xuất hiện
+            // trong danh sách để tự tạo Patient cho chính mình.
+            .Where(u => u.Id != excludedUserId)
+
+            // 3. Loại User đã có hồ sơ Patient đang hoạt động.
+            .Where(u =>
+                !_db.Patients.Any(p =>
+                    p.UserId == u.Id &&
+                    !p.IsVoided))
+
+            // 4. Admin không được dùng để tạo hồ sơ Patient qua luồng này.
+            .Where(u => !u.UserRoles.Any(ur =>
+                ur.Role.Name == Roles.Admin &&
+                ur.IsActive &&
+                ur.Role.IsActive));
+
+
+        // 5. Search theo tên / email / phone.
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var q = keyword.Trim();
+
+            query = query.Where(u =>
+                u.FullName.Contains(q) ||
+                (u.Email != null && u.Email.Contains(q)) ||
+                (u.Phone != null && u.Phone.Contains(q)));
+        }
+
+        // 6. Chỉ lấy thông tin cần trả cho frontend.
+        var users = await query
+            .AsNoTracking()
+            .OrderBy(u => u.FullName)
+            .Select(u => new
+            {
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Phone
+            })
+            .ToListAsync(ct);
+
+        var userIds = users
+            .Select(u => u.Id)
+            .ToList();
+
+        // 7. Lấy các role active của các User vừa tìm được.
+        var roles = await _db.UserRoles
+            .Join(
+                _db.Roles,
+                ur => ur.RoleId,
+                r => r.Id,
+                (ur, r) => new
+                {
+                    UserRole = ur,
+                    Role = r
+                })
+            .Where(x =>
+                userIds.Contains(x.UserRole.UserId)
+                && x.UserRole.IsActive
+                && x.Role.IsActive)
+            .Select(x => new
+            {
+                x.UserRole.UserId,
+                RoleName = x.Role.Name
+            })
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        // 8. Ghép User + Roles thành DTO.
+        return users
+            .Select(u => new LinkableUserDto
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                Email = u.Email,
+                Phone = u.Phone,
+                Roles = roles
+                    .Where(r => r.UserId == u.Id)
+                    .Select(r => r.RoleName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            })
+            .ToList();
+    }
+
+
+    public async Task<MedicalRecord?> GetActiveMedicalRecordByPatientIdAsync(
+       int patientId,
+       bool tracking = false,
+       CancellationToken ct = default)
+    {
+        IQueryable<MedicalRecord> query = _db.MedicalRecords
+            .Where(mr => mr.PatientId == patientId);
+
+        // MedicalRecord đã có global query filter !IsVoided,
+        // nên không cần viết lại mr.IsVoided == false ở đây.
+
+        if (!tracking)
+            query = query.AsNoTracking();
+
+        return await query.FirstOrDefaultAsync(ct);
+    }
+
+
+    public async Task<Patient?> GetPatientByIdAsync(
+        int patientId,
+        bool tracking = false,
+        CancellationToken ct = default)
+    {
+        IQueryable<Patient> query = _db.Patients
+            .Where(p => p.Id == patientId);
+
+        if (!tracking)
+            query = query.AsNoTracking();
+
+        return await query.FirstOrDefaultAsync(ct);
     }
 }

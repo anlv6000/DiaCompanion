@@ -53,7 +53,7 @@ public class AuthService : BaseService, IAuthService
 
     public async Task<IActionResult> RequestOtp(RequestOtpRequest req, [FromServices] IWebHostEnvironment env)
     {
-        var auth = await _repository.GetActiveUserByPhoneAsync(req.Phone);
+        var auth = await _repository.GetUserByPhoneAsync(req.Phone);
 
         // Không để lộ số điện thoại nào đã đăng ký. OTP đăng nhập chỉ áp dụng
         // cho tài khoản có role Patient đang active trong DB.
@@ -76,7 +76,7 @@ public class AuthService : BaseService, IAuthService
 
     public async Task<ActionResult<LoginResponse>> LoginOtp(OtpLoginRequest req)
     {
-        var auth = await _repository.GetActiveUserByPhoneAsync(req.Phone);
+        var auth = await _repository.GetUserByPhoneAsync(req.Phone);
         if (auth is null || !auth.Roles.Contains(Roles.Patient, StringComparer.OrdinalIgnoreCase))
             throw AppException.Unauthorized(Msg.BadCredentials, "Số điện thoại hoặc mã xác minh không đúng.");
 
@@ -103,8 +103,8 @@ public class AuthService : BaseService, IAuthService
 
     public async Task<IActionResult> ForgotPassword(RequestOtpRequest req, [FromServices] IWebHostEnvironment env)
     {
-        var auth = await _repository.GetActiveUserByPhoneAsync(req.Phone);
-        if (auth is null)
+        var auth = await _repository.GetUserByPhoneAsync(req.Phone);
+        if (auth is null || auth.Roles.Count == 0)
             return Ok(new { message = "Nếu số điện thoại đã đăng ký, mã xác minh sẽ được cấp." });
 
         var code = await _otp.IssueAsync(req.Phone, OtpPurpose.ResetPassword, issuedBy: null);
@@ -116,8 +116,10 @@ public class AuthService : BaseService, IAuthService
     {
         _hasher.EnsureStrong(req.NewPassword);
 
-        var auth = await _repository.GetActiveUserByPhoneAsync(req.Phone)
+        var auth = await _repository.GetUserByPhoneAsync(req.Phone)
             ?? throw AppException.BadRequest(Msg.OtpInvalid, "Mã xác minh không đúng hoặc đã hết hạn.");
+
+        EnsureAccountCanAuthenticate(auth);
 
         if (!await _otp.VerifyAsync(req.Phone, req.Code, OtpPurpose.ResetPassword))
             throw AppException.BadRequest(Msg.OtpInvalid, "Mã xác minh không đúng hoặc đã hết hạn.");
@@ -222,9 +224,10 @@ public class AuthService : BaseService, IAuthService
 
     private static void EnsureAccountCanAuthenticate(AuthUserData auth)
     {
-        if (!auth.User.IsActive)
-            throw AppException.Unauthorized(Msg.AccountLocked, "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        // Trạng thái đăng nhập được quyết định bởi UserRoles.IsActive + Roles.IsActive.
         if (auth.Roles.Count == 0)
-            throw AppException.Unauthorized(Msg.Forbidden, "Tài khoản hiện không có vai trò đang hoạt động.");
+            throw AppException.Unauthorized(
+                Msg.Forbidden,
+                "Tài khoản hiện không có vai trò đang hoạt động.");
     }
 }

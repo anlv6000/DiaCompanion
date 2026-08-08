@@ -99,9 +99,9 @@ public sealed partial class EfRepository
         _db.Patients.AnyAsync(p => p.Phone == phone &&
             (!exceptPatientId.HasValue || p.Id != exceptPatientId.Value), ct);
 
-    public Task<bool> ActiveUserPhoneExistsAsync(string phone, int? exceptUserId = null, CancellationToken ct = default) =>
-        _db.Users.AnyAsync(u => u.Phone == phone && u.IsActive &&
-            (!exceptUserId.HasValue || u.Id != exceptUserId.Value), ct);
+    public Task<bool> UserPhoneExistsAsync(string phone, int? exceptUserId = null, CancellationToken ct = default) =>
+        _db.Users.AnyAsync(u => u.Phone == phone &&
+            (!exceptUserId.HasValue || u.Id != exceptUserId.Value), ct);    
 
     public Task<User?> GetUserForUpdateAsync(int userId, CancellationToken ct = default) =>
         _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
@@ -161,4 +161,35 @@ public sealed partial class EfRepository
 
         return true;
     }
+    public async Task<bool> SetUserRoleActiveAsync(
+        int userId,
+        string roleName,
+        bool isActive,
+        int? changedBy,
+        CancellationToken ct = default)
+    {
+        var normalized = roleName.Trim();
+        var assignment = await _db.UserRoles
+            .Include(ur => ur.Role)
+            .FirstOrDefaultAsync(ur =>
+                ur.UserId == userId &&
+                ur.Role.Name == normalized, ct);
+
+        if (assignment is null)
+            return false;
+
+        // Khi mở lại role, Role master cũng phải đang hoạt động.
+        if (isActive && !assignment.Role.IsActive)
+            return false;
+
+        assignment.IsActive = isActive;
+        if (isActive)
+        {
+            assignment.AssignedAt = DateTime.UtcNow;
+            assignment.AssignedBy = changedBy;
+        }
+
+        return true;
+    }
+
 }

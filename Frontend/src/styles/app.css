@@ -1449,3 +1449,18 @@ a {
     min-height: min(82vw, 620px);
   }
 }
+
+
+/* Multi-role editor */
+.role-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  min-height: 38px;
+  align-items: center;
+}
+input:disabled, select:disabled, textarea:disabled {
+  background: #f1f3f5;
+  color: #667085;
+  cursor: not-allowed;
+}

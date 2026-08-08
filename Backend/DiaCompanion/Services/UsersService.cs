@@ -3,10 +3,11 @@ using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-06..11 — quản lý tài khoản nhân viên (Admin).</summary>
+/// <summary>UC-06..11 — quản lý tài khoản Doctor/Receptionist bởi Admin.</summary>
 public class UsersService : BaseService, IUsersService
 {
     private readonly IRepository _repository;
@@ -14,14 +15,26 @@ public class UsersService : BaseService, IUsersService
     private readonly IAuditService _audit;
     private readonly IPasswordHasher _hasher;
 
-    public UsersService(IRepository repository, ICurrentUser me, IAuditService audit, IPasswordHasher hasher)
-    { _repository = repository; _me = me; _audit = audit; _hasher = hasher; }
+    public UsersService(
+        IRepository repository,
+        ICurrentUser me,
+        IAuditService audit,
+        IPasswordHasher hasher)
+    {
+        _repository = repository;
+        _me = me;
+        _audit = audit;
+        _hasher = hasher;
+    }
 
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
-        [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
+        [FromQuery] string? q,
+        [FromQuery] string? role,
+        [FromQuery] bool? isActive,
         [FromQuery] PageQuery page)
     {
         var data = await _repository.GetStaffPageAsync(q, role, isActive, page);
+
         return Ok(new PagedResult<StaffUserDto>
         {
             Items = data.Items.Select(MapStaff).ToList(),
@@ -33,22 +46,23 @@ public class UsersService : BaseService, IUsersService
 
     public async Task<ActionResult<StaffUserDto>> Get(int id)
     {
-        var user = await _repository.GetStaffAsync(id, tracking: false)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
-        return Ok(MapStaff(user));
+        var staff = await _repository.GetStaffAsync(id, tracking: false)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản nhân viên.");
+
+        return Ok(MapStaff(staff));
     }
 
     public async Task<ActionResult<TempCredentialResponse>> Create(CreateStaffRequest req)
     {
-        var requested = NormalizeRequestedRoles(req.Role, req.Roles);
-        ValidateStaffRoles(requested);
-        await EnsureRolesExistAndActive(requested);
+        // Màn staff chỉ tạo đúng một role: Doctor hoặc Receptionist.
+        var staffRole = ResolveRequestedStaffRole(req.Role, req.Roles);
+        await EnsureRoleExistsAndActive(staffRole);
 
-        if (requested.Contains(Roles.Doctor, StringComparer.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(req.LicenseNo))
+        if (staffRole == Roles.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo))
             throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề.");
 
         var email = req.Email.Trim().ToLowerInvariant();
-        if (await _repository.ActiveEmailExistsAsync(email))
+        if (await _repository.EmailExistsAsync(email))
             throw AppException.Conflict(Msg.PhoneTaken, "Email đã được sử dụng cho tài khoản khác.");
 
         var temp = _hasher.GenerateTempPassword() + "Aa";
@@ -57,19 +71,25 @@ public class UsersService : BaseService, IUsersService
             Email = email,
             PasswordHash = _hasher.Hash(temp),
             FullName = req.FullName.Trim(),
-            LicenseNo = req.LicenseNo?.Trim(),
-            MustChangePassword = true,
-            IsActive = true
+            LicenseNo = staffRole == Roles.Doctor ? req.LicenseNo?.Trim() : null,
+            MustChangePassword = true
+            // Users.IsActive là cột legacy; trạng thái đăng nhập nằm ở UserRoles.IsActive.
         };
 
         await _repository.ExecuteInTransactionAsync(async () =>
         {
             _repository.Add(user);
-            await _repository.CommitAsync(); // cần Id để tạo UserRoles
-            await _repository.SyncUserRolesAsync(user, requested, _me.Id);
+            await _repository.CommitAsync(); // cần User.Id để tạo UserRole
 
-            await _audit.LogAsync(AuditAction.UserCreate, nameof(User), user.Id,
-                null, new { user.Email, Roles = requested, user.FullName });
+            await _repository.SyncStaffUserRoleAsync(user, staffRole, _me.Id);
+
+            await _audit.LogAsync(
+                AuditAction.UserCreate,
+                nameof(User),
+                user.Id,
+                null,
+                new { user.Email, Role = staffRole, user.FullName });
+
             await _repository.CommitAsync();
         });
 
@@ -85,83 +105,111 @@ public class UsersService : BaseService, IUsersService
     public async Task<IActionResult> Update(int id, UpdateStaffRequest req)
     {
         var staff = await _repository.GetStaffAsync(id, tracking: true)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản nhân viên.");
+
         var user = staff.User;
         _repository.ApplyOriginalRowVersion(user, req.RowVersion);
 
-        var currentRoles = staff.Roles.ToArray();
-        var currentStaffRoles = currentRoles
-            .Where(IsStaffRole)
-            .ToArray();
-        var requestedStaffRoles = req.Roles is { Count: > 0 }
-            ? NormalizeRequestedRoles(null, req.Roles)
-            : currentStaffRoles;
+        var currentRole = SelectStaffRole(staff.Roles)?.Name
+            ?? throw AppException.BadRequest(Msg.InvalidData, "Tài khoản không có role nhân viên hợp lệ.");
 
-        ValidateStaffRoles(requestedStaffRoles);
-        await EnsureRolesExistAndActive(requestedStaffRoles);
+        // Nếu FE không gửi role thì giữ nguyên role hiện tại.
+        var requestedRole = HasRequestedRole(req.Role, req.Roles)
+            ? ResolveRequestedStaffRole(req.Role, req.Roles)
+            : currentRole;
 
-        // API quản lý nhân viên chỉ thay đổi các role nhân viên. Những role khác
-        // đang active (ví dụ Patient) được giữ nguyên để hỗ trợ một User nhiều Role.
-        var preservedRoles = currentRoles.Where(r => !IsStaffRole(r));
-        var desiredRoles = requestedStaffRoles
-            .Concat(preservedRoles)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var roleChanged = !requestedRole.Equals(currentRole, StringComparison.OrdinalIgnoreCase);
+        if (roleChanged)
+            await EnsureRoleExistsAndActive(requestedRole);
 
-        if (desiredRoles.Contains(Roles.Doctor, StringComparer.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(req.LicenseNo))
+        if (requestedRole == Roles.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo))
             throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề.");
 
-        if (user.IsActive
-            && currentStaffRoles.Contains(Roles.Admin, StringComparer.OrdinalIgnoreCase)
-            && !requestedStaffRoles.Contains(Roles.Admin, StringComparer.OrdinalIgnoreCase)
-            && await _repository.CountOtherActiveUsersInRoleAsync(user.Id, Roles.Admin) == 0)
+        var before = new
         {
-            throw AppException.BadRequest(Msg.Forbidden,
-                "Không thể gỡ vai trò Admin khỏi quản trị viên cuối cùng còn hoạt động.");
-        }
+            user.FullName,
+            user.LicenseNo,
+            Role = currentRole,
+            IsActive = SelectStaffRole(staff.Roles)?.IsActive ?? false
+        };
 
-        var before = new { user.FullName, user.LicenseNo, Roles = currentRoles };
         user.FullName = req.FullName.Trim();
-        user.LicenseNo = req.LicenseNo?.Trim();
+        user.LicenseNo = requestedRole == Roles.Doctor ? req.LicenseNo?.Trim() : null;
         user.UpdatedAt = DateTime.UtcNow;
 
-        await _repository.SyncUserRolesAsync(user, desiredRoles, _me.Id);
-        await _audit.LogAsync(AuditAction.UserUpdate, nameof(User), user.Id, before,
-            new { user.FullName, user.LicenseNo, Roles = desiredRoles });
+        // Chỉ sync khi thực sự đổi role, tránh cập nhật thông tin làm mở khóa staff ngoài ý muốn.
+        if (roleChanged)
+            await _repository.SyncStaffUserRoleAsync(user, requestedRole, _me.Id);
+
+        await _audit.LogAsync(
+            AuditAction.UserUpdate,
+            nameof(User),
+            user.Id,
+            before,
+            new { user.FullName, user.LicenseNo, Role = requestedRole });
+
         await _repository.CommitAsync();
 
-        return Ok(new { message = "Cập nhật thông tin thành công.", rowVersion = user.ToRowVersion() });
+        return Ok(new
+        {
+            message = "Cập nhật thông tin thành công.",
+            rowVersion = user.ToRowVersion()
+        });
     }
 
     public async Task<IActionResult> SetActive(int id, bool value, ConcurrencyRequest req)
     {
         var staff = await _repository.GetStaffAsync(id, tracking: true)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản nhân viên.");
+
         var user = staff.User;
         _repository.ApplyOriginalRowVersion(user, req.RowVersion);
 
         if (user.Id == _me.Id && !value)
-            throw AppException.BadRequest(Msg.Forbidden, "Không thể tự khóa tài khoản đang đăng nhập.");
+            throw AppException.BadRequest(
+                Msg.Forbidden,
+                "Không thể tự khóa quyền nhân viên của tài khoản đang đăng nhập.");
 
-        if (!value
-            && staff.Roles.Contains(Roles.Admin, StringComparer.OrdinalIgnoreCase)
-            && await _repository.CountOtherActiveUsersInRoleAsync(user.Id, Roles.Admin) == 0)
+        var selectedRole = SelectStaffRole(staff.Roles)
+            ?? throw AppException.BadRequest(Msg.InvalidData, "Tài khoản không có role nhân viên hợp lệ.");
+
+        var oldActive = selectedRole.IsActive;
+
+        // Chỉ thay đổi Doctor/Receptionist trong UserRoles.
+        // Patient role của cùng User được giữ nguyên hoàn toàn.
+        var changed = await _repository.SetStaffRoleActiveAsync(
+            user.Id,
+            selectedRole.Name,
+            value,
+            _me.Id);
+
+        if (!changed)
         {
-            throw AppException.BadRequest(Msg.Forbidden,
-                "Không thể khóa quản trị viên cuối cùng còn hoạt động.");
+            throw AppException.BadRequest(
+                Msg.InvalidData,
+                value
+                    ? "Không thể mở khóa vì role nhân viên không còn hoạt động trong bảng Roles."
+                    : "Không tìm thấy role nhân viên để khóa.");
         }
 
-        var old = user.IsActive;
-        user.IsActive = value;
+        // Chỉ cập nhật timestamp để RowVersion của User đổi cho concurrency.
+        // Không dùng và không sửa Users.IsActive.
         user.UpdatedAt = DateTime.UtcNow;
 
-        await _audit.LogAsync(AuditAction.UserLock, nameof(User), user.Id,
-            new { isActive = old }, new { isActive = value });
+        await _audit.LogAsync(
+            AuditAction.UserLock,
+            nameof(User),
+            user.Id,
+            new { Role = selectedRole.Name, IsActive = oldActive },
+            new { Role = selectedRole.Name, IsActive = value });
+
         await _repository.CommitAsync();
 
         return Ok(new
         {
-            message = value ? "Đã mở khóa tài khoản." : "Đã khóa tài khoản.",
+            message = value
+                ? "Đã mở khóa quyền nhân viên."
+                : "Đã khóa quyền nhân viên.",
             rowVersion = user.ToRowVersion()
         });
     }
@@ -169,7 +217,8 @@ public class UsersService : BaseService, IUsersService
     public async Task<ActionResult<TempCredentialResponse>> ResetPassword(int id, ConcurrencyRequest req)
     {
         var staff = await _repository.GetStaffAsync(id, tracking: true)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản.");
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy tài khoản nhân viên.");
+
         var user = staff.User;
         _repository.ApplyOriginalRowVersion(user, req.RowVersion);
 
@@ -178,8 +227,12 @@ public class UsersService : BaseService, IUsersService
         user.MustChangePassword = true;
         user.UpdatedAt = DateTime.UtcNow;
 
-        await _audit.LogAsync(AuditAction.PasswordReset, nameof(User), user.Id,
+        await _audit.LogAsync(
+            AuditAction.PasswordReset,
+            nameof(User),
+            user.Id,
             detail: "Quản trị viên đặt lại mật khẩu");
+
         await _repository.CommitAsync();
 
         return Ok(new TempCredentialResponse
@@ -197,47 +250,89 @@ public class UsersService : BaseService, IUsersService
         return Ok(doctors.Select(u => new { u.Id, u.FullName, u.LicenseNo }).ToList());
     }
 
-    private async Task EnsureRolesExistAndActive(IReadOnlyCollection<string> requested)
+    public async Task<IReadOnlyList<LinkableUserDto>> GetLinkableUsersAsync(
+        string? keyword,
+        CancellationToken ct = default)
     {
-        var rows = await _repository.GetActiveRoleNamesByNamesAsync(requested);
-        var found = rows.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missing = requested.Where(x => !found.Contains(x)).ToArray();
-        if (missing.Length > 0)
-            throw AppException.BadRequest(Msg.InvalidData,
-                $"Role không tồn tại hoặc đang bị khóa trong database: {string.Join(", ", missing)}.");
+        var currentUserId = _me.RequireId();
+        return await _repository.GetLinkableUsersForPatientAsync(keyword, currentUserId, ct);
     }
 
-    private static string[] NormalizeRequestedRoles(string? role, IEnumerable<string>? roles)
+    private async Task EnsureRoleExistsAndActive(string roleName)
     {
-        var source = roles?.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
-        if (source is null or { Length: 0 })
-            source = string.IsNullOrWhiteSpace(role) ? Array.Empty<string>() : new[] { role! };
-        return source.Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var rows = await _repository.GetActiveRoleNamesByNamesAsync(new[] { roleName });
+        if (!rows.Contains(roleName, StringComparer.OrdinalIgnoreCase))
+        {
+            throw AppException.BadRequest(
+                Msg.InvalidData,
+                $"Role {roleName} không tồn tại hoặc đang bị khóa trong bảng Roles.");
+        }
     }
 
-    private static bool IsStaffRole(string role) =>
-        Roles.StaffAssignable.Contains(role, StringComparer.OrdinalIgnoreCase);
+    private static bool HasRequestedRole(string? role, IEnumerable<string>? roles) =>
+        !string.IsNullOrWhiteSpace(role) ||
+        (roles?.Any(x => !string.IsNullOrWhiteSpace(x)) ?? false);
 
-    private static void ValidateStaffRoles(IReadOnlyCollection<string> roles)
+    private static string ResolveRequestedStaffRole(string? role, IEnumerable<string>? roles)
     {
-        if (roles.Count == 0 || roles.Any(r => !Roles.StaffAssignable.Contains(r, StringComparer.OrdinalIgnoreCase)))
-            throw AppException.BadRequest(Msg.RequiredFields,
-                "Vai trò nhân viên chỉ có thể là Admin, Doctor hoặc Receptionist.");
+        var requested = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(role))
+            requested.Add(role.Trim());
+
+        if (roles is not null)
+        {
+            requested.AddRange(roles
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim()));
+        }
+
+        var distinct = requested
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (distinct.Length != 1)
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Mỗi tài khoản nhân viên chỉ được chọn một role: Doctor hoặc Receptionist.");
+        }
+
+        var selected = distinct[0];
+        if (selected.Equals(Roles.Doctor, StringComparison.OrdinalIgnoreCase))
+            return Roles.Doctor;
+        if (selected.Equals(Roles.Receptionist, StringComparison.OrdinalIgnoreCase))
+            return Roles.Receptionist;
+
+        throw AppException.BadRequest(
+            Msg.RequiredFields,
+            "Vai trò nhân viên chỉ có thể là Doctor hoặc Receptionist.");
     }
+
+    private static StaffRoleData? SelectStaffRole(IEnumerable<StaffRoleData> roles) =>
+        roles
+            .OrderByDescending(r => r.IsActive)
+            .ThenByDescending(r => r.AssignedAt)
+            .FirstOrDefault();
 
     private static StaffUserDto MapStaff(StaffUserData staff)
     {
         var user = staff.User;
-        var roles = staff.Roles.ToList();
+        var staffRole = SelectStaffRole(staff.Roles);
+        var roleName = staffRole?.Name ?? "";
+
         return new StaffUserDto
         {
             Id = user.Id,
             FullName = user.FullName,
             Email = user.Email,
-            Role = Roles.Primary(roles),
-            Roles = roles,
+            Role = roleName,
+            Roles = string.IsNullOrEmpty(roleName) ? new List<string>() : new List<string> { roleName },
             LicenseNo = user.LicenseNo,
-            IsActive = user.IsActive,
+
+            // Trạng thái hiển thị lấy từ UserRoles.IsActive, không phải Users.IsActive.
+            IsActive = staffRole?.IsActive ?? false,
+
             LastLoginAt = user.LastLoginAt,
             CreatedAt = user.CreatedAt,
             RowVersion = user.ToRowVersion()

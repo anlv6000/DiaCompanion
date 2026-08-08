@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveLandingRoute } from "@/lib/permissions";
+import { hasAnyRole } from "@/lib/roles";
 import { AppShell } from "@/components/AppShell";
 import type { Role } from "@/types/api";
 
@@ -51,7 +52,7 @@ function RequireAuth({
   if (user.mustChangePassword && location.pathname !== "/change-password") {
     return <Navigate to="/change-password" replace />;
   }
-  if (roles && !roles.includes(user.role)) return <Forbidden />;
+  if (roles && !hasAnyRole(user, roles)) return <Forbidden />;
   return <AppShell>{children}</AppShell>;
 }
 
@@ -100,7 +101,7 @@ export function AppRoutes() {
         path="/login"
         element={
           user ? (
-            <Navigate to={resolveLandingRoute(user.role, user.defaultRoute)} replace />
+            <Navigate to={resolveLandingRoute(user, user.defaultRoute)} replace />
           ) : (
             <LoginPage />
           )
@@ -315,13 +316,13 @@ export function AppRoutes() {
       {/* Mặc định */}
       <Route
         path="/"
-        element={<Navigate to={resolveLandingRoute(user?.role, user?.defaultRoute)} replace />}
+        element={<Navigate to={resolveLandingRoute(user, user?.defaultRoute)} replace />}
       />
       <Route
         path="*"
         element={
           <Navigate
-            to={user ? resolveLandingRoute(user.role, user.defaultRoute) : "/login"}
+            to={user ? resolveLandingRoute(user, user.defaultRoute) : "/login"}
             replace
           />
         }

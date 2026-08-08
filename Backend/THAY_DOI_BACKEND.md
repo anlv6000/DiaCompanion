@@ -102,11 +102,10 @@ Các Service tương ứng đã bỏ EF/LINQ truy vấn database trực tiếp v
 
 `AuthService` gọi Repository để lấy `User` và danh sách role hiện đang active. User chỉ đăng nhập thành công khi:
 
-- `Users.IsActive = 1`
 - có ít nhất một `UserRoles.IsActive = 1`
 - role tương ứng có `Roles.IsActive = 1`
 
-Nếu có bản ghi login cũ đã khóa trùng email/số điện thoại với tài khoản active, Repository ưu tiên bản ghi active.
+`Users.IsActive` không còn được backend map hoặc dùng để quyết định trạng thái tài khoản. Email/Phone được coi là định danh duy nhất của `User` bất kể role đang khóa hay mở.
 
 ### JWT access token
 
@@ -127,7 +126,7 @@ Trong `Program.cs`, `JwtBearerEvents.OnTokenValidated` truy vấn lại trạng 
 
 Các role claim trong JWT được xóa và thay bằng danh sách role **đang active trong database tại thời điểm request**. Sau đó `[Authorize(Roles = ...)]` ở Controller mới thực hiện kiểm quyền.
 
-Kết quả: nếu khóa User, khóa Role hoặc tắt một dòng UserRole thì token access cũ cũng mất quyền ở request kế tiếp, không cần chờ JWT hết hạn.
+Kết quả: nếu tắt `UserRoles.IsActive` hoặc `Roles.IsActive` thì role tương ứng bị gỡ khỏi principal ở request kế tiếp, không cần chờ JWT hết hạn. Nếu User không còn role active nào thì request bị từ chối.
 
 ## 6. Quản lý nhân viên nhiều Role
 
@@ -141,9 +140,9 @@ Kết quả: nếu khóa User, khóa Role hoặc tắt một dòng UserRole thì
 - `Repositories/EfRepository.Users.cs`
 - `Controllers/UsersController.cs`
 
-API giữ trường `Role` để tương thích client cũ khi tạo tài khoản, đồng thời hỗ trợ `Roles` là danh sách.
+API giữ cả `Role` và `Roles` để tương thích client cũ, nhưng màn quản lý staff chỉ chấp nhận đúng **một** role: `Doctor` hoặc `Receptionist`.
 
-Khi sửa tài khoản nhân viên, API chỉ quản lý nhóm role nhân viên (`Admin`, `Doctor`, `Receptionist`) và giữ nguyên các role khác đang active của User (ví dụ `Patient`). Việc này tránh làm mất role khi một User có nhiều role.
+Khi sửa/khóa tài khoản nhân viên, API chỉ quản lý `Doctor`/`Receptionist`. Role `Patient` của cùng User được giữ nguyên. Admin không nằm trong danh sách staff này.
 
 Việc gán role thực hiện theo quy trình:
 

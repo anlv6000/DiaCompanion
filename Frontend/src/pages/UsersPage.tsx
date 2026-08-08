@@ -15,9 +15,10 @@ import {
   Icon,
 } from "@/components/ui";
 import { roles } from "@/lib/enums";
+import { getRoles, rolesLabel } from "@/lib/roles";
 import { fmtDate } from "@/lib/format";
 import { useToast } from "@/contexts/ToastContext";
-import type { StaffUserDto, TempCredentialResponse } from "@/types/api";
+import type { StaffRole, StaffUserDto, TempCredentialResponse } from "@/types/api";
 
 export function UsersPage() {
   const data = useData();
@@ -135,7 +136,7 @@ export function UsersPage() {
                   <b>{u.fullName}</b>
                 </td>
                 <td className="mono">{u.email || "—"}</td>
-                <td>{u.role}</td>
+                <td>{rolesLabel(u)}</td>
                 <td className="mono">{u.licenseNo || "—"}</td>
                 <td className="mono">{fmtDate(u.lastLoginAt, true)}</td>
                 <td>
@@ -163,9 +164,11 @@ export function UsersPage() {
             ))}
           </DataTable>
           <Pagination
-            page={page}
-            pageSize={25}
+            page={list.data?.page || page}
+            pageSize={list.data?.pageSize || 25}
             total={list.data?.totalItems || 0}
+            totalPages={list.data?.totalPages}
+            rangeLabel={list.data?.rangeLabel}
             onPage={setPage}
           />
         </LoadState>
@@ -208,9 +211,14 @@ function UserEditor({
   const isNew = user === "new";
   const [fullName, setName] = useState(isNew ? "" : user.fullName);
   const [email, setEmail] = useState(isNew ? "" : user.email || "");
-  const [role, setRole] = useState<number>(
-    isNew ? 1 : roles.find((x) => x.key === user.role)?.value || 1,
-  );
+  const [selectedRole, setSelectedRole] = useState<StaffRole>(() => {
+    if (isNew) return "Doctor";
+    // Màn quản trị nhân viên chỉ cho chọn 1 role nghiệp vụ chính.
+    // Role Patient (nếu User có do liên kết hồ sơ bệnh nhân) không hiển thị ở đây
+    // và backend cần giữ nguyên khi cập nhật tài khoản nhân viên.
+    const current = getRoles(user).find((r): r is StaffRole => r !== "Patient");
+    return current ?? "Doctor";
+  });
   const [license, setLicense] = useState(isNew ? "" : user.licenseNo || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -219,7 +227,7 @@ function UserEditor({
     if (
       !fullName.trim() ||
       (isNew && !email.trim()) ||
-      (role === 1 && !license.trim())
+      (selectedRole === "Doctor" && !license.trim())
     ) {
       setError("Vui lòng nhập đầy đủ các trường bắt buộc.");
       return;
@@ -231,14 +239,18 @@ function UserEditor({
         const c = await data.users.create({
           fullName,
           email,
-          role,
-          licenseNo: license || null,
+          role: selectedRole,
+          // Backend mới vẫn nhận roles[], nhưng FE chỉ cho chọn đúng 1 role nhân viên.
+          roles: [selectedRole],
+          licenseNo: selectedRole === "Doctor" ? license.trim() || null : null,
         });
         onSaved(c);
       } else {
         await data.users.update(user.id, {
           fullName,
-          licenseNo: license || null,
+          licenseNo: selectedRole === "Doctor" ? license.trim() || null : null,
+          // Chỉ cập nhật 1 role nhân viên. Role Patient (nếu có) do backend bảo toàn.
+          roles: [selectedRole],
           rowVersion: user.rowVersion,
         });
         onSaved();
@@ -275,11 +287,14 @@ function UserEditor({
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
-        <Field labelText="Vai trò" required>
+        <Field
+          labelText="Vai trò"
+          required
+          help="Mỗi tài khoản nhân viên chỉ chọn một vai trò chính: Admin, Bác sĩ hoặc Lễ tân. Nếu User đồng thời là Patient thì role Patient được quản lý qua luồng liên kết hồ sơ bệnh nhân."
+        >
           <select
-            disabled={!isNew}
-            value={role}
-            onChange={(e) => setRole(Number(e.target.value))}
+            value={selectedRole}
+            onChange={(e) => setSelectedRole(e.target.value as StaffRole)}
           >
             {roles.map((r) => (
               <option key={r.value} value={r.value}>
@@ -288,7 +303,7 @@ function UserEditor({
             ))}
           </select>
         </Field>
-        <Field labelText="Số chứng chỉ" required={role === 1}>
+        <Field labelText="Số chứng chỉ" required={selectedRole === "Doctor"}>
           <input value={license} onChange={(e) => setLicense(e.target.value)} />
         </Field>
       </div>

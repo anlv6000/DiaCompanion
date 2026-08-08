@@ -99,9 +99,9 @@ public class PatientsService : BaseService, IPatientsService
             throw AppException.Conflict(
                 Msg.PhoneTaken,
                 "Số điện thoại này đã được dùng cho một hồ sơ khác. Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
-
-        if (req.CreateAccount && await _repository.ActiveUserPhoneExistsAsync(phone))
-            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã có tài khoản đang hoạt động.");
+        //check th user đó là khác bệnh nhân và đã có sđt 
+        if (req.CreateAccount && req.ExistingUserId is null && await _repository.UserPhoneExistsAsync(phone))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
         if (req.BaselineHbA1c is decimal hba1c && (hba1c < 3 || hba1c > 20))
             throw AppException.BadRequest(Msg.RequiredFields, "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
@@ -132,32 +132,95 @@ public class PatientsService : BaseService, IPatientsService
                 CreatedBy = _me.RequireId()
             };
 
+            User? linkedUser = null;
             TempCredentialResponse? credential = null;
             if (req.CreateAccount)
             {
-                var temp = _hasher.GenerateTempPassword();
-                var user = new User
+                if (req.ExistingUserId is int existingUserId)
                 {
-                    Phone = phone,
-                    PasswordHash = _hasher.Hash(temp),
-                    FullName = patient.FullName,
-                    MustChangePassword = true,
-                    IsActive = true
-                };
+                    linkedUser = await _repository.GetUserByIdAsync(existingUserId);
+                    if (linkedUser is null)
+                        throw AppException.NotFound(
+                            Msg.RequiredFields,
+                            "Tài khoản được chọn không tồn tại.");
+                    var alreadyHasPatient = await _repository.UserAlreadyLinkedToActivePatientAsync(existingUserId);
 
-                _repository.Add(user);
-                await _repository.CommitAsync();
+                    if (alreadyHasPatient)
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Tài khoản này đã được liên kết với một hồ sơ bệnh nhân.");
 
-                if (!await _repository.EnsureUserRoleActiveAsync(user, Roles.Patient, _me.RequireId()))
-                    throw AppException.Conflict(Msg.RequiredFields, "Vai trò Patient chưa tồn tại hoặc đang bị khóa trong cơ sở dữ liệu.");
 
-                patient.UserId = user.Id;
-                credential = new TempCredentialResponse
+                    // Có thể cập nhật phone cho User nếu trước đó chưa có
+                    if (string.IsNullOrWhiteSpace(linkedUser.Phone))
+                    {
+                        var phoneTaken = await _repository.UserPhoneExistsExceptUserAsync(phone,linkedUser.Id);
+
+                        if (phoneTaken)
+                            throw AppException.Conflict(
+                                Msg.PhoneTaken,
+                                "Số điện thoại đã được sử dụng bởi tài khoản khác.");
+
+                        linkedUser.Phone = phone;
+                    }
+                    else if (!string.Equals(
+                 linkedUser.Phone,
+                 phone,
+                 StringComparison.Ordinal))
+                    {
+                        throw AppException.Conflict(
+                            Msg.PhoneTaken,
+                            "Số điện thoại hồ sơ bệnh nhân không khớp với tài khoản được chọn.");
+                    }
+                    var addedPatientRole = await _repository.EnsureUserRoleActiveAsync(linkedUser,Roles.Patient,_me.RequireId());
+
+                    if (!addedPatientRole)
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Vai trò Patient chưa tồn tại hoặc đang bị khóa.");
+
+                    patient.UserId = linkedUser.Id;
+                }
+                else
                 {
-                    LoginId = phone,
-                    TempPassword = temp,
-                    Note = "Mật khẩu tạm chỉ hiển thị một lần. In cho bệnh nhân; hệ thống sẽ bắt đổi mật khẩu ở lần đăng nhập đầu tiên."
-                };
+                    if (await _repository.UserPhoneExistsAsync(phone))
+                        throw AppException.Conflict(
+                            Msg.PhoneTaken,
+                            "Số điện thoại này đã được dùng cho tài khoản khác.");
+
+                    var temp = _hasher.GenerateTempPassword();
+
+                    linkedUser = new User
+                    {
+                        Phone = phone,
+                        PasswordHash = _hasher.Hash(temp),
+                        FullName = patient.FullName,
+                        MustChangePassword = true
+                    };
+
+                    _repository.Add(linkedUser);
+                    await _repository.CommitAsync();
+
+                    if (!await _repository.EnsureUserRoleActiveAsync(
+                            linkedUser,
+                            Roles.Patient,
+                            _me.RequireId()))
+                    {
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Vai trò Patient chưa tồn tại hoặc đang bị khóa.");
+                    }
+
+                    patient.UserId = linkedUser.Id;
+
+                    credential = new TempCredentialResponse
+                    {
+                        LoginId = phone,
+                        TempPassword = temp,
+                        Note =
+                            "Mật khẩu tạm chỉ hiển thị một lần. In cho bệnh nhân; hệ thống sẽ bắt đổi mật khẩu ở lần đăng nhập đầu tiên."
+                    };
+                }
             }
 
             _repository.Add(patient);
@@ -190,8 +253,8 @@ public class PatientsService : BaseService, IPatientsService
         var phone = NormalizePhone(req.Phone);
         if (phone != patient.Phone && await _repository.PatientPhoneExistsAsync(phone, id))
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
-        if (phone != patient.Phone && await _repository.ActiveUserPhoneExistsAsync(phone, patient.UserId))
-            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã có tài khoản đang hoạt động.");
+        if (phone != patient.Phone && await _repository.UserPhoneExistsAsync(phone, patient.UserId))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
         var before = new { patient.FullName, patient.Phone, patient.Address, patient.DiabetesType, patient.BaselineHbA1c };
         patient.FullName = req.FullName.Trim();
@@ -358,23 +421,21 @@ public class PatientsService : BaseService, IPatientsService
                     ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy tài khoản liên kết với bệnh nhân.");
                 user.PasswordHash = _hasher.Hash(temp);
                 user.MustChangePassword = true;
-                user.IsActive = true;
                 user.Phone = patient.Phone;
                 user.FullName = patient.FullName;
                 user.UpdatedAt = DateTime.UtcNow;
             }
             else
             {
-                if (await _repository.ActiveUserPhoneExistsAsync(patient.Phone))
-                    throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã có tài khoản đang hoạt động.");
+                if (await _repository.UserPhoneExistsAsync(patient.Phone))
+                    throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
                 user = new User
                 {
                     Phone = patient.Phone,
                     PasswordHash = _hasher.Hash(temp),
                     FullName = patient.FullName,
-                    MustChangePassword = true,
-                    IsActive = true
+                    MustChangePassword = true
                 };
                 _repository.Add(user);
                 await _repository.CommitAsync();
@@ -408,8 +469,8 @@ public class PatientsService : BaseService, IPatientsService
     {
         if (await _repository.PatientPhoneExistsAsync(phone, patientId))
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ bệnh nhân khác.");
-        if (await _repository.ActiveUserPhoneExistsAsync(phone, userId))
-            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã có tài khoản đang hoạt động.");
+        if (await _repository.UserPhoneExistsAsync(phone, userId))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
     }
 
     private async Task<string> NextCodeAsync()

@@ -1,7 +1,7 @@
 export const roles = [
-  { value: 0, label: "Admin", key: "Admin" },
-  { value: 1, label: "Bác sĩ", key: "Doctor" },
-  { value: 4, label: "Lễ tân", key: "Receptionist" },
+  { value: "Admin", label: "Admin", key: "Admin" },
+  { value: "Doctor", label: "Bác sĩ", key: "Doctor" },
+  { value: "Receptionist", label: "Lễ tân", key: "Receptionist" },
 ] as const;
 export const grades = ["Bình thường", "Nhẹ", "Trung bình", "Nặng", "PDR"];
 export const gradeCodes = ["Normal", "Mild", "Moderate", "Severe", "PDR"];
