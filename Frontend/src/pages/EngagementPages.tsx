@@ -143,9 +143,11 @@ export function BlogPage() {
             ))}
           </DataTable>
           <Pagination
-            page={page}
-            pageSize={25}
+            page={list.data?.page || page}
+            pageSize={list.data?.pageSize || 25}
             total={list.data?.totalItems || 0}
+            totalPages={list.data?.totalPages}
+            rangeLabel={list.data?.rangeLabel}
             onPage={setPage}
           />
         </LoadState>
@@ -391,9 +393,11 @@ export function FeedbackPage() {
             ))}
           </DataTable>
           <Pagination
-            page={page}
-            pageSize={50}
+            page={list.data?.page || page}
+            pageSize={list.data?.pageSize || 50}
             total={list.data?.totalItems || 0}
+            totalPages={list.data?.totalPages}
+            rangeLabel={list.data?.rangeLabel}
             onPage={setPage}
           />
         </LoadState>
@@ -500,9 +504,11 @@ export function SymptomsPage() {
             ))}
           </DataTable>
           <Pagination
-            page={page}
-            pageSize={50}
+            page={list.data?.page || page}
+            pageSize={list.data?.pageSize || 50}
             total={list.data?.totalItems || 0}
+            totalPages={list.data?.totalPages}
+            rangeLabel={list.data?.rangeLabel}
             onPage={setPage}
           />
         </LoadState>

@@ -28,7 +28,7 @@ public sealed partial class EfRepository
 
     public Task<bool> PatientExistsAsync(int patientId, CancellationToken ct = default) =>
         _db.Patients.AsNoTracking().AnyAsync(p => p.Id == patientId, ct);
-
+        
     public Task<bool> HasOpenVisitAsync(int patientId, CancellationToken ct = default) =>
         _db.Visits.AsNoTracking().AnyAsync(v => v.PatientId == patientId && v.Status == VisitStatus.InProgress, ct);
 

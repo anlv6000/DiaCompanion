@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
+using DiaCompanion.Dtos;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DiaCompanion.Api.Services;
 
@@ -15,4 +16,8 @@ public interface IUsersService
     Task<IActionResult> SetActive(int id, bool value, ConcurrencyRequest req);
     Task<ActionResult<TempCredentialResponse>> ResetPassword(int id, ConcurrencyRequest req);
     Task<IActionResult> Doctors();
+
+    Task<IReadOnlyList<LinkableUserDto>> GetLinkableUsersAsync(
+    string? keyword,
+    CancellationToken ct = default);
 }

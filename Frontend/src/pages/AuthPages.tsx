@@ -116,7 +116,7 @@ export function ChangePasswordPage() {
       setConfirm("");
       // Điều hướng theo vai trò về trang chủ an toàn (không hardcode /triage,
       // không rơi vào /home vốn không tồn tại trên web console).
-      navigate(resolveLandingRoute(user?.role, user?.defaultRoute), {
+      navigate(resolveLandingRoute(user, user?.defaultRoute), {
         replace: true,
       });
     } catch (err) {

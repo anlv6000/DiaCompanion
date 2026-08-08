@@ -168,9 +168,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var repository = context.HttpContext.RequestServices.GetRequiredService<IRepository>();
                 var snapshot = await repository.GetAuthorizationSnapshotAsync(userId, context.HttpContext.RequestAborted);
-                if (snapshot is null || !snapshot.UserIsActive || snapshot.Roles.Count == 0)
+                if (snapshot is null || snapshot.Roles.Count == 0)
                 {
-                    context.Fail("Tài khoản hoặc vai trò không còn hoạt động.");
+                    context.Fail("Tài khoản không còn vai trò đang hoạt động.");
                     return;
                 }
 

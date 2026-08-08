@@ -21,7 +21,6 @@ public class User : IHasRowVersion
     /// <summary>Mật khẩu tạm in ra phiếu phải đổi ở lần đăng nhập đầu.</summary>
     public bool MustChangePassword { get; set; }
 
-    public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

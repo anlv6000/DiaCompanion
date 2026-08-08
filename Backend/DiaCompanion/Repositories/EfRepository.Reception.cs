@@ -15,7 +15,7 @@ public sealed partial class EfRepository
 
         var rows = await shifts
             .Join(
-                _db.Users.AsNoTracking().Where(u => u.IsActive &&
+                _db.Users.AsNoTracking().Where(u =>
                     u.UserRoles.Any(ur => ur.IsActive && ur.Role.IsActive && ur.Role.Name == Roles.Doctor)),
                 s => s.DoctorId,
                 u => u.Id,

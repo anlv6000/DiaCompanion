@@ -54,17 +54,18 @@ function normalizeJson(value: unknown): unknown {
 }
 
 async function parseError(res: Response): Promise<never> {
-  let body: ApiMessage | undefined;
+  let body: (ApiMessage & { title?: string; errors?: Record<string, string[]> }) | undefined;
   try {
     body = await res.json();
   } catch {
     body = undefined;
   }
-  throw new ApiError(
-    res.status,
-    body?.message || `Yêu cầu thất bại (${res.status})`,
-    body,
-  );
+
+  const validation = body?.errors
+    ? Object.values(body.errors).flat().filter(Boolean).join(" ")
+    : "";
+  const message = body?.message || validation || body?.title || `Yêu cầu thất bại (${res.status})`;
+  throw new ApiError(res.status, message, body);
 }
 
 export async function request<T>(

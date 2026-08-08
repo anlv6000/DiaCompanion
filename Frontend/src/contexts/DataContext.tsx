@@ -67,6 +67,7 @@ interface DataValue {
 
 const buildAuth = () => ({
   me: () => authApi.me(),
+  refresh: (refreshToken: string) => authApi.refresh(refreshToken),
   change: (b: T.ChangePasswordRequest) => authApi.change(b),
 });
 const buildUsers = () => ({
@@ -79,6 +80,7 @@ const buildUsers = () => ({
   resetPassword: (id: number, rowVersion: string) =>
     usersApi.reset(id, rowVersion),
   doctors: () => usersApi.doctors(),
+  linkablePatients: (q?: string) => usersApi.linkablePatients(q),
 });
 const buildPatients = () => ({
   list: (p: Record<string, unknown>) => patientsApi.list(p),

@@ -361,29 +361,34 @@ export function Pagination({
   page,
   pageSize,
   total,
+  totalPages,
+  rangeLabel,
   onPage,
 }: {
   page: number;
   pageSize: number;
   total: number;
+  totalPages?: number;
+  rangeLabel?: string;
   onPage: (p: number) => void;
 }) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const start = total ? (page - 1) * pageSize + 1 : 0;
-  const end = Math.min(page * pageSize, total);
+  const pages = Math.max(1, totalPages ?? Math.ceil(total / Math.max(1, pageSize)));
+  const safePage = Math.min(Math.max(1, page), pages);
+  const start = total ? (safePage - 1) * pageSize + 1 : 0;
+  const end = Math.min(safePage * pageSize, total);
   return (
     <div className="pagination">
       <span className="faint mono">
-        {start}–{end} / {total}
+        {rangeLabel || `${start}–${end} / ${total}`}
       </span>
       <div className="actions">
-        <Button disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        <Button disabled={safePage <= 1} onClick={() => onPage(safePage - 1)}>
           Trước
         </Button>
         <span className="badge mono">
-          {page}/{pages}
+          {safePage}/{pages}
         </span>
-        <Button disabled={page >= pages} onClick={() => onPage(page + 1)}>
+        <Button disabled={safePage >= pages} onClick={() => onPage(safePage + 1)}>
           Sau
         </Button>
       </div>

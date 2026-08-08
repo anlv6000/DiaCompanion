@@ -15,6 +15,7 @@ import {
   Meter,
 } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRole } from "@/lib/roles";
 import { useToast } from "@/contexts/ToastContext";
 import { fmtDate, num } from "@/lib/format";
 import { grades } from "@/lib/enums";
@@ -229,7 +230,7 @@ function ReviewRail({
   const [busy, setBusy] = useState(false);
 
   // Chỉ Bác sĩ được phê duyệt/ghi đè và truy cập hàng đợi triage.
-  const canReview = user?.role === "Doctor";
+  const canReview = hasRole(user, "Doctor");
 
   const submit = async () => {
     setBusy(true);

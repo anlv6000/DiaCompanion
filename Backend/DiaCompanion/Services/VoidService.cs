@@ -131,16 +131,14 @@ public class VoidService : IVoidService
                 $"Thu hồi theo hồ sơ bệnh nhân: {normalizedReason}");
         }
 
-        // Khóa tài khoản đăng nhập của bệnh nhân
+        // Thu hồi riêng quyền Patient; các role khác của cùng User vẫn giữ nguyên.
         if (patient.UserId is int userId)
         {
-            var user = await _repository.GetUserForUpdateAsync(userId);
-
-            if (user is not null && user.IsActive)
-            {
-                user.IsActive = false;
-                user.UpdatedAt = DateTime.UtcNow;
-            }
+            await _repository.SetUserRoleActiveAsync(
+                userId,
+                Roles.Patient,
+                isActive: false,
+                changedBy: currentUserId);
         }
 
         await _audit.LogAsync(
