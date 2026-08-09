@@ -13,7 +13,12 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString =
+    builder.Configuration.GetConnectionString("Default");
 
+Console.WriteLine("=== CONNECTION STRING ===");
+Console.WriteLine(connectionString);
+Console.WriteLine("=========================");
 /* ------------------------------------------------------------------ config */
 // QT-19: secret đọc từ biến môi trường, KHÔNG từ bảng SystemConfigs.
 // Ví dụ: JWT__SIGNINGKEY=... (hai gạch dưới = phân cấp)
@@ -23,6 +28,9 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlServer(builder.Configuration.GetConnectionString("Default"),
         sql => sql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+
+
+
 
 // Repository is scoped together with AppDbContext (one Unit of Work per request).
 builder.Services.AddScoped<IRepository, EfRepository>();

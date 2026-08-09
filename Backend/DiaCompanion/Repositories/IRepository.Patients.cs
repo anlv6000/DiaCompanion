@@ -36,4 +36,20 @@ public partial interface IRepository
     Task<PatientDetailStats> GetPatientDetailStatsAsync(int patientId, CancellationToken ct = default);
     Task<bool> EnsureUserRoleActiveAsync(User user, string roleName, int? assignedBy, CancellationToken ct = default);
     Task<bool> SetUserRoleActiveAsync(int userId, string roleName, bool isActive, int? changedBy, CancellationToken ct = default);
+
+
+
+    public sealed record AdminPatientData(
+    Patient Patient,
+    User? User,
+    bool? PatientRoleIsActive);
+
+    public sealed record AdminPatientPage(
+        IReadOnlyList<AdminPatientData> Items,
+        int Total);
+
+    public sealed record PatientAdminTarget(
+        Patient Patient,
+        User? User,
+        UserRole? PatientRole);
 }

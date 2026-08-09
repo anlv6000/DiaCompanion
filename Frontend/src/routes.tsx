@@ -27,6 +27,7 @@ import {
 import { ProgressionPage } from "@/pages/ProgressionPage";
 import { VisitReportPage } from "@/pages/VisitReportPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { PatientAccountsPage } from "@/pages/PatientAccountsPage";
 import { BlogPage, FeedbackPage, SymptomsPage } from "@/pages/EngagementPages";
 import {
   DashboardPage,
@@ -288,6 +289,14 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
+      <Route
+  path="/patient-accounts"
+  element={
+    <RequireAuth roles={["Admin"]}>
+      <PatientAccountsPage />
+    </RequireAuth>
+  }
+/>
       <Route
         path="/configs"
         element={

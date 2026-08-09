@@ -1,9 +1,10 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Services;
+using DiaCompanion.Dtos;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DiaCompanion.Api.Controllers;
 
@@ -129,5 +130,57 @@ public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest re
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);
+    }
+
+
+
+    /// <summary>
+    /// Admin — danh sách bệnh nhân để quản lý tài khoản.
+    /// Trạng thái lấy từ UserRoles.Patient.IsActive.
+    /// </summary>
+    [HttpGet("admin")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<PagedResult<AdminPatientDto>>> AdminList(
+        [FromQuery] string? q,
+        [FromQuery] string? status,
+        [FromQuery] PageQuery page)
+    {
+        return await _service.AdminList(
+            q,
+            status,
+            page);
+    }
+
+
+    /// <summary>
+    /// Admin — chỉ sửa họ tên, giới tính, địa chỉ.
+    /// </summary>
+    [HttpPut("admin/{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> AdminUpdate(
+        int id,
+        AdminUpdatePatientRequest req)
+    {
+        return await _service.AdminUpdate(
+            id,
+            req);
+    }
+
+
+    /// <summary>
+    /// Admin — khóa/mở riêng role Patient.
+    /// Không ảnh hưởng role Doctor/Receptionist nếu cùng User.
+    /// </summary>
+    [HttpPut("admin/{id:int}/active")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> SetPatientAccountActive(
+        int id,
+        ConcurrencyRequest req,
+        [FromQuery] bool value)
+    {
+        return await _service.SetPatientAccountActive(
+            id,
+            value,
+            req);
     }
 }

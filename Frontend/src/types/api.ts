@@ -658,3 +658,32 @@ export interface VisitReport {
   disclaimer: string;
   generatedAt: string;
 }
+export interface AdminPatientDto {
+  id: number;
+
+  userId?: number | null;
+
+  code: string;
+
+  fullName: string;
+
+  gender: number;
+
+  phone: string;
+
+  address?: string | null;
+
+  hasAccount: boolean;
+
+  isActive?: boolean | null;
+
+  patientRowVersion: string;
+
+  accountRowVersion?: string | null;
+}
+export interface AdminUpdatePatientRequest {
+  fullName: string;
+  gender: number;
+  address?: string | null;
+  rowVersion: string;
+}
