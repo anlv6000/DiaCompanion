@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Entities;
@@ -33,14 +32,12 @@ public class OtpService : IOtpService
         var ttl = await _cfg.GetIntAsync(ConfigKeys.OtpTtlSeconds, 300);
 
         // Vô hiệu các mã cũ chưa dùng — tránh nhiều mã cùng hiệu lực một lúc
-        var old = await _repository.OtpCodes
-            .Where(o => o.Phone == phone && o.Purpose == purpose && o.ConsumedAt == null)
-            .ToListAsync();
+        var old = await _repository.GetUnconsumedOtpCodesAsync(phone, purpose);
         foreach (var o in old) o.ConsumedAt = DateTime.UtcNow;
 
         var code = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100_000, 999_999).ToString();
 
-        _repository.OtpCodes.Add(new OtpCode
+        _repository.Add(new OtpCode
         {
             Phone = phone,
             CodeHash = _hasher.Hash(code),   // không lưu mã thô
@@ -48,7 +45,7 @@ public class OtpService : IOtpService
             ExpiresAt = DateTime.UtcNow.AddSeconds(ttl),
             IssuedBy = issuedBy
         });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
         return code;
     }
 
@@ -56,10 +53,7 @@ public class OtpService : IOtpService
     {
         var maxAttempts = await _cfg.GetIntAsync(ConfigKeys.OtpMaxAttempts, 5);
 
-        var otp = await _repository.OtpCodes
-            .Where(o => o.Phone == phone && o.Purpose == purpose && o.ConsumedAt == null)
-            .OrderByDescending(o => o.Id)
-            .FirstOrDefaultAsync();
+        var otp = await _repository.GetLatestUnconsumedOtpAsync(phone, purpose);
 
         if (otp is null || otp.ExpiresAt < DateTime.UtcNow) return false;
 
@@ -68,14 +62,14 @@ public class OtpService : IOtpService
         if (otp.AttemptCount >= maxAttempts)
         {
             otp.ConsumedAt = DateTime.UtcNow;
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
             return false;
         }
 
         otp.AttemptCount++;
         var ok = _hasher.Verify(code, otp.CodeHash);
         if (ok) otp.ConsumedAt = DateTime.UtcNow;
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
         return ok;
     }
 }

@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useAsync } from "@/lib/hooks";
 import { can } from "@/lib/permissions";
+import { hasRole } from "@/lib/roles";
 import { ProtectedImage } from "@/components/ProtectedImage";
 import {
   PageHeader,
@@ -59,7 +60,7 @@ export function PatientDetailPage({ id }: { id: number }) {
   const [sp, setSp] = useSearchParams();
   const tab = sp.get("tab") || "profile";
   const patient = useAsync(() => data.patients.get(id), [id]);
-  const isReceptionist = user?.role === "Receptionist";
+  const isReceptionist = hasRole(user, "Receptionist") && !hasRole(user, "Doctor");
   const visibleTabs = isReceptionist
     ? TABS.filter((item) => item.key === "profile" || item.key === "visits")
     : TABS;
@@ -86,7 +87,7 @@ export function PatientDetailPage({ id }: { id: number }) {
                   <Icon name="edit" />
                   Sửa hồ sơ
                 </Button>
-                {user?.role === "Doctor" && (
+                {hasRole(user, "Doctor") && (
                   <Button onClick={() => navigate(`/progression/${id}`)}>
                     <Icon name="chart" />
                     Diễn tiến
@@ -99,11 +100,11 @@ export function PatientDetailPage({ id }: { id: number }) {
           <div style={{ marginTop: 12 }}>
             {activeTab === "profile" && <ProfileTab patient={patient.data} />}
             {activeTab === "visits" && <VisitsTab patientId={id} />}
-            {activeTab === "images" && user?.role === "Doctor" && <ImagesTab patientId={id} />}
-            {activeTab === "prescriptions" && user?.role === "Doctor" && (
+            {activeTab === "images" && hasRole(user, "Doctor") && <ImagesTab patientId={id} />}
+            {activeTab === "prescriptions" && hasRole(user, "Doctor") && (
               <PrescriptionsTab patientId={id} />
             )}
-            {activeTab === "monitoring" && user?.role === "Doctor" && (
+            {activeTab === "monitoring" && hasRole(user, "Doctor") && (
               <MonitoringTab patientId={id} />
             )}
           </div>
@@ -195,7 +196,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
         </Panel>
       </div>
 
-      {can.reissuePatientCredential(user?.role) && (
+      {can.reissuePatientCredential(user) && (
         <Panel
           title="Tài khoản bệnh nhân"
           action={<Button onClick={reissue}>Cấp lại mật khẩu</Button>}
@@ -208,7 +209,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
       )}
 
       {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Bác sĩ. */}
-      {can.voidPatient(user?.role) && (
+      {can.voidPatient(user) && (
         <Panel title="Thu hồi hồ sơ" className="danger-zone">
           <p>
             Chỉ dùng khi hồ sơ nhập sai hoặc trùng. Hành động sẽ void lượt khám,
@@ -269,7 +270,7 @@ function VisitsTab({ patientId }: { patientId: number }) {
     <Panel
       title="Lượt khám"
       action={
-        can.createVisit(user?.role) ? (
+        can.createVisit(user) ? (
           <ActionLink to="/reception/visits/new">
             <Button kind="primary">
               <Icon name="plus" />
@@ -602,7 +603,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
                 <td className="mono">{fmtDate(img.createdAt, true)}</td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user?.role) && (
+                    {can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>
                         Chất lượng
                       </Button>
@@ -621,7 +622,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
                       {img.latestDiagnosis ? "Xem" : "Chạy AI"}
                     </Button>
                     {/* Void ảnh: Bác sĩ hoặc Admin. */}
-                    {can.voidImage(user?.role) && (
+                    {can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
                         Void
                       </Button>
@@ -814,11 +815,11 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
                 <td className="wrap-text">{p.note || "—"}</td>
                 <td>
                   <div className="actions">
-                    {can.prescribe(user?.role) && (
+                    {can.prescribe(user) && (
                       <Button onClick={() => setEditor(p)}>Sửa</Button>
                     )}
                     {/* Void đơn thuốc: CHỈ Bác sĩ. */}
-                    {can.voidPrescription(user?.role) && (
+                    {can.voidPrescription(user) && (
                       <Button kind="danger" onClick={() => setVoiding(p)}>
                         Void
                       </Button>

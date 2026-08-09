@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
-using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Services;
+using DiaCompanion.Dtos;
 
 namespace DiaCompanion.Api.Controllers;
 
@@ -19,7 +19,7 @@ public class UsersController : BaseApiController
     [HttpGet]
     [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
-    [FromQuery] string? q, [FromQuery] UserRole? role, [FromQuery] bool? isActive,
+    [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
     [FromQuery] PageQuery page)
     {
         return await _service.List(q, role, isActive, page);
@@ -35,7 +35,7 @@ public class UsersController : BaseApiController
     }
 
 
-    /// <summary>UC-08 — tạo tài khoản Admin, Bác sĩ hoặc Lễ tân.</summary>
+    /// <summary>UC-08 — tạo tài khoản Bác sĩ hoặc Lễ tân.</summary>
     [HttpPost]
     [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<TempCredentialResponse>> Create(CreateStaffRequest req)
@@ -54,8 +54,8 @@ public class UsersController : BaseApiController
 
 
     /// <summary>
-    /// UC-10 — khoá / mở tài khoản.
-    /// BR-11: tài khoản KHÔNG bị xoá, chỉ khoá — để giữ vết các thao tác đã thực hiện.
+    /// UC-10 — khóa / mở quyền nhân viên trong UserRoles.
+    /// Không sửa Users.IsActive và không ảnh hưởng role Patient của cùng User.
     /// </summary>
     [HttpPut("{id:int}/active")]
     [Authorize(Roles = Roles.Admin)]
@@ -85,5 +85,15 @@ public class UsersController : BaseApiController
     public async Task<IActionResult> Doctors()
     {
         return await _service.Doctors();
+    }
+
+
+    [HttpGet("linkable-patients")]
+    [Authorize(Roles = Roles.Receptionist)]
+    public async Task<ActionResult<IReadOnlyList<LinkableUserDto>>> GetLinkablePatients(
+       [FromQuery] string? q,
+       CancellationToken ct)
+    {
+        return Ok(await _service.GetLinkableUsersAsync(q, ct));
     }
 }

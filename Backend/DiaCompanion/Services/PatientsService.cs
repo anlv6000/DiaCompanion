@@ -1,5 +1,5 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -7,7 +7,7 @@ using DiaCompanion.Api.Entities;
 
 namespace DiaCompanion.Api.Services;
 
-/// <summary>UC-12..17 — hồ sơ bệnh nhân, kèm cấp tài khoản lúc tạo hồ sơ.</summary>
+/// <summary>UC-12..17 — nghiệp vụ hồ sơ bệnh nhân. Không truy cập EF/DbContext trực tiếp.</summary>
 public class PatientsService : BaseService, IPatientsService
 {
     private readonly IRepository _repository;
@@ -18,95 +18,42 @@ public class PatientsService : BaseService, IPatientsService
     private readonly IClinicClock _clock;
     private readonly IOtpService _otp;
 
-    public PatientsService(IRepository repository, ICurrentUser me, IAuditService audit,
-                              IPasswordHasher hasher, IVoidService voidSvc, IClinicClock clock,
-                              IOtpService otp)
-    { _repository = repository; _me = me; _audit = audit; _hasher = hasher; _void = voidSvc; _clock = clock; _otp = otp; }
+    public PatientsService(
+        IRepository repository,
+        ICurrentUser me,
+        IAuditService audit,
+        IPasswordHasher hasher,
+        IVoidService voidSvc,
+        IClinicClock clock,
+        IOtpService otp)
+    {
+        _repository = repository;
+        _me = me;
+        _audit = audit;
+        _hasher = hasher;
+        _void = voidSvc;
+        _clock = clock;
+        _otp = otp;
+    }
 
-    /// <summary>
-    /// UC-12 — tìm kiếm và lọc, phân trang offset (QT-14).
-    /// Tìm bỏ dấu: "nguyen van an" khớp "Nguyễn Văn Ấn" (QT-15).
-    /// </summary>
     public async Task<ActionResult<PagedResult<PatientListItemDto>>> Search(
         [FromQuery] string? q,
         [FromQuery] byte? diabetesType,
         [FromQuery] byte? grade,
         [FromQuery] PageQuery page)
     {
-        var query = _repository.Patients.AsNoTracking();
-
+        string? normalized = null;
         if (!string.IsNullOrWhiteSpace(q))
         {
-            // INTERACTION.md: không truy vấn khi từ khoá quá ngắn — debounce phía
-            // client chỉ giảm request của MỘT người, không chặn 20 người cùng gõ.
-            if (q.Trim().Length < 2)
+            q = q.Trim();
+            if (q.Length < 2)
                 throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng nhập tối thiểu 2 ký tự để tìm kiếm.");
-
-            var norm = VietnameseText.RemoveDiacritics(q);
-            query = query.Where(p =>
-                EF.Functions.Like(p.FullNameSearch!, $"%{norm}%") ||
-                EF.Functions.Like(p.Code, $"%{q}%") ||
-                EF.Functions.Like(p.Phone, $"%{q}%"));
+            normalized = VietnameseText.RemoveDiacritics(q);
         }
 
-        if (diabetesType is byte dt) query = query.Where(p => p.DiabetesType == dt);
-
-        // Mức DR gần nhất ĐÃ XÁC NHẬN, lấy MẮT NẶNG HƠN (BR-21).
-        // Chỉ tính review của bác sĩ, không tính kết quả AI chưa duyệt (BR-13).
-        var gradeByPatient = _repository.DiagnosisReviews.AsNoTracking()
-            .Select(r => new
-            {
-                PatientId = r.AiDiagnosis!.FundusImage!.PatientId,
-                Grade = (byte)r.FinalGrade,
-                r.CreatedAt
-            })
-            .GroupBy(x => x.PatientId)
-            .Select(g => new
-            {
-                PatientId = g.Key,
-                MaxGrade = (byte?)g.Max(x => x.Grade),
-                LastAt = (DateTime?)g.Max(x => x.CreatedAt)
-            });
-
-        if (grade is byte gr)
-            query = query.Where(p => gradeByPatient.Any(l => l.PatientId == p.Id && l.MaxGrade == gr));
-
-        var total = await query.CountAsync();
-
-        query = (page.Sort, page.Desc) switch
-        {
-            ("name", false) => query.OrderBy(p => p.FullName),
-            ("name", true) => query.OrderByDescending(p => p.FullName),
-            ("code", false) => query.OrderBy(p => p.Code),
-            ("code", true) => query.OrderByDescending(p => p.Code),
-            _ => query.OrderByDescending(p => p.CreatedAt)
-        };
-
+        var result = await _repository.SearchPatientsAsync(normalized, q, diabetesType, grade, page);
         var today = _clock.LocalToday;
-
-        // Lấy trang bệnh nhân trước, rồi nạp mức DR bằng MỘT truy vấn thứ hai.
-        // Nhét truy vấn con tương quan vào Select sẽ sinh ra một subquery cho
-        // mỗi dòng — chậm và dễ vỡ khi EF không dịch được.
-        var rows = await query.Skip(page.Skip).Take(page.PageSize)
-            .Select(p => new
-            {
-                p.Id,
-                p.Code,
-                p.FullName,
-                p.Gender,
-                p.Phone,
-                p.DateOfBirth,
-                p.DiabetesType,
-                p.DiabetesDurationYears,
-                HasAccount = p.UserId != null
-            }).ToListAsync();
-
-        var pageIds = rows.Select(r => r.Id).ToList();
-        var grades = await gradeByPatient
-            .Where(g => pageIds.Contains(g.PatientId))
-            .ToDictionaryAsync(g => g.PatientId, g => new { g.MaxGrade, g.LastAt });
-
-        var items = rows.Select(r => new PatientListItemDto
+        var items = result.Items.Select(r => new PatientListItemDto
         {
             Id = r.Id,
             Code = r.Code,
@@ -116,493 +63,462 @@ public class PatientsService : BaseService, IPatientsService
             Phone = r.Phone,
             DiabetesType = r.DiabetesType,
             DiabetesDurationYears = r.DiabetesDurationYears,
-            LatestDrGrade = grades.TryGetValue(r.Id, out var g1) ? g1.MaxGrade : null,
-            LatestVisitDate = grades.TryGetValue(r.Id, out var g2) ? g2.LastAt : null,
+            LatestDrGrade = r.LatestDrGrade,
+            LatestVisitDate = r.LatestVisitDate,
             HasAccount = r.HasAccount
         }).ToList();
 
         return Ok(new PagedResult<PatientListItemDto>
-        { Items = items, Page = page.Page, PageSize = page.PageSize, TotalItems = total });
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = result.Total
+        });
     }
 
-    /// <summary>UC-13 — chi tiết hồ sơ.</summary>
     public async Task<ActionResult<PatientDetailDto>> Get(int id)
     {
-        var p = await _repository.Patients.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id)
+        var patient = await _repository.GetPatientAsync(id)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
-        return Ok(await ToDetailAsync(p));
+        return Ok(await ToDetailAsync(patient));
     }
 
-    /// <summary>UC-16 — bệnh nhân xem hồ sơ của chính mình.</summary>
     public async Task<ActionResult<PatientDetailDto>> GetMine()
     {
-        var pid = RequireMyPatientId(_me);
-        var p = await _repository.Patients.AsNoTracking().FirstAsync(x => x.Id == pid);
-        return Ok(await ToDetailAsync(p));
+        var patientId = RequireMyPatientId(_me);
+        var patient = await _repository.GetPatientAsync(patientId)
+            ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        return Ok(await ToDetailAsync(patient));
     }
 
-    /// <summary>
-    /// UC-14 — tạo hồ sơ VÀ cấp tài khoản trong cùng một thao tác.
-    ///
-    /// Thay cho luồng cũ (bệnh nhân tự đăng ký rồi nhập mã liên kết): phòng khám
-    /// tạo cả hai cùng lúc nên tài khoản gắn hồ sơ ngay từ đầu, loại bỏ hoàn toàn
-    /// bài toán liên kết nhầm hồ sơ.
-    /// </summary>
     public async Task<ActionResult<CreatePatientResponse>> Create(CreatePatientRequest req)
     {
-        var phone = req.Phone.Trim();
-
-        if (await _repository.Patients.AnyAsync(p => p.Phone == phone))
-        {
+        var phone = NormalizePhone(req.Phone);
+        if (await _repository.PatientPhoneExistsAsync(phone))
             throw AppException.Conflict(
                 Msg.PhoneTaken,
-                "Số điện thoại này đã được dùng cho một hồ sơ khác. " +
-                "Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
-        }
+                "Số điện thoại này đã được dùng cho một hồ sơ khác. Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
+        //check th user đó là khác bệnh nhân và đã có sđt 
+        if (req.CreateAccount && req.ExistingUserId is null && await _repository.UserPhoneExistsAsync(phone))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
-        if (req.CreateAccount &&
-            await _repository.Users.AnyAsync(
-                u => u.Phone == phone && u.IsActive))
+        if (req.BaselineHbA1c is decimal hba1c && (hba1c < 3 || hba1c > 20))
+            throw AppException.BadRequest(Msg.RequiredFields, "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
+
+        if (req.CreateAccount)
         {
-            throw AppException.Conflict(
-                Msg.PhoneTaken,
-                "Số điện thoại này đã có tài khoản đang hoạt động.");
+            var patientRoles = await _repository.GetActiveRoleNamesByNamesAsync(new[] { Roles.Patient });
+            if (!patientRoles.Contains(Roles.Patient, StringComparer.OrdinalIgnoreCase))
+                throw AppException.Conflict(Msg.RequiredFields,
+                    "Vai trò Patient chưa tồn tại hoặc đang bị khóa trong cơ sở dữ liệu.");
         }
-
-        if (req.BaselineHbA1c is decimal hba1c &&
-    (hba1c < 3 || hba1c > 20))
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
-        }
-
-        var strategy =
-            _repository.Database.CreateExecutionStrategy();
 
         CreatePatientResponse? response = null;
-
-        await strategy.ExecuteAsync(async () =>
+        await _repository.ExecuteInTransactionAsync(async () =>
         {
-            await using var tx =
-                await _repository.Database.BeginTransactionAsync();
-
-            try
+            var patient = new Patient
             {
-                var patient = new Patient
-                {
-                    Code = await NextCodeAsync(),
-                    FullName = req.FullName.Trim(),
-                    Gender = req.Gender,
-                    DateOfBirth = req.DateOfBirth,
-                    Phone = phone,
-                    Address = req.Address,
-                    DiabetesType = req.DiabetesType,
-                    DiabetesDurationYears = req.DiabetesDurationYears,
-                    BaselineHbA1c = req.BaselineHbA1c,
-                    Note = req.Note,
-                    CreatedBy = _me.RequireId()
-                };
+                Code = await NextCodeAsync(),
+                FullName = req.FullName.Trim(),
+                Gender = req.Gender,
+                DateOfBirth = req.DateOfBirth,
+                Phone = phone,
+                Address = req.Address,
+                DiabetesType = req.DiabetesType,
+                DiabetesDurationYears = req.DiabetesDurationYears,
+                BaselineHbA1c = req.BaselineHbA1c,
+                Note = req.Note,
+                CreatedBy = _me.RequireId()
+            };
 
-                TempCredentialResponse? cred = null;
-
-                if (req.CreateAccount)
+            User? linkedUser = null;
+            TempCredentialResponse? credential = null;
+            if (req.CreateAccount)
+            {
+                if (req.ExistingUserId is int existingUserId)
                 {
+                    linkedUser = await _repository.GetUserByIdAsync(existingUserId);
+                    if (linkedUser is null)
+                        throw AppException.NotFound(
+                            Msg.RequiredFields,
+                            "Tài khoản được chọn không tồn tại.");
+                    var alreadyHasPatient = await _repository.UserAlreadyLinkedToActivePatientAsync(existingUserId);
+
+                    if (alreadyHasPatient)
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Tài khoản này đã được liên kết với một hồ sơ bệnh nhân.");
+
+
+                    // Có thể cập nhật phone cho User nếu trước đó chưa có
+                    if (string.IsNullOrWhiteSpace(linkedUser.Phone))
+                    {
+                        var phoneTaken = await _repository.UserPhoneExistsExceptUserAsync(phone,linkedUser.Id);
+
+                        if (phoneTaken)
+                            throw AppException.Conflict(
+                                Msg.PhoneTaken,
+                                "Số điện thoại đã được sử dụng bởi tài khoản khác.");
+
+                        linkedUser.Phone = phone;
+                    }
+                    else if (!string.Equals(
+                 linkedUser.Phone,
+                 phone,
+                 StringComparison.Ordinal))
+                    {
+                        throw AppException.Conflict(
+                            Msg.PhoneTaken,
+                            "Số điện thoại hồ sơ bệnh nhân không khớp với tài khoản được chọn.");
+                    }
+                    var addedPatientRole = await _repository.EnsureUserRoleActiveAsync(linkedUser,Roles.Patient,_me.RequireId());
+
+                    if (!addedPatientRole)
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Vai trò Patient chưa tồn tại hoặc đang bị khóa.");
+
+                    patient.UserId = linkedUser.Id;
+                }
+                else
+                {
+                    if (await _repository.UserPhoneExistsAsync(phone))
+                        throw AppException.Conflict(
+                            Msg.PhoneTaken,
+                            "Số điện thoại này đã được dùng cho tài khoản khác.");
+
                     var temp = _hasher.GenerateTempPassword();
 
-                    var user = new User
+                    linkedUser = new User
                     {
                         Phone = phone,
                         PasswordHash = _hasher.Hash(temp),
-                        Role = UserRole.Patient,
                         FullName = patient.FullName,
-                        MustChangePassword = true,
-                        IsActive = true
+                        MustChangePassword = true
                     };
 
-                    _repository.Users.Add(user);
-                    await _repository.SaveChangesAsync();
+                    _repository.Add(linkedUser);
+                    await _repository.CommitAsync();
 
-                    patient.UserId = user.Id;
+                    if (!await _repository.EnsureUserRoleActiveAsync(
+                            linkedUser,
+                            Roles.Patient,
+                            _me.RequireId()))
+                    {
+                        throw AppException.Conflict(
+                            Msg.RequiredFields,
+                            "Vai trò Patient chưa tồn tại hoặc đang bị khóa.");
+                    }
 
-                    cred = new TempCredentialResponse
+                    patient.UserId = linkedUser.Id;
+
+                    credential = new TempCredentialResponse
                     {
                         LoginId = phone,
                         TempPassword = temp,
                         Note =
-                            "Mật khẩu tạm chỉ hiển thị một lần. " +
-                            "In cho bệnh nhân; hệ thống sẽ bắt đổi mật khẩu " +
-                            "ở lần đăng nhập đầu tiên."
+                            "Mật khẩu tạm chỉ hiển thị một lần. In cho bệnh nhân; hệ thống sẽ bắt đổi mật khẩu ở lần đăng nhập đầu tiên."
                     };
                 }
-
-                _repository.Patients.Add(patient);
-                await _repository.SaveChangesAsync();
-
-                await _audit.LogAsync(
-                    AuditAction.PatientCreate,
-                    nameof(Patient),
-                    patient.Id,
-                    null,
-                    new
-                    {
-                        patient.Code,
-                        patient.FullName,
-                        patient.Phone,
-                        hasAccount = req.CreateAccount
-                    });
-
-                await _repository.SaveChangesAsync();
-                await tx.CommitAsync();
-
-                response = new CreatePatientResponse
-                {
-                    Patient = await ToDetailAsync(patient),
-                    Account = cred
-                };
             }
-            catch
+
+            _repository.Add(patient);
+            await _repository.CommitAsync();
+
+            await _audit.LogAsync(
+                AuditAction.PatientCreate,
+                nameof(Patient),
+                patient.Id,
+                null,
+                new { patient.Code, patient.FullName, patient.Phone, hasAccount = req.CreateAccount });
+            await _repository.CommitAsync();
+
+            response = new CreatePatientResponse
             {
-                await tx.RollbackAsync();
-                throw;
-            }
+                Patient = await ToDetailAsync(patient),
+                Account = credential
+            };
         });
 
-        return CreatedAtAction(
-            nameof(Get),
-            new { id = response!.Patient.Id },
-            response);
+        return CreatedAtAction(nameof(Get), new { id = response!.Patient.Id }, response);
     }
 
-    /// <summary>UC-15 — cập nhật hồ sơ.</summary>
     public async Task<ActionResult<PatientDetailDto>> Update(int id, UpdatePatientRequest req)
     {
-        var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
+        var patient = await _repository.GetPatientAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        _repository.ApplyOriginalRowVersion(patient, req.RowVersion);
 
-        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
-
-        var phone = req.Phone.Trim();
-        if (phone != p.Phone && await _repository.Patients.AnyAsync(x => x.Phone == phone && x.Id != id))
+        var phone = NormalizePhone(req.Phone);
+        if (phone != patient.Phone && await _repository.PatientPhoneExistsAsync(phone, id))
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
+        if (phone != patient.Phone && await _repository.UserPhoneExistsAsync(phone, patient.UserId))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
-        var before = new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c };
+        var before = new { patient.FullName, patient.Phone, patient.Address, patient.DiabetesType, patient.BaselineHbA1c };
+        patient.FullName = req.FullName.Trim();
+        patient.Gender = req.Gender;
+        patient.DateOfBirth = req.DateOfBirth;
+        patient.Phone = phone;
+        patient.Address = req.Address;
+        patient.DiabetesType = req.DiabetesType;
+        patient.DiabetesDurationYears = req.DiabetesDurationYears;
+        patient.BaselineHbA1c = req.BaselineHbA1c;
+        patient.Note = req.Note;
+        patient.UpdatedAt = DateTime.UtcNow;
 
-        p.FullName = req.FullName.Trim();
-        p.Gender = req.Gender;
-        p.DateOfBirth = req.DateOfBirth;
-        p.Phone = phone;
-        p.Address = req.Address;
-        p.DiabetesType = req.DiabetesType;
-        p.DiabetesDurationYears = req.DiabetesDurationYears;
-        p.BaselineHbA1c = req.BaselineHbA1c;
-        p.Note = req.Note;
-        p.UpdatedAt = DateTime.UtcNow;
-
-        // Tài khoản đăng nhập phải đi theo, nếu không bệnh nhân đổi số xong
-        // sẽ không đăng nhập được nữa.
-        if (p.UserId is int uid)
+        if (patient.UserId is int userId)
         {
-            var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
-            if (u is not null) { u.Phone = phone; u.FullName = p.FullName; u.UpdatedAt = DateTime.UtcNow; }
-        }
-
-        await _audit.LogAsync(AuditAction.PatientUpdate, nameof(Patient), p.Id, before,
-            new { p.FullName, p.Phone, p.Address, p.DiabetesType, p.BaselineHbA1c });
-        await _repository.SaveChangesAsync();
-
-        return Ok(await ToDetailAsync(p));
-    }
-
-
-/// <summary>
-/// Bệnh nhân tự cập nhật họ tên, giới tính, ngày sinh và địa chỉ.
-/// Số điện thoại phải đi qua OTP; dữ liệu lâm sàng không nhận từ mobile.
-/// </summary>
-public async Task<IActionResult> UpdateMine(UpdateMyProfileRequest req)
-{
-    var pid = RequireMyPatientId(_me);
-    var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
-    _repository.ApplyOriginalRowVersion(p, req.RowVersion);
-
-    var fullName = req.FullName.Trim();
-    if (string.IsNullOrWhiteSpace(fullName))
-        throw AppException.BadRequest(Msg.RequiredFields, "Họ tên không được để trống.");
-
-    if (req.DateOfBirth > DateOnly.FromDateTime(_clock.LocalNow.Date))
-        throw AppException.BadRequest(Msg.RequiredFields, "Ngày sinh không được nằm trong tương lai.");
-
-    var before = new { p.FullName, p.Gender, p.DateOfBirth, p.Address };
-
-    p.FullName = fullName;
-    p.FullNameSearch = VietnameseText.RemoveDiacritics(fullName);
-    p.Gender = req.Gender;
-    p.DateOfBirth = req.DateOfBirth;
-    p.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
-    p.UpdatedAt = DateTime.UtcNow;
-
-    if (p.UserId is int uid)
-    {
-        var u = await _repository.Users.FirstOrDefaultAsync(x => x.Id == uid);
-        if (u is not null)
-        {
-            u.FullName = fullName;
-            u.UpdatedAt = DateTime.UtcNow;
-        }
-    }
-
-    await _audit.LogAsync(
-        AuditAction.PatientUpdate,
-        nameof(Patient),
-        p.Id,
-        before,
-        new { p.FullName, p.Gender, p.DateOfBirth, p.Address });
-
-    await _repository.SaveChangesAsync();
-
-    return Ok(new
-    {
-        message = "Cập nhật thông tin cá nhân thành công.",
-        rowVersion = p.ToRowVersion()
-    });
-}
-
-public async Task<IActionResult> RequestPhoneChangeOtp(
-    RequestPhoneChangeOtpRequest req,
-    IWebHostEnvironment env)
-{
-    var pid = RequireMyPatientId(_me);
-    var p = await _repository.Patients.AsNoTracking().FirstAsync(x => x.Id == pid);
-    var newPhone = NormalizePhone(req.NewPhone);
-
-    if (newPhone == p.Phone)
-        throw AppException.BadRequest(
-            Msg.RequiredFields,
-            "Số điện thoại mới phải khác số đang sử dụng.");
-
-    await EnsurePhoneAvailableAsync(newPhone, pid, p.UserId);
-
-    var code = await _otp.IssueAsync(newPhone, OtpPurpose.ChangePhone, p.UserId);
-
-    await _audit.LogAsync(
-        AuditAction.OtpIssued,
-        nameof(Patient),
-        p.Id,
-        detail: $"Cấp OTP đổi số điện thoại sang {MaskPhone(newPhone)}");
-    await _repository.SaveChangesAsync();
-
-    return Ok(new
-    {
-        message = "Mã xác minh đã được gửi tới số điện thoại mới.",
-        devCode = env.IsDevelopment() ? code : null,
-        note = env.IsDevelopment()
-            ? "Mã chỉ được trả trực tiếp trong môi trường Development."
-            : null
-    });
-}
-
-public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest req)
-{
-    var strategy = _repository.Database.CreateExecutionStrategy();
-
-    return await strategy.ExecuteAsync<IActionResult>(async () =>
-    {
-        await using var tx = await _repository.Database.BeginTransactionAsync();
-
-        var pid = RequireMyPatientId(_me);
-        var p = await _repository.Patients.FirstAsync(x => x.Id == pid);
-        _repository.ApplyOriginalRowVersion(p, req.RowVersion);
-
-        var newPhone = NormalizePhone(req.NewPhone);
-        if (newPhone == p.Phone)
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "Số điện thoại mới phải khác số đang sử dụng.");
-
-        await EnsurePhoneAvailableAsync(newPhone, pid, p.UserId);
-
-        if (!await _otp.VerifyAsync(newPhone, req.Code.Trim(), OtpPurpose.ChangePhone))
-            throw AppException.BadRequest(
-                Msg.OtpInvalid,
-                "Mã xác minh không đúng hoặc đã hết hạn.");
-
-        var oldPhone = p.Phone;
-        p.Phone = newPhone;
-        p.UpdatedAt = DateTime.UtcNow;
-
-        if (p.UserId is int uid)
-        {
-            var u = await _repository.Users.FirstAsync(x => x.Id == uid);
-            u.Phone = newPhone;
-            u.UpdatedAt = DateTime.UtcNow;
+            var user = await _repository.GetUserForUpdateAsync(userId);
+            if (user is not null)
+            {
+                user.Phone = phone;
+                user.FullName = patient.FullName;
+                user.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         await _audit.LogAsync(
-            AuditAction.PatientPhoneChange,
+            AuditAction.PatientUpdate,
             nameof(Patient),
-            p.Id,
-            new { Phone = MaskPhone(oldPhone) },
-            new { Phone = MaskPhone(newPhone) });
+            patient.Id,
+            before,
+            new { patient.FullName, patient.Phone, patient.Address, patient.DiabetesType, patient.BaselineHbA1c });
+        await _repository.CommitAsync();
 
-        await _repository.SaveChangesAsync();
-        await tx.CommitAsync();
+        return Ok(await ToDetailAsync(patient));
+    }
+
+    public async Task<IActionResult> UpdateMine(UpdateMyProfileRequest req)
+    {
+        var patientId = RequireMyPatientId(_me);
+        var patient = await _repository.GetPatientAsync(patientId, tracking: true)
+            ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        _repository.ApplyOriginalRowVersion(patient, req.RowVersion);
+
+        var fullName = req.FullName.Trim();
+        if (string.IsNullOrWhiteSpace(fullName))
+            throw AppException.BadRequest(Msg.RequiredFields, "Họ tên không được để trống.");
+        if (req.DateOfBirth > DateOnly.FromDateTime(_clock.LocalNow.Date))
+            throw AppException.BadRequest(Msg.RequiredFields, "Ngày sinh không được nằm trong tương lai.");
+
+        var before = new { patient.FullName, patient.Gender, patient.DateOfBirth, patient.Address };
+        patient.FullName = fullName;
+        patient.FullNameSearch = VietnameseText.RemoveDiacritics(fullName);
+        patient.Gender = req.Gender;
+        patient.DateOfBirth = req.DateOfBirth;
+        patient.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
+        patient.UpdatedAt = DateTime.UtcNow;
+
+        if (patient.UserId is int userId)
+        {
+            var user = await _repository.GetUserForUpdateAsync(userId);
+            if (user is not null)
+            {
+                user.FullName = fullName;
+                user.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _audit.LogAsync(
+            AuditAction.PatientUpdate,
+            nameof(Patient),
+            patient.Id,
+            before,
+            new { patient.FullName, patient.Gender, patient.DateOfBirth, patient.Address });
+        await _repository.CommitAsync();
+
+        return Ok(new { message = "Cập nhật thông tin cá nhân thành công.", rowVersion = patient.ToRowVersion() });
+    }
+
+    public async Task<IActionResult> RequestPhoneChangeOtp(RequestPhoneChangeOtpRequest req, IWebHostEnvironment env)
+    {
+        var patientId = RequireMyPatientId(_me);
+        var patient = await _repository.GetPatientAsync(patientId)
+            ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        var newPhone = NormalizePhone(req.NewPhone);
+
+        if (newPhone == patient.Phone)
+            throw AppException.BadRequest(Msg.RequiredFields, "Số điện thoại mới phải khác số đang sử dụng.");
+
+        await EnsurePhoneAvailableAsync(newPhone, patientId, patient.UserId);
+        var code = await _otp.IssueAsync(newPhone, OtpPurpose.ChangePhone, patient.UserId);
+
+        await _audit.LogAsync(
+            AuditAction.OtpIssued,
+            nameof(Patient),
+            patient.Id,
+            detail: $"Cấp OTP đổi số điện thoại sang {MaskPhone(newPhone)}");
+        await _repository.CommitAsync();
 
         return Ok(new
         {
-            message = "Đổi số điện thoại thành công. Từ lần đăng nhập sau, hãy dùng số mới.",
-            phone = newPhone,
-            rowVersion = p.ToRowVersion()
+            message = "Mã xác minh đã được gửi tới số điện thoại mới.",
+            devCode = env.IsDevelopment() ? code : null,
+            note = env.IsDevelopment() ? "Mã chỉ được trả trực tiếp trong môi trường Development." : null
         });
-    });
-}
-
-private async Task EnsurePhoneAvailableAsync(string phone, int patientId, int? userId)
-{
-    if (await _repository.Patients.AnyAsync(
-        x => x.Phone == phone && x.Id != patientId && !x.IsVoided))
-    {
-        throw AppException.Conflict(
-            Msg.PhoneTaken,
-            "Số điện thoại này đã được dùng cho một hồ sơ bệnh nhân khác.");
     }
 
-    if (await _repository.Users.AnyAsync(
-        u => u.Phone == phone && u.IsActive && u.Id != userId))
+    public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest req)
     {
-        throw AppException.Conflict(
-            Msg.PhoneTaken,
-            "Số điện thoại này đã có tài khoản đang hoạt động.");
+        return await _repository.ExecuteInTransactionAsync<IActionResult>(async () =>
+        {
+            var patientId = RequireMyPatientId(_me);
+            var patient = await _repository.GetPatientAsync(patientId, tracking: true)
+                ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+            _repository.ApplyOriginalRowVersion(patient, req.RowVersion);
+
+            var newPhone = NormalizePhone(req.NewPhone);
+            if (newPhone == patient.Phone)
+                throw AppException.BadRequest(Msg.RequiredFields, "Số điện thoại mới phải khác số đang sử dụng.");
+
+            await EnsurePhoneAvailableAsync(newPhone, patientId, patient.UserId);
+            if (!await _otp.VerifyAsync(newPhone, req.Code.Trim(), OtpPurpose.ChangePhone))
+                throw AppException.BadRequest(Msg.OtpInvalid, "Mã xác minh không đúng hoặc đã hết hạn.");
+
+            var oldPhone = patient.Phone;
+            patient.Phone = newPhone;
+            patient.UpdatedAt = DateTime.UtcNow;
+
+            if (patient.UserId is int userId)
+            {
+                var user = await _repository.GetUserForUpdateAsync(userId)
+                    ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy tài khoản liên kết với bệnh nhân.");
+                user.Phone = newPhone;
+                user.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _audit.LogAsync(
+                AuditAction.PatientPhoneChange,
+                nameof(Patient),
+                patient.Id,
+                new { Phone = MaskPhone(oldPhone) },
+                new { Phone = MaskPhone(newPhone) });
+            await _repository.CommitAsync();
+
+            return Ok(new
+            {
+                message = "Đổi số điện thoại thành công. Từ lần đăng nhập sau, hãy dùng số mới.",
+                phone = newPhone,
+                rowVersion = patient.ToRowVersion()
+            });
+        });
     }
-}
 
-private static string NormalizePhone(string value)
-{
-    var phone = value.Trim().Replace(" ", "").Replace("-", "");
-    if (phone.Length < 9 || phone.Length > 20 || phone.Any(c => !char.IsDigit(c) && c != '+'))
-        throw AppException.BadRequest(
-            Msg.RequiredFields,
-            "Số điện thoại không đúng định dạng.");
-
-    return phone;
-}
-
-private static string MaskPhone(string phone)
-{
-    if (phone.Length <= 4) return new string('*', phone.Length);
-    return new string('*', phone.Length - 4) + phone[^4..];
-}
-
-    /// <summary>
-    /// Cấp lại mật khẩu tạm tại quầy — thay cho luồng liên kết tài khoản cũ.
-    /// Dùng khi bệnh nhân quên mật khẩu và không nhận được OTP.
-    /// người dùng khi được tạo 
-    /// </summary>
     public async Task<ActionResult<TempCredentialResponse>> ReissueCredentials(int id)
     {
-        var p = await _repository.Patients.FirstOrDefaultAsync(x => x.Id == id)
+        var patient = await _repository.GetPatientAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
-
         var temp = _hasher.GenerateTempPassword();
 
-        if (p.UserId is int uid)
+        await _repository.ExecuteInTransactionAsync(async () =>
         {
-            var u = await _repository.Users.FirstAsync(x => x.Id == uid);
-            u.PasswordHash = _hasher.Hash(temp);
-            u.MustChangePassword = true;
-            u.IsActive = true;
-            u.UpdatedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            var u = new User
+            User user;
+            if (patient.UserId is int userId)
             {
-                Phone = p.Phone,
-                PasswordHash = _hasher.Hash(temp),
-                Role = UserRole.Patient,
-                FullName = p.FullName,
-                MustChangePassword = true
-            };
-            _repository.Users.Add(u);
-            await _repository.SaveChangesAsync();
-            p.UserId = u.Id;
-        }
+                user = await _repository.GetUserForUpdateAsync(userId)
+                    ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy tài khoản liên kết với bệnh nhân.");
+                user.PasswordHash = _hasher.Hash(temp);
+                user.MustChangePassword = true;
+                user.Phone = patient.Phone;
+                user.FullName = patient.FullName;
+                user.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                if (await _repository.UserPhoneExistsAsync(patient.Phone))
+                    throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
 
-        await _audit.LogAsync(AuditAction.PasswordReset, nameof(Patient), p.Id,
-            detail: "Cấp lại mật khẩu tạm tại quầy");
-        await _repository.SaveChangesAsync();
+                user = new User
+                {
+                    Phone = patient.Phone,
+                    PasswordHash = _hasher.Hash(temp),
+                    FullName = patient.FullName,
+                    MustChangePassword = true
+                };
+                _repository.Add(user);
+                await _repository.CommitAsync();
+                patient.UserId = user.Id;
+            }
+
+            if (!await _repository.EnsureUserRoleActiveAsync(user, Roles.Patient, _me.RequireId()))
+                throw AppException.Conflict(Msg.RequiredFields, "Vai trò Patient chưa tồn tại hoặc đang bị khóa trong cơ sở dữ liệu.");
+
+            await _audit.LogAsync(AuditAction.PasswordReset, nameof(Patient), patient.Id,
+                detail: "Cấp lại mật khẩu tạm tại quầy");
+            await _repository.CommitAsync();
+        });
 
         return Ok(new TempCredentialResponse
         {
-            LoginId = p.Phone,
+            LoginId = patient.Phone,
             TempPassword = temp,
-            Note = "Mật khẩu tạm chỉ hiển thị một lần. Bệnh nhân phải đổi ở lần đăng nhập đầu."
+            Note = "Mật khẩu tạm chỉ hiển thị một lần. Bệnh nhân phải đổi ở lần đăng nhập đầu.",
+            RowVersion = patient.ToRowVersion()
         });
     }
 
-    /// <summary>
-    /// Thu hồi hồ sơ nhập nhầm hoặc trùng.
-    /// Nhờ filtered unique index, số điện thoại được giải phóng để đăng ký lại.
-    /// </summary>
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         await _void.VoidPatientAsync(id, req.Reason, req.RowVersion);
         return Ok(new { message = "Đã thu hồi hồ sơ bệnh nhân." });
     }
 
-    private async Task<string> NextCodeAsync()
+    private async Task EnsurePhoneAvailableAsync(string phone, int patientId, int? userId)
     {
-        var year = _clock.LocalToday.Year;
-        var prefix = $"BN{year}";
-        // IgnoreQueryFilters: hồ sơ đã void vẫn chiếm mã, không được cấp lại
-        var last = await _repository.Patients.IgnoreQueryFilters()
-            .Where(p => p.Code.StartsWith(prefix))
-            .OrderByDescending(p => p.Code).Select(p => p.Code).FirstOrDefaultAsync();
-
-        var seq = last is null ? 1 : int.Parse(last[prefix.Length..]) + 1;
-        return $"{prefix}{seq:D4}";
+        if (await _repository.PatientPhoneExistsAsync(phone, patientId))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ bệnh nhân khác.");
+        if (await _repository.UserPhoneExistsAsync(phone, userId))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
     }
 
-    private async Task<PatientDetailDto> ToDetailAsync(Patient p)
+    private async Task<string> NextCodeAsync()
     {
+        var prefix = $"BN{_clock.LocalToday.Year}";
+        var last = await _repository.GetLastPatientCodeAsync(prefix);
+        var sequence = last is null ? 1 : int.Parse(last[prefix.Length..]) + 1;
+        return $"{prefix}{sequence:D4}";
+    }
+
+    private async Task<PatientDetailDto> ToDetailAsync(Patient patient)
+    {
+        var stats = await _repository.GetPatientDetailStatsAsync(patient.Id);
         var today = _clock.LocalToday;
-
-        // "Bác sĩ phụ trách" = bác sĩ của lượt khám gần nhất.
-        // Định nghĩa như vậy vì mô hình phòng khám sàng lọc không phân bác sĩ cố định,
-        // và bảng Patients cố ý không có cột DoctorId.
-        var lastVisit = await _repository.Visits.AsNoTracking()
-            .Where(v => v.PatientId == p.Id)
-            .OrderByDescending(v => v.VisitDate)
-            .Select(v => new { v.DoctorId, DoctorName = v.Doctor!.FullName })
-            .FirstOrDefaultAsync();
-
-        var latestGrade = await _repository.DiagnosisReviews.AsNoTracking()
-            .Join(_repository.AiDiagnoses, r => r.AiDiagnosisId, d => d.Id, (r, d) => new { r, d })
-            .Join(_repository.FundusImages, x => x.d.FundusImageId, f => f.Id, (x, f) => new { x.r, f })
-            .Where(x => x.f.PatientId == p.Id)
-            .OrderByDescending(x => x.r.CreatedAt)
-            .Select(x => (byte?)(byte)x.r.FinalGrade)
-            .FirstOrDefaultAsync();
-
         return new PatientDetailDto
         {
-            Id = p.Id,
-            Code = p.Code,
-            FullName = p.FullName,
-            Age = today.Year - p.DateOfBirth.Year,
-            Gender = p.Gender,
-            Phone = p.Phone,
-            Address = p.Address,
-            DateOfBirth = p.DateOfBirth,
-            DiabetesType = p.DiabetesType,
-            DiabetesDurationYears = p.DiabetesDurationYears,
-            BaselineHbA1c = p.BaselineHbA1c,
-            Note = p.Note,
-            CreatedAt = p.CreatedAt,
-            HasAccount = p.UserId != null,
-            LatestDrGrade = latestGrade,
-            DoctorInCharge = lastVisit?.DoctorName,
-            VisitCount = await _repository.Visits.CountAsync(v => v.PatientId == p.Id),
-            RowVersion = p.ToRowVersion()
+            Id = patient.Id,
+            Code = patient.Code,
+            FullName = patient.FullName,
+            Age = today.Year - patient.DateOfBirth.Year,
+            Gender = patient.Gender,
+            Phone = patient.Phone,
+            Address = patient.Address,
+            DateOfBirth = patient.DateOfBirth,
+            DiabetesType = patient.DiabetesType,
+            DiabetesDurationYears = patient.DiabetesDurationYears,
+            BaselineHbA1c = patient.BaselineHbA1c,
+            Note = patient.Note,
+            CreatedAt = patient.CreatedAt,
+            HasAccount = patient.UserId != null,
+            LatestDrGrade = stats.LatestDrGrade,
+            DoctorInCharge = stats.DoctorInCharge,
+            VisitCount = stats.VisitCount,
+            RowVersion = patient.ToRowVersion()
         };
+    }
+
+    private static string NormalizePhone(string value)
+    {
+        var phone = value.Trim().Replace(" ", "").Replace("-", "");
+        if (phone.Length < 9 || phone.Length > 20 || phone.Any(c => !char.IsDigit(c) && c != '+'))
+            throw AppException.BadRequest(Msg.RequiredFields, "Số điện thoại không đúng định dạng.");
+        return phone;
+    }
+
+    private static string MaskPhone(string phone)
+    {
+        if (phone.Length <= 4) return new string('*', phone.Length);
+        return new string('*', phone.Length - 4) + phone[^4..];
     }
 }

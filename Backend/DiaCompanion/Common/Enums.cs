@@ -1,7 +1,4 @@
 namespace DiaCompanion.Api.Common;
-//2 is receptionist
-public enum UserRole : byte { Admin = 0, Doctor = 1, Patient = 3, Receptionist = 4 };
-
 /// <summary>
 /// QT-8: mức DR là thang THỨ BẬC nên lưu dạng số, không phải chuỗi.
 /// Gap 2 phải tính |DrGrade - LesionGradeImplied|; với chuỗi thì mọi chỗ

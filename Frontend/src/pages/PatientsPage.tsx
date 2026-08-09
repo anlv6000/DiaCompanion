@@ -21,12 +21,18 @@ import { fmtDate } from "@/lib/format";
 import { useToast } from "@/contexts/ToastContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { can } from "@/lib/permissions";
-import type { CreatePatientRequest, TempCredentialResponse } from "@/types/api";
+import { hasRole } from "@/lib/roles";
+import type {
+  CreatePatientRequest,
+  LinkablePatientUserDto,
+  TempCredentialResponse,
+} from "@/types/api";
 
 export function PatientsPage() {
   const data = useData();
   const { user } = useAuth();
-  const isReceptionist = user?.role === "Receptionist";
+  const isDoctor = hasRole(user, "Doctor");
+  const isReceptionist = hasRole(user, "Receptionist") && !isDoctor;
   const [q, setQ] = useState("");
   const dq = useDebounce(q);
   const [type, setType] = useState("");
@@ -46,6 +52,14 @@ export function PatientsPage() {
     [dq, type, grade, page, isReceptionist],
   );
 
+  // Nếu sau khi lọc/xóa dữ liệu mà trang hiện tại vượt quá tổng số trang,
+  // tự đưa UI về trang hợp lệ cuối cùng.
+  useEffect(() => {
+    if (list.data && list.data.totalPages > 0 && page > list.data.totalPages) {
+      setPage(list.data.totalPages);
+    }
+  }, [list.data?.totalPages, page]);
+
   return (
     <>
       <PageHeader
@@ -57,7 +71,7 @@ export function PatientsPage() {
         }
         actions={
           /* Tạo hồ sơ bệnh nhân là nghiệp vụ LỄ TÂN. Staff không thấy nút. */
-          can.createPatient(user?.role) ? (
+          can.createPatient(user) ? (
             <ActionLink to="/reception/patients/new">
               <Button kind="primary">
                 <Icon name="plus" />
@@ -192,9 +206,11 @@ export function PatientsPage() {
             ))}
           </DataTable>
           <Pagination
-            page={page}
-            pageSize={25}
+            page={list.data?.page || page}
+            pageSize={list.data?.pageSize || 25}
             total={list.data?.totalItems || 0}
+            totalPages={list.data?.totalPages}
+            rangeLabel={list.data?.rangeLabel}
             onPage={setPage}
           />
         </LoadState>
@@ -214,6 +230,7 @@ const EMPTY: CreatePatientRequest = {
   baselineHbA1c: null,
   note: "",
   createAccount: true,
+  existingUserId: null,
 };
 
 export function PatientFormPage({ id }: { id?: number }) {
@@ -222,8 +239,8 @@ export function PatientFormPage({ id }: { id?: number }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const isReceptionist = user?.role === "Receptionist";
-  const isDoctor = user?.role === "Doctor";
+  const isReceptionist = hasRole(user, "Receptionist");
+  const isDoctor = hasRole(user, "Doctor");
   const detail = useAsync(
     () => (id ? data.patients.get(id) : Promise.resolve(null)),
     [id],
@@ -232,6 +249,17 @@ export function PatientFormPage({ id }: { id?: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cred, setCred] = useState<TempCredentialResponse | null>(null);
+  const [accountMode, setAccountMode] = useState<"new" | "existing">("new");
+  const [selectedExistingUser, setSelectedExistingUser] = useState<LinkablePatientUserDto | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const debouncedUserSearch = useDebounce(userSearch, 250);
+  const linkableUsers = useAsync(
+    () =>
+      !edit && form.createAccount && accountMode === "existing"
+        ? data.users.linkablePatients(debouncedUserSearch.trim())
+        : Promise.resolve([] as LinkablePatientUserDto[]),
+    [edit, form.createAccount, accountMode, debouncedUserSearch],
+  );
 
   useEffect(() => {
     if (detail.data) {
@@ -247,6 +275,7 @@ export function PatientFormPage({ id }: { id?: number }) {
         baselineHbA1c: d.baselineHbA1c ?? null,
         note: d.note || "",
         createAccount: d.hasAccount,
+        existingUserId: null,
       });
     }
   }, [detail.data]);
@@ -264,7 +293,7 @@ export function PatientFormPage({ id }: { id?: number }) {
     setError("");
     try {
       if (id) {
-        const { createAccount, ...body } = form;
+        const { createAccount, existingUserId, ...body } = form;
         await data.patients.update(id, {
           ...body,
           rowVersion: detail.data!.rowVersion,
@@ -272,7 +301,19 @@ export function PatientFormPage({ id }: { id?: number }) {
         toast.push("Đã cập nhật hồ sơ.", "success");
         navigate(`/patients/${id}`);
       } else {
-        const r = await data.patients.create(form);
+        if (form.createAccount && accountMode === "existing" && !form.existingUserId) {
+          setError("Vui lòng chọn một tài khoản có sẵn để liên kết với hồ sơ bệnh nhân.");
+          return;
+        }
+
+        const payload: CreatePatientRequest = {
+          ...form,
+          existingUserId:
+            form.createAccount && accountMode === "existing"
+              ? form.existingUserId
+              : null,
+        };
+        const r = await data.patients.create(payload);
         if (r.account) setCred(r.account);
         toast.push("Đã tạo hồ sơ bệnh nhân.", "success");
         if (!r.account) navigate(`/patients/${r.patient.id}`);
@@ -312,6 +353,12 @@ export function PatientFormPage({ id }: { id?: number }) {
                   <input
                     value={form.fullName}
                     onChange={(e) => patch("fullName", e.target.value)}
+                    disabled={!edit && accountMode === "existing" && selectedExistingUser != null}
+                    title={
+                      !edit && accountMode === "existing" && selectedExistingUser
+                        ? "Họ tên được lấy từ tài khoản đã chọn và không thể chỉnh sửa."
+                        : undefined
+                    }
                   />
                 </Field>
                 <Field labelText="Giới tính" required>
@@ -342,6 +389,12 @@ export function PatientFormPage({ id }: { id?: number }) {
                   <input
                     className="mono"
                     value={form.phone}
+                    disabled={!edit && accountMode === "existing" && !!selectedExistingUser?.phone}
+                    title={
+                      !edit && accountMode === "existing" && selectedExistingUser?.phone
+                        ? "Số điện thoại được lấy từ tài khoản đã chọn và không thể chỉnh sửa."
+                        : undefined
+                    }
                     onChange={(e) => patch("phone", e.target.value)}
                   />
                 </Field>
@@ -407,14 +460,124 @@ export function PatientFormPage({ id }: { id?: number }) {
             )}
           </div>
           {!edit && (
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={form.createAccount}
-                onChange={(e) => patch("createAccount", e.target.checked)}
-              />
-              Cấp tài khoản bệnh nhân ngay khi tạo hồ sơ
-            </label>
+            <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.createAccount}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    patch("createAccount", checked);
+                    if (!checked) {
+                      setAccountMode("new");
+                      setSelectedExistingUser(null);
+                      patch("existingUserId", null);
+                    }
+                  }}
+                />
+                Cấp / liên kết tài khoản bệnh nhân khi tạo hồ sơ
+              </label>
+
+              {form.createAccount && (
+                <Panel title="Tài khoản đăng nhập">
+                  <div className="form-row two">
+                    <label className="checkbox">
+                      <input
+                        type="radio"
+                        name="patient-account-mode"
+                        checked={accountMode === "new"}
+                        onChange={() => {
+                          setAccountMode("new");
+                          setSelectedExistingUser(null);
+                          patch("existingUserId", null);
+                        }}
+                      />
+                      Tạo tài khoản Patient mới
+                    </label>
+                    <label className="checkbox">
+                      <input
+                        type="radio"
+                        name="patient-account-mode"
+                        checked={accountMode === "existing"}
+                        onChange={() => setAccountMode("existing")}
+                      />
+                      Liên kết tài khoản có sẵn (ví dụ bác sĩ)
+                    </label>
+                  </div>
+
+                  {accountMode === "new" ? (
+                    <div className="help">
+                      Hệ thống sẽ tạo User mới, gán role Patient và trả mật khẩu tạm.
+                    </div>
+                  ) : (
+                    <>
+                      <Field
+                        labelText="Tìm tài khoản chưa có hồ sơ bệnh nhân"
+                        help="Có thể tìm theo họ tên, email hoặc số điện thoại. Danh sách chỉ nên trả về User đang hoạt động và chưa liên kết với Patient."
+                      >
+                        <input
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          placeholder="Nhập tên, email hoặc số điện thoại"
+                        />
+                      </Field>
+
+                      <LoadState
+                        loading={linkableUsers.loading}
+                        error={linkableUsers.error}
+                        empty={!linkableUsers.data?.length}
+                        onRetry={linkableUsers.reload}
+                        emptyText="Không có tài khoản phù hợp để liên kết."
+                      >
+                        <DataTable
+                          headers={[
+                            "User ID",
+                            "Họ tên",
+                            "Email",
+                            "Số điện thoại",
+                            "Role hiện tại",
+                            "Chọn",
+                          ]}
+                        >
+                          {linkableUsers.data?.map((u) => (
+                            <tr key={u.id}>
+                              <td className="mono">{u.id}</td>
+                              <td>
+                                <b>{u.fullName}</b>
+                              </td>
+                              <td>{u.email || "—"}</td>
+                              <td className="mono">{u.phone || "—"}</td>
+                              <td>{u.roles.join(", ") || "—"}</td>
+                              <td>
+                                <Button
+                                  type="button"
+                                  kind={form.existingUserId === u.id ? "primary" : "default"}
+                                  onClick={() => {
+                                    setSelectedExistingUser(u);
+                                    patch("existingUserId", u.id);
+                                    patch("fullName", u.fullName);
+                                    patch("phone", u.phone || "");
+                                  }}
+                                >
+                                  {form.existingUserId === u.id ? "Đã chọn" : "Chọn"}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </DataTable>
+                      </LoadState>
+
+                      {form.existingUserId && (
+                        <div className="state ok">
+                          Đang liên kết hồ sơ với User Name <b>{form.fullName}</b>.
+                          User này sẽ được giữ nguyên các role hiện có và được gán thêm role Patient.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </Panel>
+              )}
+            </>
           )}
           {error && <div className="state error">{error}</div>}
           <div className="dialog-footer">

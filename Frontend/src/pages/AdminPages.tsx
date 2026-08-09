@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAsync } from "@/lib/hooks";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRole } from "@/lib/roles";
 import {
   PageHeader,
   Panel,
@@ -31,7 +32,7 @@ export function DashboardPage() {
   const data = useData();
   const { user } = useAuth();
   const dash = useAsyncDashboard(data);
-  const impacts = useAsyncImpacts(data, user?.role);
+  const impacts = useAsyncImpacts(data, hasRole(user, "Admin"));
 
   return (
     <>
@@ -65,7 +66,7 @@ export function DashboardPage() {
                   error={impacts.error}
                   empty={!impacts.data?.length}
                   emptyText={
-                    user?.role === "Admin"
+                    hasRole(user, "Admin")
                       ? "Backend chưa có đủ ca để ước tính."
                       : "Chỉ Admin được truy vấn ảnh hưởng ngưỡng."
                   }
@@ -96,9 +97,9 @@ export function DashboardPage() {
 function useAsyncDashboard(data: ReturnType<typeof useData>) {
   return useAsync(() => data.admin.dashboard(), []);
 }
-function useAsyncImpacts(data: ReturnType<typeof useData>, role?: string) {
+function useAsyncImpacts(data: ReturnType<typeof useData>, isAdmin: boolean) {
   return useAsync(async () => {
-    if (role !== "Admin") return [] as { x: string; y: number }[];
+    if (!isAdmin) return [] as { x: string; y: number }[];
     const points: { x: string; y: number }[] = [];
     for (const proposed of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
       try {
@@ -109,7 +110,7 @@ function useAsyncImpacts(data: ReturnType<typeof useData>, role?: string) {
       }
     }
     return points;
-  }, [role]);
+  }, [isAdmin]);
 }
 
 function Stat({ k, v }: { k: string; v: React.ReactNode }) {

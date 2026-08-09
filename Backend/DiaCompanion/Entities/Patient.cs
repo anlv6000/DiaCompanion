@@ -1,5 +1,6 @@
-using System.ComponentModel.DataAnnotations;
 using DiaCompanion.Api.Common;
+using DiaCompanion.Entities;
+using System.ComponentModel.DataAnnotations;
 
 namespace DiaCompanion.Api.Entities;
 
@@ -37,4 +38,7 @@ public class Patient : IVoidable, IHasRowVersion
     public ICollection<Visit> Visits { get; set; } = new List<Visit>();
     public ICollection<FundusImage> Images { get; set; } = new List<FundusImage>();
     public byte[] RowVer { get; set; } = Array.Empty<byte>();
+
+    public ICollection<MedicalRecord> MedicalRecords { get; set; }
+    = new List<MedicalRecord>();
 }

@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 
@@ -17,8 +16,8 @@ public class ConfigService : IConfigService
     private readonly IRepository _repository;
     public ConfigService(IRepository repository) => _repository = repository;
 
-    public async Task<string?> GetAsync(string key) =>
-        await _repository.SystemConfigs.Where(c => c.Key == key).Select(c => c.Value).FirstOrDefaultAsync();
+    public Task<string?> GetAsync(string key) =>
+        _repository.GetSystemConfigValueAsync(key);
 
     public async Task<decimal> GetDecimalAsync(string key, decimal fallback)
     {

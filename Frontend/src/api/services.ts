@@ -1,22 +1,37 @@
 import { http } from "@/api/client";
 import { query } from "@/lib/format";
 import type * as T from "@/types/api";
+import { getRoles, primaryWebRole } from "@/lib/roles";
+
+function normalizeLogin(value: T.LoginResponse): T.LoginResponse {
+  const roles = getRoles(value);
+  return { ...value, roles, role: value.role || primaryWebRole(roles) };
+}
+
+function normalizeStaff(value: T.StaffUserDto): T.StaffUserDto {
+  const roles = getRoles(value);
+  return { ...value, roles, role: value.role || roles[0] };
+}
 
 // Console bệnh viện: chỉ nhân viên đăng nhập bằng email + mật khẩu.
 // Không có OTP/đăng nhập bằng số điện thoại (đó là luồng của app bệnh nhân).
 // Quên mật khẩu do Admin cấp lại (usersApi.reset), không self-service qua SĐT.
 export const authApi = {
-  login: (body: { email: string; password: string }) =>
-    http.post<T.LoginResponse>("/api/auth/login", body),
-  me: () => http.get<T.LoginResponse>("/api/auth/me"),
+  login: async (body: { email: string; password: string }) =>
+    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/login", body)),
+  me: async () => normalizeLogin(await http.get<T.LoginResponse>("/api/auth/me")),
+  refresh: async (refreshToken: string) =>
+    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/refresh", { refreshToken })),
   logout: () => http.post<T.ApiMessage>("/api/auth/logout"),
   change: (body: T.ChangePasswordRequest) =>
     http.post<T.ApiMessage>("/api/auth/change-password", body),
 };
 export const usersApi = {
-  list: (p: Record<string, unknown>) =>
-    http.get<T.PagedResult<T.StaffUserDto>>("/api/users" + query(p)),
-  get: (id: number) => http.get<T.StaffUserDto>(`/api/users/${id}`),
+  list: async (p: Record<string, unknown>) => {
+    const result = await http.get<T.PagedResult<T.StaffUserDto>>("/api/users" + query(p));
+    return { ...result, items: result.items.map(normalizeStaff) };
+  },
+  get: async (id: number) => normalizeStaff(await http.get<T.StaffUserDto>(`/api/users/${id}`)),
   create: (b: T.CreateStaffRequest) =>
     http.post<T.TempCredentialResponse>("/api/users", b),
   update: (id: number, b: T.UpdateStaffRequest) =>
@@ -30,6 +45,10 @@ export const usersApi = {
       rowVersion,
     }),
   doctors: () => http.get<T.DoctorDto[]>("/api/users/doctors"),
+  linkablePatients: (q?: string) =>
+    http.get<T.LinkablePatientUserDto[]>(
+      "/api/users/linkable-patients" + query({ q: q || undefined }),
+    ),
 };
 export const patientsApi = {
   list: (p: Record<string, unknown>) =>

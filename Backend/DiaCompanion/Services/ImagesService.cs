@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -25,22 +24,7 @@ public class ImagesService : BaseService, IImagesService
         if (patientId is null && visitId is null)
             throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId hoặc visitId.");
 
-        var query = _repository.FundusImages.AsNoTracking();
-        if (patientId is int pid) query = query.Where(f => f.PatientId == pid);
-        if (visitId is int vid) query = query.Where(f => f.VisitId == vid);
-
-        var rows = await query.OrderBy(f => f.Eye).ThenByDescending(f => f.CreatedAt)
-            .Select(f => new
-            {
-                f.Id,
-                f.PatientId,
-                f.VisitId,
-                f.Eye,
-                f.QualityStatus,
-                f.QualityNote,
-                f.CreatedAt,
-                f.RowVer
-            }).ToListAsync();
+        var rows = await _repository.GetFundusImagesAsync(patientId, visitId);
 
         var items = rows.Select(f => new FundusImageDto
         {
@@ -52,7 +36,7 @@ public class ImagesService : BaseService, IImagesService
             QualityNote = f.QualityNote,
             CreatedAt = f.CreatedAt,
             ContentUrl = $"/api/images/{f.Id}/content",
-            RowVersion = Convert.ToBase64String(f.RowVer)
+            RowVersion = f.ToRowVersion()
         }).ToList();
 
         return Ok(items);
@@ -69,10 +53,7 @@ public class ImagesService : BaseService, IImagesService
         var eye = req.Eye;
 
 
-        var visit = await _repository.Visits
-    .FirstOrDefaultAsync(v =>
-        v.Id == req.VisitId &&
-        v.PatientId == req.PatientId);
+        var visit = await _repository.GetVisitForPatientAsync(req.VisitId, req.PatientId);
 
         if (visit is null)
             throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng chọn lượt khám của bệnh nhân.");
@@ -84,10 +65,10 @@ public class ImagesService : BaseService, IImagesService
         if (visit.Status != VisitStatus.InProgress)
             throw AppException.Conflict(Msg.PatientNotFound, "Không thể tải ảnh vào lượt khám đã đóng.");
 
-        var patient = await _repository.Patients.FirstOrDefaultAsync(p => p.Id == patientId)
+        var patient = await _repository.GetPatientAsync(patientId)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
-        if (visitId is int vid && !await _repository.Visits.AnyAsync(v => v.Id == vid && v.PatientId == patientId))
+        if (visitId is int vid && await _repository.GetVisitForPatientAsync(vid, patientId) is null)
             throw AppException.BadRequest(Msg.RequiredFields, "Lượt khám không thuộc bệnh nhân này.");
 
         await using var stream = file.OpenReadStream();
@@ -107,12 +88,12 @@ public class ImagesService : BaseService, IImagesService
             UploadedBy = _me.RequireId()
         };
 
-        _repository.FundusImages.Add(image);
-        await _repository.SaveChangesAsync();
+        _repository.Add(image);
+        await _repository.CommitAsync();
 
         await _audit.LogAsync(AuditAction.ImageUpload, nameof(FundusImage), image.Id,
             null, new { patientId, visitId, eye = eye.ToString(), sha256 = stored.Sha256 });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new FundusImageDto
         {
@@ -136,7 +117,7 @@ public class ImagesService : BaseService, IImagesService
     /// </summary>
     public async Task<IActionResult> Content(int id)
     {
-        var image = await _repository.FundusImages.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id)
+        var image = await _repository.GetFundusImageAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
         // Bệnh nhân chỉ xem được ảnh của chính mình
@@ -159,15 +140,13 @@ public class ImagesService : BaseService, IImagesService
     /// </summary>
     public async Task<IActionResult> SetQuality(int id, QualityCheckRequest req)
     {
-        var image = await _repository.FundusImages
-    .Include(x => x.Visit)
-    .FirstOrDefaultAsync(x => x.Id == id)
-    ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
+        var image = await _repository.GetFundusImageWithVisitForUpdateAsync(id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
         var currentUserId = _me.RequireId();
 
         // Bác sĩ chỉ được thao tác trên lượt khám do mình phụ trách.
-        if (_me.Role == UserRole.Doctor &&
+        if (_me.IsInRole(Roles.Doctor) &&
             image.Visit?.DoctorId != currentUserId)
         {
             throw AppException.Forbidden(
@@ -183,8 +162,7 @@ public class ImagesService : BaseService, IImagesService
                 "Không thể thay đổi ảnh của lượt khám đã đóng.");
         }
 
-        var hasDiagnosis = await _repository.AiDiagnoses
-            .AnyAsync(x => x.FundusImageId == id);
+        var hasDiagnosis = await _repository.HasDiagnosisForImageAsync(id);
 
         if (hasDiagnosis)
         {
@@ -207,7 +185,7 @@ public class ImagesService : BaseService, IImagesService
 
         await _audit.LogAsync(AuditAction.QualityCheck, nameof(FundusImage), image.Id,
             before, new { status = req.Status.ToString(), note = req.Note });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new
         {

@@ -3,7 +3,6 @@ using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
@@ -33,47 +32,23 @@ public class BlogService : BaseService, IBlogService
         BlogCategory? category,
         PageQuery page)
     {
-        var query = _repository.BlogPosts.AsNoTracking()
-            .Where(b => b.IsPublished);
-
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var keyword = q.Trim();
-            query = query.Where(b =>
-                EF.Functions.Like(b.Title, $"%{keyword}%")
-                || (b.Summary != null && EF.Functions.Like(b.Summary, $"%{keyword}%"))
-                || EF.Functions.Like(b.Body, $"%{keyword}%"));
-        }
-
-        if (category is BlogCategory selectedCategory)
-            query = query.Where(b => b.Category == selectedCategory);
-
-        var total = await query.CountAsync();
-        query = ApplySort(query, page, publishedView: true);
-
-        var posts = await query
-            .Include(b => b.Author)
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .ToListAsync();
-
+        var data = await _repository.GetBlogPageAsync(
+            q, published: true, category, authorId: null, page, publishedView: true);
         return Ok(new PagedResult<BlogPostDto>
         {
-            Items = posts.Select(b => Map(b, includeBody: false)).ToList(),
+            Items = data.Items.Select(b => Map(b, includeBody: false)).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = data.Total
         });
     }
 
     public async Task<ActionResult<BlogPostDto>> Get(int id)
     {
-        var post = await _repository.BlogPosts.AsNoTracking()
-            .Include(x => x.Author)
-            .FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.GetBlogPostAsync(id, tracking: false)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
-        if (!post.IsPublished && !_me.IsInRole(UserRole.Admin, UserRole.Doctor))
+        if (!post.IsPublished && !_me.IsInRole(Roles.Admin, Roles.Doctor))
             throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
         return Ok(Map(post, includeBody: true));
@@ -87,39 +62,14 @@ public class BlogService : BaseService, IBlogService
         int? authorId,
         PageQuery page)
     {
-        var query = _repository.BlogPosts.AsNoTracking().AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var keyword = q.Trim();
-            query = query.Where(b =>
-                EF.Functions.Like(b.Title, $"%{keyword}%")
-                || (b.Summary != null && EF.Functions.Like(b.Summary, $"%{keyword}%"))
-                || EF.Functions.Like(b.Body, $"%{keyword}%"));
-        }
-
-        if (published is bool isPublished)
-            query = query.Where(b => b.IsPublished == isPublished);
-        if (category is BlogCategory selectedCategory)
-            query = query.Where(b => b.Category == selectedCategory);
-        if (authorId is int selectedAuthorId)
-            query = query.Where(b => b.AuthorId == selectedAuthorId);
-
-        var total = await query.CountAsync();
-        query = ApplySort(query, page, publishedView: false);
-
-        var posts = await query
-            .Include(b => b.Author)
-            .Skip(page.Skip)
-            .Take(page.PageSize)
-            .ToListAsync();
-
+        var data = await _repository.GetBlogPageAsync(
+            q, published, category, authorId, page, publishedView: false);
         return Ok(new PagedResult<BlogPostDto>
         {
-            Items = posts.Select(b => Map(b, includeBody: false)).ToList(),
+            Items = data.Items.Select(b => Map(b, includeBody: false)).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
-            TotalItems = total
+            TotalItems = data.Total
         });
     }
 
@@ -137,8 +87,8 @@ public class BlogService : BaseService, IBlogService
             CreatedAt = _clock.UtcNow
         };
 
-        _repository.BlogPosts.Add(post);
-        await _repository.SaveChangesAsync();
+        _repository.Add(post);
+        await _repository.CommitAsync();
 
         await _audit.LogAsync(
             AuditAction.BlogCreate,
@@ -146,7 +96,7 @@ public class BlogService : BaseService, IBlogService
             post.Id,
             null,
             new { post.Title, category = post.Category.ToString(), post.AuthorId });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(await GetDtoAsync(post.Id));
     }
@@ -154,7 +104,7 @@ public class BlogService : BaseService, IBlogService
     /// <summary>UC-56 — sửa nội dung bài với optimistic concurrency.</summary>
     public async Task<ActionResult<BlogPostDto>> Update(int id, SaveBlogRequest req)
     {
-        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
         _repository.ApplyOriginalRowVersion(post, req.RowVersion);
@@ -184,7 +134,7 @@ public class BlogService : BaseService, IBlogService
                 post.Body,
                 category = post.Category.ToString()
             });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(await GetDtoAsync(id));
     }
@@ -192,7 +142,7 @@ public class BlogService : BaseService, IBlogService
     /// <summary>UC-57 — đăng hoặc gỡ bài với kiểm tra phiên bản hiện tại.</summary>
     public async Task<IActionResult> Publish(int id, bool value, ConcurrencyRequest req)
     {
-        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
         _repository.ApplyOriginalRowVersion(post, req.RowVersion);
@@ -215,7 +165,7 @@ public class BlogService : BaseService, IBlogService
             post.Id,
             new { isPublished = oldState },
             new { isPublished = post.IsPublished });
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new
         {
@@ -229,7 +179,7 @@ public class BlogService : BaseService, IBlogService
     /// </summary>
     public async Task<IActionResult> Delete(int id, string rowVersion)
     {
-        var post = await _repository.BlogPosts.FirstOrDefaultAsync(x => x.Id == id)
+        var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
         _repository.ApplyOriginalRowVersion(post, rowVersion);
@@ -247,7 +197,7 @@ public class BlogService : BaseService, IBlogService
                 new { post.IsPublished, isDeleted = false },
                 new { post.IsPublished, isDeleted = true },
                 "Ẩn bài viết đã từng được công bố");
-            await _repository.SaveChangesAsync();
+            await _repository.CommitAsync();
 
             return Ok(new
             {
@@ -263,44 +213,15 @@ public class BlogService : BaseService, IBlogService
             new { post.Title, isDraft = true },
             null,
             "Xóa cứng bản nháp chưa từng công bố");
-        _repository.BlogPosts.Remove(post);
-        await _repository.SaveChangesAsync();
+        _repository.Remove(post);
+        await _repository.CommitAsync();
         return Ok(new { message = "Đã xóa bài nháp." });
-    }
-
-    private static IQueryable<BlogPost> ApplySort(
-        IQueryable<BlogPost> query,
-        PageQuery page,
-        bool publishedView)
-    {
-        return page.Sort?.Trim().ToLowerInvariant() switch
-        {
-            "title" => page.Desc
-                ? query.OrderByDescending(b => b.Title).ThenByDescending(b => b.Id)
-                : query.OrderBy(b => b.Title).ThenBy(b => b.Id),
-            "author" => page.Desc
-                ? query.OrderByDescending(b => b.Author!.FullName).ThenByDescending(b => b.Id)
-                : query.OrderBy(b => b.Author!.FullName).ThenBy(b => b.Id),
-            "category" => page.Desc
-                ? query.OrderByDescending(b => b.Category).ThenByDescending(b => b.Id)
-                : query.OrderBy(b => b.Category).ThenBy(b => b.Id),
-            "published" => page.Desc
-                ? query.OrderByDescending(b => b.PublishedAt).ThenByDescending(b => b.Id)
-                : query.OrderBy(b => b.PublishedAt).ThenBy(b => b.Id),
-            _ when publishedView => query
-                .OrderByDescending(b => b.PublishedAt)
-                .ThenByDescending(b => b.Id),
-            _ => query
-                .OrderByDescending(b => b.UpdatedAt ?? b.CreatedAt)
-                .ThenByDescending(b => b.Id)
-        };
     }
 
     private async Task<BlogPostDto> GetDtoAsync(int id)
     {
-        var post = await _repository.BlogPosts.AsNoTracking()
-            .Include(x => x.Author)
-            .FirstAsync(x => x.Id == id);
+        var post = await _repository.GetBlogPostAsync(id, tracking: false)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
         return Map(post, includeBody: true);
     }
 

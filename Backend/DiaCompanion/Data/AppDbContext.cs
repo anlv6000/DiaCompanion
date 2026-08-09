@@ -1,6 +1,8 @@
-using Microsoft.EntityFrameworkCore;
-using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Common;
+using DiaCompanion.Api.Entities;
+using DiaCompanion.Entities;
+using Microsoft.EntityFrameworkCore;
+using System.Reflection.Emit;
 
 namespace DiaCompanion.Api.Data;
 
@@ -9,6 +11,8 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
@@ -30,10 +34,11 @@ public class AppDbContext : DbContext
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
     public DbSet<DoctorShift> DoctorShifts => Set<DoctorShift>();
+    public DbSet<MedicalRecord> MedicalRecords => Set<MedicalRecord>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
-
+        
         /* ---------------------------------------------------------------
            NF-14: mọi truy vấn đọc mặc định loại bản ghi đã thu hồi.
            Đặt ở tầng model để không phụ thuộc việc lập trình viên nhớ
@@ -46,7 +51,7 @@ public class AppDbContext : DbContext
         b.Entity<AiDiagnosis>().HasQueryFilter(x => !x.IsVoided);
         b.Entity<DiagnosisReview>().HasQueryFilter(x => !x.IsVoided);
         b.Entity<Prescription>().HasQueryFilter(x => !x.IsVoided);
-
+        b.Entity<MedicalRecord>().HasQueryFilter(x => !x.IsVoided);
         b.Entity<HealthMetric>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<LifestyleLog>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<SymptomReport>().HasQueryFilter(x => !x.IsDeleted);
@@ -56,14 +61,52 @@ public class AppDbContext : DbContext
         /* --------------------------------------------------------- Users */
         b.Entity<User>(e =>
         {
-            e.Property(x => x.Role).HasConversion<byte>();
             e.Property(x => x.PublicId).HasDefaultValueSql("NEWID()");
-            // QT-2: unique CÓ ĐIỀU KIỆN. Unique thường sẽ khiến số điện thoại của
-            // tài khoản đã khoá bị giữ vĩnh viễn, không đăng ký lại được.
-            e.HasIndex(x => x.Phone).IsUnique().HasFilter("[Phone] IS NOT NULL AND [IsActive] = 1");
-            e.HasIndex(x => x.Email).IsUnique().HasFilter("[Email] IS NOT NULL AND [IsActive] = 1");
+            // Login identifier thuộc về User, không phụ thuộc trạng thái UserRoles.
+            // Chỉ filter NULL để SQL Server vẫn cho nhiều User không có Phone/Email.
+            e.HasIndex(x => x.Phone)
+                .IsUnique()
+                .HasFilter("[Phone] IS NOT NULL")
+                .HasDatabaseName("UX_Users_Phone");
+            e.HasIndex(x => x.Email)
+                .IsUnique()
+                .HasFilter("[Email] IS NOT NULL")
+                .HasDatabaseName("UX_Users_Email");
             e.HasIndex(x => x.PublicId).IsUnique();
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
+            e.HasMany(x => x.UserRoles)
+                .WithOne(x => x.User)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        /* -------------------------------------------------------- Roles */
+        b.Entity<Role>(e =>
+        {
+            e.ToTable("Roles");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasColumnType("varchar(50)");
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+
+        b.Entity<UserRole>(e =>
+        {
+            e.ToTable("UserRoles");
+            e.HasKey(x => new { x.UserId, x.RoleId });
+            e.HasIndex(x => new { x.RoleId, x.IsActive, x.UserId })
+                .HasDatabaseName("IX_UserRoles_Role");
+            e.HasIndex(x => new { x.UserId, x.IsActive })
+                .HasDatabaseName("IX_UserRoles_UserActive");
+
+            e.HasOne(x => x.Role)
+                .WithMany(x => x.UserRoles)
+                .HasForeignKey(x => x.RoleId)
+                .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.AssignedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedBy)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         /* ------------------------------------------------------ Patients */
@@ -85,14 +128,48 @@ public class AppDbContext : DbContext
         /* -------------------------------------------------------- Visits */
         b.Entity<Visit>(e =>
         {
-            e.Property(x => x.Status).HasConversion<byte>();
-            e.Property(x => x.Referral).HasConversion<byte?>();
-            e.HasIndex(x => new { x.PatientId, x.VisitDate });
-            e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
-            e.HasOne(x => x.Patient).WithMany(p => p.Visits)
-                .HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
-            e.HasOne(x => x.Doctor).WithMany()
-                .HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.NoAction);
+            e.ToTable("MedicalVisits");
+
+            e.Property(x => x.Status)
+                .HasConversion<byte>();
+
+            e.Property(x => x.Referral)
+                .HasConversion<byte?>();
+
+            e.HasIndex(x => new
+            {
+                x.PatientId,
+                x.VisitDate
+            });
+
+            // Index mới theo MedicalRecord.
+            e.HasIndex(x => x.MedicalRecordId)
+                .HasDatabaseName("IX_Visits_MedicalRecordId");
+
+            e.Property(x => x.RowVer)
+                .IsRowVersion()
+                .HasColumnName("RowVer");
+
+
+            // Patient -> Visits
+            e.HasOne(x => x.Patient)
+                .WithMany(p => p.Visits)
+                .HasForeignKey(x => x.PatientId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+
+            // MedicalRecord -> Visits
+            e.HasOne(x => x.MedicalRecord)
+                .WithMany(mr => mr.Visits)
+                .HasForeignKey(x => x.MedicalRecordId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+
+            // Doctor -> Visits
+            e.HasOne(x => x.Doctor)
+                .WithMany()
+                .HasForeignKey(x => x.DoctorId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         /* -------------------------------------------------- FundusImages */
@@ -290,6 +367,58 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Doctor)
                 .WithMany()
                 .HasForeignKey(x => x.DoctorId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+        b.Entity<MedicalRecord>(e =>
+        {
+            e.ToTable("MedicalRecords");
+
+            e.HasKey(x => x.Id);
+
+            // RecordCode unique toàn hệ thống.
+            e.Property(x => x.RecordCode)
+                .HasMaxLength(30)
+                .IsRequired();
+
+            e.HasIndex(x => x.RecordCode)
+                .IsUnique()
+                .HasDatabaseName("UQ_MedicalRecords_RecordCode");
+
+            // Mỗi Patient chỉ có tối đa 1 MedicalRecord còn hiệu lực.
+            // MedicalRecord đã void không tham gia unique index.
+            e.HasIndex(x => x.PatientId)
+                .IsUnique()
+                .HasFilter("[IsVoided] = 0")
+                .HasDatabaseName("UX_MedicalRecords_ActivePatient");
+
+            // SQL ROWVERSION.
+            e.Property(x => x.RowVersion)
+                .IsRowVersion()
+                .HasColumnName("RowVersion");
+
+
+            // ============================================================
+            // Foreign keys
+            // ============================================================
+
+            e.HasOne(x => x.Patient)
+                .WithMany(p => p.MedicalRecords)
+                .HasForeignKey(x => x.PatientId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            e.HasOne(x => x.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            e.HasOne(x => x.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            e.HasOne(x => x.VoidedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.VoidedByUserId)
                 .OnDelete(DeleteBehavior.NoAction);
         });
     }

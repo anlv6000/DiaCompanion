@@ -32,7 +32,7 @@ public class EngagementController : BaseApiController
         await _service.ReportSymptom(req);
 
     [HttpGet("symptoms")]
-    [Authorize(Roles = "Doctor,Patient")]
+    [Authorize(Roles = Roles.DoctorOrPatient)]
     public async Task<ActionResult<PagedResult<SymptomReportDto>>> Symptoms(
         [FromQuery] int? patientId,
         [FromQuery] bool pendingOnly = false,

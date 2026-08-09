@@ -1,7 +1,6 @@
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Services;
 
@@ -64,28 +63,12 @@ public sealed class ClinicalReminderWorker : BackgroundService
         var now = clock.UtcNow;
         var missedBefore = now.AddHours(-2);
 
-        // Liều quá hạn được chốt thành Missed trước, tránh gửi nhắc muộn vô nghĩa.
-        await repository.MedicationLogs
-            .Where(x => x.Status == MedicationStatus.Pending && x.ScheduledAt < missedBefore)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, MedicationStatus.Missed), ct);
+        // Mọi truy vấn/cập nhật EF nằm trong Repository; worker chỉ điều phối nghiệp vụ.
+        await repository.MarkOverdueMedicationLogsMissedAsync(missedBefore, ct);
 
         var remindUntil = now.AddMinutes(15);
-        var logs = await repository.MedicationLogs
-            .Include(x => x.PrescriptionItem)
-                .ThenInclude(x => x!.Prescription)
-                    .ThenInclude(x => x!.Patient)
-            .Where(x => x.Status == MedicationStatus.Pending
-                        && x.ReminderSentAt == null
-                        && x.ScheduledAt >= missedBefore
-                        && x.ScheduledAt <= remindUntil
-                        && x.PrescriptionItem != null
-                        && x.PrescriptionItem.IsActive
-                        && x.PrescriptionItem.Prescription != null
-                        && !x.PrescriptionItem.Prescription.IsVoided)
-            .OrderBy(x => x.ScheduledAt)
-            .Take(500)
-            .ToListAsync(ct);
+        var logs = await repository.GetMedicationReminderCandidatesAsync(
+            missedBefore, remindUntil, 500, ct);
 
         foreach (var log in logs)
         {
@@ -108,7 +91,7 @@ public sealed class ClinicalReminderWorker : BackgroundService
         }
 
         if (logs.Count > 0)
-            await repository.SaveChangesAsync(ct);
+            await repository.CommitAsync(ct);
     }
 
     private static async Task ProcessRecheckRemindersAsync(
@@ -118,43 +101,14 @@ public sealed class ClinicalReminderWorker : BackgroundService
         CancellationToken ct)
     {
         var today = clock.LocalToday;
-        var rows = await repository.Visits.AsNoTracking()
-            .Where(v => v.Status == VisitStatus.Completed
-                        && v.ClosedAt != null
-                        && v.RecheckMonths != null
-                        && v.Patient != null
-                        && v.Patient.UserId != null)
-            .Select(v => new
-            {
-                v.Id,
-                v.PatientId,
-                UserId = v.Patient!.UserId!.Value,
-                PatientName = v.Patient.FullName,
-                ClosedAt = v.ClosedAt!.Value,
-                RecheckMonths = v.RecheckMonths!.Value
-            })
-            .ToListAsync(ct);
-
-        if (rows.Count == 0)
+        var latestVisits = await repository.GetRecheckReminderCandidatesAsync(ct);
+        if (latestVisits.Count == 0)
             return;
-
-        var latestVisits = rows
-            .GroupBy(x => x.PatientId)
-            .Select(g => g.OrderByDescending(x => x.ClosedAt).ThenByDescending(x => x.Id).First())
-            .ToList();
-
-        var patientIds = latestVisits.Select(x => x.PatientId).ToList();
-        var latestVisitDateByPatient = await repository.Visits.AsNoTracking()
-            .Where(v => patientIds.Contains(v.PatientId))
-            .GroupBy(v => v.PatientId)
-            .Select(g => new { PatientId = g.Key, LatestVisitDate = g.Max(v => v.VisitDate) })
-            .ToDictionaryAsync(x => x.PatientId, x => x.LatestVisitDate, ct);
 
         foreach (var visit in latestVisits)
         {
             // Có lượt khám mới sau lần đóng này nghĩa là bệnh nhân đã quay lại.
-            if (latestVisitDateByPatient.TryGetValue(visit.PatientId, out var latestVisitDate)
-                && latestVisitDate > visit.ClosedAt)
+            if (visit.LatestVisitDate is DateTime latestVisitDate && latestVisitDate > visit.ClosedAt)
                 continue;
 
             var closedLocal = clock.ToLocal(visit.ClosedAt) ?? visit.ClosedAt;
@@ -171,12 +125,8 @@ public sealed class ClinicalReminderWorker : BackgroundService
                 ? $"Nhắc tái tầm soát {dueDate:dd/MM/yyyy}"
                 : $"Tái tầm soát quá hạn {daysPastDue} ngày";
 
-            var alreadySent = await repository.Notifications.AsNoTracking()
-                .AnyAsync(n => n.UserId == visit.UserId
-                               && n.Type == NotificationType.Recheck
-                               && n.Title == title
-                               && n.LinkEntity == nameof(Visit)
-                               && n.LinkEntityId == visit.Id, ct);
+            var alreadySent = await repository.NotificationExistsAsync(
+                visit.UserId, NotificationType.Recheck, title, nameof(Visit), visit.VisitId, ct);
             if (alreadySent)
                 continue;
 
@@ -194,9 +144,9 @@ public sealed class ClinicalReminderWorker : BackgroundService
                 title,
                 message,
                 nameof(Visit),
-                visit.Id);
+                visit.VisitId);
         }
 
-        await repository.SaveChangesAsync(ct);
+        await repository.CommitAsync(ct);
     }
 }

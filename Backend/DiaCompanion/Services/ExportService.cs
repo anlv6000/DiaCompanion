@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
@@ -35,9 +34,7 @@ public class ExportService : BaseService, IExportService
     /// </summary>
     public async Task<IActionResult> VisitReport(int visitId)
     {
-        var visit = await _repository.Visits.AsNoTracking()
-            .Include(v => v.Patient).Include(v => v.Doctor)
-            .FirstOrDefaultAsync(v => v.Id == visitId)
+        var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
         EnsureCanAccessPatient(_me, visit.PatientId);
@@ -47,41 +44,40 @@ public class ExportService : BaseService, IExportService
             throw AppException.Forbidden(Msg.Forbidden,
                 "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo chính thức.");
 
-        var findings = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visitId)
-            .Select(r => new
-            {
-                Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
-                ImageId = r.AiDiagnosis.FundusImageId,
-                FinalGrade = (byte)r.FinalGrade,
-                Action = (byte)r.Action,
-                r.Reason,
-                AiGrade = (byte)r.AiDiagnosis.DrGrade,
-                r.AiDiagnosis.Confidence,
-                r.AiDiagnosis.Disagreement,
-                r.AiDiagnosis.IsDeferred,
-                r.AiDiagnosis.FractalDimension,
-                r.AiDiagnosis.CountMA,
-                r.AiDiagnosis.CountHE,
-                r.AiDiagnosis.CountEX,
-                r.AiDiagnosis.CountSE,
-                ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
-                DoctorName = r.Doctor!.FullName,
-                r.CreatedAt
-            }).ToListAsync();
+        var reviewRows = await _repository.GetVisitDiagnosisReviewsForExportAsync(visitId);
+        var findings = reviewRows.Select(r => new
+        {
+            Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
+            ImageId = r.AiDiagnosis.FundusImageId,
+            FinalGrade = (byte)r.FinalGrade,
+            Action = (byte)r.Action,
+            r.Reason,
+            AiGrade = (byte)r.AiDiagnosis.DrGrade,
+            r.AiDiagnosis.Confidence,
+            r.AiDiagnosis.Disagreement,
+            r.AiDiagnosis.IsDeferred,
+            r.AiDiagnosis.FractalDimension,
+            r.AiDiagnosis.CountMA,
+            r.AiDiagnosis.CountHE,
+            r.AiDiagnosis.CountEX,
+            r.AiDiagnosis.CountSE,
+            ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
+            DoctorName = r.Doctor!.FullName,
+            r.CreatedAt
+        }).ToList();
 
-        var prescriptions = await _repository.Prescriptions.AsNoTracking()
-            .Where(p => p.VisitId == visitId)
-            .Select(p => new
-            {
-                p.IssuedAt,
-                p.Note,
-                Items = p.Items.Where(i => i.IsActive)
-                    .Select(i => new { i.DrugName, i.Dose, i.TimesPerDay, i.DurationDays, i.Instruction })
-            }).ToListAsync();
+        var prescriptionRows = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
+        var prescriptions = prescriptionRows.Select(p => new
+        {
+            p.IssuedAt,
+            p.Note,
+            Items = p.Items.Where(i => i.IsActive)
+                .Select(i => new { i.DrugName, i.Dose, i.TimesPerDay, i.DurationDays, i.Instruction })
+                .ToList()
+        }).ToList();
 
         await _audit.LogAsync(AuditAction.Export, nameof(Visit), visitId, detail: "Xuất báo cáo khám");
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new
         {
@@ -140,10 +136,7 @@ public class ExportService : BaseService, IExportService
     /// <summary>UC-34 — sinh tệp PDF báo cáo khám đã được bác sĩ xác nhận.</summary>
     public async Task<IActionResult> VisitReportPdf(int visitId)
     {
-        var visit = await _repository.Visits.AsNoTracking()
-            .Include(v => v.Patient)
-            .Include(v => v.Doctor)
-            .FirstOrDefaultAsync(v => v.Id == visitId)
+        var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
         EnsureCanAccessPatient(_me, visit.PatientId);
@@ -151,34 +144,29 @@ public class ExportService : BaseService, IExportService
             throw AppException.Forbidden(Msg.Forbidden,
                 "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo PDF.");
 
-        var findings = await _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visitId)
-            .OrderBy(r => r.AiDiagnosis!.FundusImage!.Eye)
-            .Select(r => new
-            {
-                Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
-                AiGrade = (byte)r.AiDiagnosis.DrGrade,
-                FinalGrade = (byte)r.FinalGrade,
-                r.Action,
-                r.Reason,
-                r.AiDiagnosis.Confidence,
-                Model = r.AiDiagnosis.ModelVersion!.Name,
-                ConfirmedBy = r.Doctor!.FullName
-            })
-            .ToListAsync();
+        var reviewRows = await _repository.GetVisitDiagnosisReviewsForExportAsync(visitId);
+        var findings = reviewRows.Select(r => new
+        {
+            Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
+            AiGrade = (byte)r.AiDiagnosis.DrGrade,
+            FinalGrade = (byte)r.FinalGrade,
+            r.Action,
+            r.Reason,
+            r.AiDiagnosis.Confidence,
+            Model = r.AiDiagnosis.ModelVersion!.Name,
+            ConfirmedBy = r.Doctor!.FullName
+        }).ToList();
 
-        var prescriptions = await _repository.Prescriptions.AsNoTracking()
-            .Where(p => p.VisitId == visitId)
-            .SelectMany(p => p.Items.Where(i => i.IsActive)
-                .Select(i => new
-                {
-                    i.DrugName,
-                    i.Dose,
-                    i.TimesPerDay,
-                    i.DurationDays,
-                    i.Instruction
-                }))
-            .ToListAsync();
+        var prescriptionRows = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
+        var prescriptions = prescriptionRows.SelectMany(p => p.Items.Where(i => i.IsActive)
+            .Select(i => new
+            {
+                i.DrugName,
+                i.Dose,
+                i.TimesPerDay,
+                i.DurationDays,
+                i.Instruction
+            })).ToList();
 
         var visitLocal = _clock.ToLocal(visit.VisitDate) ?? visit.VisitDate;
 
@@ -246,7 +234,7 @@ public class ExportService : BaseService, IExportService
 
         await _audit.LogAsync(AuditAction.Export, nameof(Visit), visitId,
             detail: "Xuất báo cáo khám PDF");
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return File(pdf, "application/pdf", $"examination-report-{visitId}.pdf");
     }
@@ -260,48 +248,24 @@ public class ExportService : BaseService, IExportService
     /// </summary>
     public async Task<ActionResult<object>> DisagreementCases(int? modelVersionId, DateOnly? from, DateOnly? to)
     {
-        var query = _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.Action == ReviewAction.Override);
+        var (fromUtc, toExclusiveUtc) = ResolveReviewDateRange(from, to);
+        var reviewRows = await _repository.GetDiagnosisReviewsForExportAsync(
+            modelVersionId, fromUtc, toExclusiveUtc, overridesOnly: true);
 
-        if (modelVersionId is int mv)
-            query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
-        query = ApplyReviewDateFilter(query, from, to);
-
-        var rawCases = await query
-    .Select(r => new
-    {
-        r.AiDiagnosisId,
-
-        PatientCode =
-            r.AiDiagnosis!.FundusImage!.Patient!.Code,
-
-        Eye =
-            r.AiDiagnosis.FundusImage.Eye,
-
-        ModelVersion =
-            r.AiDiagnosis.ModelVersion!.Name,
-
-        AiGrade =
-            r.AiDiagnosis.DrGrade,
-
-        DoctorGrade =
-            r.FinalGrade,
-
-        Confidence =
-            r.AiDiagnosis.Confidence,
-
-        Disagreement =
-            r.AiDiagnosis.Disagreement,
-
-        WasDeferred =
-            r.AiDiagnosis.IsDeferred,
-
-        r.Reason,
-
-        ReviewedAt =
-            r.CreatedAt
-    })
-    .ToListAsync();
+        var rawCases = reviewRows.Select(r => new
+        {
+            r.AiDiagnosisId,
+            PatientCode = r.AiDiagnosis!.FundusImage!.Patient!.Code,
+            Eye = r.AiDiagnosis.FundusImage.Eye,
+            ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
+            AiGrade = r.AiDiagnosis.DrGrade,
+            DoctorGrade = r.FinalGrade,
+            Confidence = r.AiDiagnosis.Confidence,
+            Disagreement = r.AiDiagnosis.Disagreement,
+            WasDeferred = r.AiDiagnosis.IsDeferred,
+            r.Reason,
+            ReviewedAt = r.CreatedAt
+        }).ToList();
 
     var cases = rawCases
         .Select(r => new DisagreementCaseDto
@@ -330,14 +294,12 @@ public class ExportService : BaseService, IExportService
         .ThenByDescending(r => r.ReviewedAt)
         .ToList();
 
-        // Tính chỉ số tổng hợp trên TOÀN BỘ review, không chỉ ca ghi đè
-        var allReviewsQuery = _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => modelVersionId == null || r.AiDiagnosis!.ModelVersionId == modelVersionId);
-        allReviewsQuery = ApplyReviewDateFilter(allReviewsQuery, from, to);
-
-        var allReviews = await allReviewsQuery
+        // Tính chỉ số tổng hợp trên TOÀN BỘ review, không chỉ ca ghi đè.
+        var allReviewRows = await _repository.GetDiagnosisReviewsForExportAsync(
+            modelVersionId, fromUtc, toExclusiveUtc, overridesOnly: false);
+        var allReviews = allReviewRows
             .Select(r => new { Action = (byte)r.Action, Deferred = r.AiDiagnosis!.IsDeferred })
-            .ToListAsync();
+            .ToList();
 
         var deferredSet = allReviews.Where(r => r.Deferred).ToList();
         var notDeferredSet = allReviews.Where(r => !r.Deferred).ToList();
@@ -367,7 +329,7 @@ public class ExportService : BaseService, IExportService
 
         await _audit.LogAsync(AuditAction.Export, "DisagreementCases", null,
             detail: $"Kết xuất {cases.Count} ca mâu thuẫn");
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         return Ok(new { summary, cases });
     }
@@ -375,12 +337,10 @@ public class ExportService : BaseService, IExportService
     /// <summary>UC-35 — kết xuất CSV để phân tích ngoài hệ thống.</summary>
     public async Task<IActionResult> DisagreementCsv(int? modelVersionId, DateOnly? from, DateOnly? to)
     {
-        var query = _repository.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.Action == ReviewAction.Override);
-        if (modelVersionId is int mv) query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
-        query = ApplyReviewDateFilter(query, from, to);
-
-        var rows = await query.Select(r => new
+        var (fromUtc, toExclusiveUtc) = ResolveReviewDateRange(from, to);
+        var reviewRows = await _repository.GetDiagnosisReviewsForExportAsync(
+            modelVersionId, fromUtc, toExclusiveUtc, overridesOnly: true);
+        var rows = reviewRows.Select(r => new
         {
             r.AiDiagnosisId,
             PatientCode = r.AiDiagnosis!.FundusImage!.Patient!.Code,
@@ -395,7 +355,7 @@ public class ExportService : BaseService, IExportService
             r.AiDiagnosis.FractalDimension,
             r.Reason,
             r.CreatedAt
-        }).ToListAsync();
+        }).ToList();
 
         var sb = new StringBuilder();
         sb.AppendLine("ai_diagnosis_id,patient_code,eye,model,ai_grade,lesion_implied_grade,doctor_grade," +
@@ -414,31 +374,22 @@ public class ExportService : BaseService, IExportService
 
         await _audit.LogAsync(AuditAction.Export, "DisagreementCases", null,
             detail: $"Kết xuất CSV {rows.Count} ca");
-        await _repository.SaveChangesAsync();
+        await _repository.CommitAsync();
 
         // BOM để Excel mở đúng tiếng Việt
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
         return File(bytes, "text/csv", $"disagreement-cases-{DateTime.UtcNow:yyyyMMdd}.csv");
     }
 
-    private IQueryable<DiagnosisReview> ApplyReviewDateFilter(
-        IQueryable<DiagnosisReview> query,
-        DateOnly? from,
-        DateOnly? to)
+    private (DateTime? FromUtc, DateTime? ToExclusiveUtc) ResolveReviewDateRange(DateOnly? from, DateOnly? to)
     {
-        if (from is DateOnly fromDate)
-        {
-            var fromUtc = _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue));
-            query = query.Where(r => r.CreatedAt >= fromUtc);
-        }
-
-        if (to is DateOnly toDate)
-        {
-            var toExclusiveUtc = _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
-            query = query.Where(r => r.CreatedAt < toExclusiveUtc);
-        }
-
-        return query;
+        DateTime? fromUtc = from is DateOnly fromDate
+            ? _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue))
+            : null;
+        DateTime? toExclusiveUtc = to is DateOnly toDate
+            ? _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue))
+            : null;
+        return (fromUtc, toExclusiveUtc);
     }
 
 }
