@@ -5,6 +5,7 @@ using DiaCompanion.Dtos;
 using DiaCompanion.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using static DiaCompanion.Api.Repositories.IRepository;
 
 namespace DiaCompanion.Api.Repositories;
 
@@ -238,5 +239,52 @@ public sealed partial class EfRepository : IRepository
             query = query.AsNoTracking();
 
         return await query.FirstOrDefaultAsync(ct);
+    }
+
+
+
+    public async Task<PatientAdminTarget?> GetPatientAdminTargetAsync(
+    int patientId,
+    bool tracking,
+    CancellationToken ct = default)
+    {
+        IQueryable<Patient> query = _db.Patients
+            .Include(p => p.User)
+            .Where(p => p.Id == patientId);
+
+        if (!tracking)
+            query = query.AsNoTracking();
+
+        var patient = await query.FirstOrDefaultAsync(ct);
+
+        if (patient is null)
+            return null;
+
+
+        if (patient.UserId is not int userId)
+        {
+            return new PatientAdminTarget(
+                patient,
+                null,
+                null);
+        }
+
+
+        IQueryable<UserRole> roleQuery = _db.UserRoles
+            .Where(ur =>
+                ur.UserId == userId &&
+                ur.Role.Name == Roles.Patient);
+
+        if (!tracking)
+            roleQuery = roleQuery.AsNoTracking();
+
+        var patientRole =
+            await roleQuery.FirstOrDefaultAsync(ct);
+
+
+        return new PatientAdminTarget(
+            patient,
+            patient.User,
+            patientRole);
     }
 }

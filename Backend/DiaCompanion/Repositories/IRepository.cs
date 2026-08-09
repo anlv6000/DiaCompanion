@@ -1,3 +1,4 @@
+using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Dtos;
 using DiaCompanion.Entities;
@@ -31,5 +32,17 @@ public partial interface IRepository : IUnitOfWork
     Task<Patient?> GetPatientByIdAsync(
         int patientId,
         bool tracking = false,
+        CancellationToken ct = default);
+
+
+    Task<AdminPatientPage> GetAdminPatientPageAsync(
+    string? q,
+    string? status,
+    PageQuery page,
+    CancellationToken ct = default);
+
+    Task<PatientAdminTarget?> GetPatientAdminTargetAsync(
+        int patientId,
+        bool tracking,
         CancellationToken ct = default);
 }       
