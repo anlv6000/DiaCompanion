@@ -113,7 +113,19 @@ const NAV: [string, NavItem[]][] = [
   [
     "Quản trị",
     [
-      { to: "/users", label: "Tài khoản", icon: "users", roles: ["Admin"] },
+      {
+      to: "/users",
+      label: "TK nhân viên",
+      icon: "users",
+      roles: ["Admin"],
+    },
+
+    {
+      to: "/patient-accounts",
+      label: "TK bệnh nhân",
+      icon: "users",
+      roles: ["Admin"],
+    },   
       { to: "/audit", label: "Nhật ký", icon: "lock", roles: ["Admin"] },
       { to: "/configs", label: "Cấu hình", icon: "settings", roles: ["Admin"] },
       { to: "/models", label: "Model", icon: "settings", roles: ["Admin"] },

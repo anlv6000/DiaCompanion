@@ -49,7 +49,7 @@ public class UsersController : BaseApiController
     [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Update(int id, UpdateStaffRequest req)
     {
-        return await _service.Update(id, req);
+        return await _service.Update(id, req);  
     }
 
 

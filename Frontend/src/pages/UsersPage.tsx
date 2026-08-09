@@ -296,11 +296,13 @@ function UserEditor({
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value as StaffRole)}
           >
-            {roles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
+            {roles
+  .filter((r) => r.value !== "Admin")
+  .map((r) => (
+    <option key={r.value} value={r.value}>
+      {r.label}
+    </option>
+  ))}
           </select>
         </Field>
         <Field labelText="Số chứng chỉ" required={selectedRole === "Doctor"}>

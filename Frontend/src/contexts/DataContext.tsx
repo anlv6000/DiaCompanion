@@ -90,6 +90,32 @@ const buildPatients = () => ({
   reissue: (id: number) => patientsApi.reissue(id),
   void: (id: number, reason: string, rowVersion: string) =>
     patientsApi.void(id, reason, rowVersion),
+
+   // ============================================================
+  // ADMIN PATIENT MANAGEMENT
+  // ============================================================
+
+  adminList: (
+    p: Record<string, unknown>,
+  ) =>
+    patientsApi.adminList(p),
+
+  adminUpdate: (
+    id: number,
+    b: T.AdminUpdatePatientRequest,
+  ) =>
+    patientsApi.adminUpdate(id, b),
+
+  adminSetActive: (
+    id: number,
+    value: boolean,
+    rowVersion: string,
+  ) =>
+    patientsApi.adminSetActive(
+      id,
+      value,
+      rowVersion,
+    ),
 });
 const buildVisits = () => ({
   list: (p: Record<string, unknown>) => visitsApi.list(p),

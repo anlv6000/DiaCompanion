@@ -51,6 +51,7 @@ export const usersApi = {
     ),
 };
 export const patientsApi = {
+  
   list: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.PatientListItemDto>>("/api/patients" + query(p)),
   get: (id: number) => http.get<T.PatientDetailDto>(`/api/patients/${id}`),
@@ -64,6 +65,34 @@ export const patientsApi = {
     ),
   void: (id: number, reason: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/patients/${id}/void`, { reason, rowVersion }),
+
+
+  adminList: (p: Record<string, unknown>) =>
+  http.get<T.PagedResult<T.AdminPatientDto>>(
+    "/api/patients/admin" + query(p),
+  ),
+
+adminUpdate: (
+  id: number,
+  body: T.AdminUpdatePatientRequest,
+) =>
+  http.put<T.ApiMessage>(
+    `/api/patients/admin/${id}`,
+    body,
+  ),
+
+adminSetActive: (
+  id: number,
+  value: boolean,
+  rowVersion: string,
+) =>
+  http.put<T.ApiMessage>(
+    `/api/patients/admin/${id}/active` +
+      query({ value }),
+    {
+      rowVersion,
+    },
+  ),
 };
 export const visitsApi = {
   list: (p: Record<string, unknown>) =>

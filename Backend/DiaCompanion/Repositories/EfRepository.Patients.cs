@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
+using Microsoft.EntityFrameworkCore;
+using static DiaCompanion.Api.Repositories.IRepository;
 
 namespace DiaCompanion.Api.Repositories;
 
@@ -190,6 +191,154 @@ public sealed partial class EfRepository
         }
 
         return true;
+    }
+
+
+    public async Task<AdminPatientPage> GetAdminPatientPageAsync(
+    string? q,
+    string? status,
+    PageQuery page,
+    CancellationToken ct = default)
+    {
+        // ============================================================
+        // DANH SÁCH PATIENT
+        // ============================================================
+
+        var query = _db.Patients
+            .AsNoTracking()
+            .Include(p => p.User)
+            .AsQueryable();
+
+
+        // ============================================================
+        // TÌM KIẾM
+        // ============================================================
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim();
+
+            query = query.Where(p =>
+                p.FullName.Contains(term) ||
+                p.Code.Contains(term) ||
+                p.Phone.Contains(term));
+        }
+
+
+        // ============================================================
+        // TRẠNG THÁI PATIENT ROLE
+        // ============================================================
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var value = status.Trim().ToLowerInvariant();
+
+            if (value == "active")
+            {
+                query = query.Where(p =>
+                    p.UserId != null &&
+                    _db.UserRoles.Any(ur =>
+                        ur.UserId == p.UserId &&
+                        ur.Role.Name == Roles.Patient &&
+                        ur.IsActive));
+            }
+            else if (value == "locked")
+            {
+                query = query.Where(p =>
+                    p.UserId != null &&
+                    _db.UserRoles.Any(ur =>
+                        ur.UserId == p.UserId &&
+                        ur.Role.Name == Roles.Patient &&
+                        !ur.IsActive));
+            }
+            else if (value == "no-account")
+            {
+                query = query.Where(p =>
+                    p.UserId == null);
+            }
+        }
+
+
+        // ============================================================
+        // PHÂN TRANG
+        // ============================================================
+
+        var total = await query.CountAsync(ct);
+
+        query = page.Sort?.ToLowerInvariant() switch
+        {
+            "code" => page.Desc
+                ? query.OrderByDescending(p => p.Code)
+                : query.OrderBy(p => p.Code),
+
+            "created" => page.Desc
+                ? query.OrderByDescending(p => p.CreatedAt)
+                : query.OrderBy(p => p.CreatedAt),
+
+            _ => page.Desc
+                ? query.OrderByDescending(p => p.FullName)
+                : query.OrderBy(p => p.FullName)
+        };
+
+        var patients = await query
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .ToListAsync(ct);
+
+
+        // ============================================================
+        // LẤY PATIENT ROLE
+        // ============================================================
+
+        var userIds = patients
+            .Where(p => p.UserId.HasValue)
+            .Select(p => p.UserId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var roleRows = await _db.UserRoles
+            .AsNoTracking()
+            .Where(ur =>
+                userIds.Contains(ur.UserId) &&
+                ur.Role.Name == Roles.Patient)
+            .Select(ur => new
+            {
+                ur.UserId,
+                ur.IsActive
+            })
+            .ToListAsync(ct);
+
+        var roleByUser = roleRows
+            .ToDictionary(
+                x => x.UserId,
+                x => x.IsActive);
+
+
+        // ============================================================
+        // KẾT QUẢ
+        // ============================================================
+
+        var items = patients
+            .Select(p =>
+            {
+                bool? patientRoleActive = null;
+
+                if (p.UserId is int userId &&
+                    roleByUser.TryGetValue(userId, out var active))
+                {
+                    patientRoleActive = active;
+                }
+
+                return new AdminPatientData(
+                    p,
+                    p.User,
+                    patientRoleActive);
+            })
+            .ToList();
+
+        return new AdminPatientPage(
+            items,
+            total);
     }
 
 }
