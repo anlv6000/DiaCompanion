@@ -35,7 +35,6 @@ public class Patient : IVoidable, IHasRowVersion
     public int? VoidedBy { get; set; }
     public DateTime? VoidedAt { get; set; }
 
-    public ICollection<Visit> Visits { get; set; } = new List<Visit>();
     public ICollection<FundusImage> Images { get; set; } = new List<FundusImage>();
     public byte[] RowVer { get; set; } = Array.Empty<byte>();
 

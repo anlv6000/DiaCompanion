@@ -12,7 +12,7 @@ import { hasAnyRole } from "@/lib/roles";
 import { AppShell } from "@/components/AppShell";
 import type { Role } from "@/types/api";
 
-import { LoginPage, ChangePasswordPage } from "@/pages/AuthPages";
+import { LoginPage, ChangePasswordPage,  ForgotPasswordPage, } from "@/pages/AuthPages";
 import { TriagePage } from "@/pages/TriagePage";
 import { PatientsPage, PatientFormPage } from "@/pages/PatientsPage";
 import { PatientDetailPage } from "@/pages/PatientDetailPage";
@@ -108,7 +108,22 @@ export function AppRoutes() {
           )
         }
       />
-
+<Route
+  path="/forgot-password"
+  element={
+    user ? (
+      <Navigate
+        to={resolveLandingRoute(
+          user,
+          user.defaultRoute,
+        )}
+        replace
+      />
+    ) : (
+      <ForgotPasswordPage />
+    )
+  }
+/>
       {/* Đổi mật khẩu: chỉ cần đăng nhập (không gác vai trò), không bọc AppShell khi buộc đổi */}
       <Route
         path="/change-password"

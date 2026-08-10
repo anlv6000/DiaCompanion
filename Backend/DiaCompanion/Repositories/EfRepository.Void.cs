@@ -1,5 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
+using Microsoft.EntityFrameworkCore;
 
 namespace DiaCompanion.Api.Repositories;
 
@@ -7,7 +8,27 @@ public sealed partial class EfRepository
 {
     public Task<Patient?> GetPatientForVoidAsync(int id, CancellationToken ct = default) =>
         _db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
+    public Task<bool> ExistVisitPatientIds(int id, CancellationToken ct = default) =>
+        _db.Visits.AnyAsync(x => x.MedicalRecord.PatientId == id);
+    public async Task<ShiftDoctorInformation> shiftDoctorInformation(int id, CancellationToken ct = default)
+    {
+        var result = await _db.Visits
+         .AsNoTracking()
+         .Where(v =>
+             v.MedicalRecord.PatientId == id &&
+             v.DoctorId != null)
+         .OrderByDescending(v => v.VisitDate)
+         .ThenByDescending(v => v.Id)
+         .Select(v => new ShiftDoctorInformation
+         {
+             phone = v.Doctor!.Phone,
+             name = v.Doctor!.FullName
+         })
+         .FirstOrDefaultAsync(ct);
 
+        return result;  
+    }
+        
     public Task<Visit?> GetVisitForVoidAsync(int id, CancellationToken ct = default) =>
         _db.Visits.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
 
@@ -24,7 +45,7 @@ public sealed partial class EfRepository
         _db.Prescriptions.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public async Task<IReadOnlyList<Visit>> GetActiveVisitsForPatientAsync(int patientId, CancellationToken ct = default) =>
-        await _db.Visits.Where(x => x.PatientId == patientId).ToListAsync(ct);
+        await _db.Visits.Where(x => x.MedicalRecord.PatientId == patientId).ToListAsync(ct);
 
     public async Task<IReadOnlyList<FundusImage>> GetActiveOrphanImagesForPatientAsync(int patientId, CancellationToken ct = default) =>
         await _db.FundusImages.Where(x => x.PatientId == patientId && x.VisitId == null).ToListAsync(ct);

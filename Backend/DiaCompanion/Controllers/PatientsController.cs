@@ -126,7 +126,7 @@ public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest re
     /// Nhờ filtered unique index, số điện thoại được giải phóng để đăng ký lại.
     /// </summary>
     [HttpPut("{id:int}/void")]
-    [Authorize(Roles = Roles.DoctorOrAdmin)]
+    [Authorize(Roles = Roles.Receptionist)]
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);

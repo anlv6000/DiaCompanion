@@ -136,26 +136,35 @@ public class AppDbContext : DbContext
             e.Property(x => x.Referral)
                 .HasConversion<byte?>();
 
-            e.HasIndex(x => new
-            {
-                x.PatientId,
-                x.VisitDate
-            });
+            //e.HasIndex(x => new
+            //{
+            //    x.PatientId,
+            //    x.VisitDate
+            //});
 
             // Index mới theo MedicalRecord.
             e.HasIndex(x => x.MedicalRecordId)
                 .HasDatabaseName("IX_Visits_MedicalRecordId");
+
+
+            e.HasIndex(x => new
+            {
+                x.MedicalRecordId,
+                x.VisitDate
+            })
+   .HasDatabaseName("IX_MedicalVisits_MedicalRecordId_VisitDate");
+
 
             e.Property(x => x.RowVer)
                 .IsRowVersion()
                 .HasColumnName("RowVer");
 
 
-            // Patient -> Visits
-            e.HasOne(x => x.Patient)
-                .WithMany(p => p.Visits)
-                .HasForeignKey(x => x.PatientId)
-                .OnDelete(DeleteBehavior.NoAction);
+            //// Patient -> Visits
+            //e.HasOne(x => x.Patient)
+            //    .WithMany(p => p.Visits)
+            //    .HasForeignKey(x => x.PatientId)
+            //    .OnDelete(DeleteBehavior.NoAction);
 
 
             // MedicalRecord -> Visits

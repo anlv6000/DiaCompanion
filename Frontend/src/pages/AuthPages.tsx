@@ -1,15 +1,263 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { resolveLandingRoute } from "@/lib/permissions";
 import { Field, Button, Panel, PageHeader, StatusBadge } from "@/components/ui";
+import { authApi } from "@/api/services";
+
 
 /* Đăng nhập — CHỈ nhân viên bằng email. Web bệnh viện không có luồng bệnh nhân
    (OTP/số điện thoại), luồng đó thuộc app bệnh nhân riêng. */
-export function LoginPage() {
+export function ForgotPasswordPage() {
+  const navigate = useNavigate();
+const [showNewPassword, setShowNewPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  const [otpSent, setOtpSent] = useState(false);
+  const [devCode, setDevCode] = useState<string | null>(null);
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const requestOtp = async () => {
+    if (!phone.trim()) {
+      setError("Vui lòng nhập số điện thoại.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const res =
+        await authApi.forgotPassword(
+          phone.trim(),
+        );
+
+      setOtpSent(true);
+      setMessage(res.message);
+
+      if (res.devCode) {
+        setDevCode(res.devCode);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetPassword = async (
+    e: FormEvent,
+  ) => {
+    e.preventDefault();
+
+    if (!code.trim()) {
+      setError("Vui lòng nhập mã OTP.");
+      return;
+    }
+
+    if (!newPassword) {
+      setError("Vui lòng nhập mật khẩu mới.");
+      return;
+    }
+
+    if (newPassword !== confirm) {
+      setError(
+        "Mật khẩu xác nhận không khớp.",
+      );
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await authApi.resetPassword({
+        phone: phone.trim(),
+        code: code.trim(),
+        newPassword,
+      });
+
+      navigate("/login", {
+        replace: true,
+        state: {
+          message:
+            "Đặt lại mật khẩu thành công. Vui lòng đăng nhập.",
+        },
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="login-side">
+          <h1>DiaCompanion</h1>
+          <p>
+            Khôi phục mật khẩu bằng số điện thoại
+            đã đăng ký.
+          </p>
+        </div>
+
+        <form
+          className="login-form"
+          onSubmit={resetPassword}
+        >
+          <h2 className="serif">
+            Quên mật khẩu
+          </h2>
+
+          <p className="faint">
+            Nhập số điện thoại của tài khoản để
+            nhận mã xác minh.
+          </p>
+
+          <Field
+            labelText="Số điện thoại"
+            required
+          >
+            <input
+              autoFocus
+              type="tel"
+              value={phone}
+              disabled={otpSent}
+              onChange={(e) =>
+                setPhone(e.target.value)
+              }
+              placeholder="0912345678"
+            />
+          </Field>
+
+          {!otpSent && (
+            <Button
+              type="button"
+              kind="primary"
+              busy={busy}
+              onClick={requestOtp}
+              disabled={!phone.trim()}
+            >
+              Gửi mã OTP
+            </Button>
+          )}
+
+          {otpSent && (
+            <>
+              <Field
+                labelText="Mã OTP"
+                required
+              >
+                <input
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value)
+                  }
+                  placeholder="Nhập mã xác minh"
+                />
+              </Field>
+
+              <Field labelText="Mật khẩu mới" required>
+  <div className="input-with-action">
+    <input
+      type={showNewPassword ? "text" : "password"}
+      value={newPassword}
+      onChange={(e) => setNewPassword(e.target.value)}
+      autoComplete="new-password"
+    />
+
+    <Button
+      type="button"
+      onClick={() => setShowNewPassword((x) => !x)}
+    >
+      {showNewPassword ? "Ẩn" : "👁"}
+    </Button>
+  </div>
+</Field>
+
+<Field labelText="Nhập lại mật khẩu mới" required>
+  <div className="input-with-action">
+    <input
+      type={showConfirmPassword ? "text" : "password"}
+      value={confirm}
+      onChange={(e) => setConfirm(e.target.value)}
+      autoComplete="new-password"
+    />
+
+    <Button
+      type="button"
+      onClick={() => setShowConfirmPassword((x) => !x)}
+    >
+      {showConfirmPassword ? "Ẩn" : "👁"}
+    </Button>
+  </div>
+</Field>
+
+              <Button
+                type="submit"
+                kind="primary"
+                busy={busy}
+                disabled={
+                  !code.trim() ||
+                  !newPassword ||
+                  !confirm
+                }
+              >
+                Đặt lại mật khẩu
+              </Button>
+
+              <Button
+                type="button"
+                onClick={requestOtp}
+                disabled={busy}
+              >
+                Gửi lại mã OTP
+              </Button>
+            </>
+          )}
+
+          {message && (
+            <div className="state success">
+              {message}
+            </div>
+          )}
+
+          {devCode && (
+            <div className="state">
+              Development OTP:{" "}
+              <b>{devCode}</b>
+            </div>
+          )}
+
+          {error && (
+            <div className="state error">
+              {error}
+            </div>
+          )}
+
+          <div style={{ marginTop: 16 }}>
+            <Link to="/login">
+              ← Quay lại đăng nhập
+            </Link>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+   export function LoginPage() {
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -20,7 +268,7 @@ export function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      await login(email.trim(), password);
+      await login(loginId.trim(), password);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -46,15 +294,16 @@ export function LoginPage() {
           <p className="faint">
             Dành cho nhân viên bệnh viện (Bác sĩ, Lễ tân, Quản trị).
           </p>
-          <Field labelText="Email" required>
-            <input
-              autoFocus
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="bs.an@diacompanion.vn"
-            />
-          </Field>
+          <Field labelText="Email hoặc số điện thoại" required>
+  <input
+    autoFocus
+    type="text"
+    value={loginId}
+    onChange={(e) => setLoginId(e.target.value)}
+    placeholder="Email hoặc số điện thoại"
+    autoComplete="username"
+  />
+</Field>
           <Field labelText="Mật khẩu" required>
             <div className="input-with-action">
               <input
@@ -68,11 +317,23 @@ export function LoginPage() {
             </div>
           </Field>
           {error && <div className="state error">{error}</div>}
+          <div
+  style={{
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 4,
+    marginBottom: 12,
+  }}
+>
+  <Link to="/forgot-password">
+    Quên mật khẩu?
+  </Link>
+</div>
           <Button
             kind="primary"
             type="submit"
             busy={busy}
-            disabled={!email || !password}
+            disabled={!loginId.trim() || !password}
             style={{ width: "100%", justifyContent: "center" }}
           >
             Đăng nhập
@@ -91,6 +352,8 @@ export function LoginPage() {
 
 /* Đổi mật khẩu khi đã đăng nhập (bắt buộc nếu đang dùng mật khẩu tạm). */
 export function ChangePasswordPage() {
+  const [showNewPassword, setShowNewPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { user, changePassword } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -146,19 +409,47 @@ export function ChangePasswordPage() {
             />
           </Field>
           <Field labelText="Mật khẩu mới" required>
-            <input
-              type="password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-            />
-          </Field>
+  <div className="input-with-action">
+    <input
+      type={showNewPassword ? "text" : "password"}
+      value={next}
+      onChange={(e) =>
+        setNext(e.target.value)
+      }
+      autoComplete="new-password"
+    />
+
+    <Button
+      type="button"
+      onClick={() =>
+        setShowNewPassword((x) => !x)
+      }
+    >
+      {showNewPassword ? "Ẩn" : "Hiện"}
+    </Button>
+  </div>
+</Field>
           <Field labelText="Nhập lại mật khẩu mới" required>
-            <input
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-            />
-          </Field>
+  <div className="input-with-action">
+    <input
+      type={showConfirmPassword ? "text" : "password"}
+      value={confirm}
+      onChange={(e) =>
+        setConfirm(e.target.value)
+      }
+      autoComplete="new-password"
+    />
+
+    <Button
+      type="button"
+      onClick={() =>
+        setShowConfirmPassword((x) => !x)
+      }
+    >
+      {showConfirmPassword ? "Ẩn" : "Hiện"}
+    </Button>
+  </div>
+</Field>
           {error && <div className="state error">{error}</div>}
           <Button kind="primary" type="submit" busy={busy}>
             Cập nhật mật khẩu

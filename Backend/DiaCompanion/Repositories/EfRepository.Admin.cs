@@ -46,7 +46,7 @@ public sealed partial class EfRepository
 
         var patientCount = countAllPatients
             ? await _db.Patients.CountAsync(ct)
-            : await visits.Select(v => v.PatientId).Distinct().CountAsync(ct);
+            : await visits.Select(v => v.MedicalRecord.PatientId).Distinct().CountAsync(ct);
 
         var visitCount = await visits.CountAsync(ct);
         var pendingTriage = await diagnoses.CountAsync(d => !d.Reviews.Any(), ct);

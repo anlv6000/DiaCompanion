@@ -207,6 +207,20 @@ public sealed partial class EfRepository
             u.Email == normalized &&
             (!exceptUserId.HasValue || u.Id != exceptUserId.Value), ct);
     }
+    // ============================================================
+    // PHONE
+    // ============================================================
+
+    public Task<bool> PhoneExistsAsync(
+        string phone,
+        int? exceptUserId = null,
+        CancellationToken ct = default)
+    {
+        var normalized = phone.Trim();
+        return _db.Users.AnyAsync(u =>
+            u.Phone == normalized &&
+            (!exceptUserId.HasValue || u.Id != exceptUserId.Value), ct);
+    }
 
     // ============================================================
     // ROLE MASTER

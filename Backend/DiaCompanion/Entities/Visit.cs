@@ -7,8 +7,8 @@ namespace DiaCompanion.Api.Entities;
 public class Visit : IVoidable, IHasRowVersion
 {
     public int Id { get; set; }
-    public int PatientId { get; set; }
-    public Patient? Patient { get; set; }
+    //public int PatientId { get; set; }
+    //public Patient? Patient { get; set; }
     /// <summary>"Bác sĩ phụ trách" của bệnh nhân = bác sĩ của lượt khám gần nhất.</summary>
     public int? DoctorId { get; set; }
     public User? Doctor { get; set; }

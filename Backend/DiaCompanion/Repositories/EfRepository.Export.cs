@@ -8,7 +8,7 @@ public sealed partial class EfRepository
 {
     public Task<Visit?> GetVisitForExportAsync(int visitId, CancellationToken ct = default) =>
         _db.Visits.AsNoTracking()
-            .Include(v => v.Patient)
+            .Include(v => v.MedicalRecord.Patient)
             .Include(v => v.Doctor)
             .FirstOrDefaultAsync(v => v.Id == visitId, ct);
 

@@ -17,14 +17,53 @@ function normalizeStaff(value: T.StaffUserDto): T.StaffUserDto {
 // Không có OTP/đăng nhập bằng số điện thoại (đó là luồng của app bệnh nhân).
 // Quên mật khẩu do Admin cấp lại (usersApi.reset), không self-service qua SĐT.
 export const authApi = {
-  login: async (body: { email: string; password: string }) =>
-    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/login", body)),
-  me: async () => normalizeLogin(await http.get<T.LoginResponse>("/api/auth/me")),
+  login: async (body: T.LoginRequest) =>
+    normalizeLogin(
+      await http.post<T.LoginResponse>(
+        "/api/auth/login",
+        body,
+      ),
+    ),
+
+  forgotPassword: (phone: string) =>
+    http.post<T.OtpResponse>(
+      "/api/auth/forgot-password",
+      { phone },
+    ),
+
+  resetPassword: (
+    body: T.ResetPasswordRequest,
+  ) =>
+    http.post<T.ApiMessage>(
+      "/api/auth/reset-password",
+      body,
+    ),
+
+  me: async () =>
+    normalizeLogin(
+      await http.get<T.LoginResponse>(
+        "/api/auth/me",
+      ),
+    ),
+
   refresh: async (refreshToken: string) =>
-    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/refresh", { refreshToken })),
-  logout: () => http.post<T.ApiMessage>("/api/auth/logout"),
+    normalizeLogin(
+      await http.post<T.LoginResponse>(
+        "/api/auth/refresh",
+        { refreshToken },
+      ),
+    ),
+
+  logout: () =>
+    http.post<T.ApiMessage>(
+      "/api/auth/logout",
+    ),
+
   change: (body: T.ChangePasswordRequest) =>
-    http.post<T.ApiMessage>("/api/auth/change-password", body),
+    http.post<T.ApiMessage>(
+      "/api/auth/change-password",
+      body,
+    ),
 };
 export const usersApi = {
   list: async (p: Record<string, unknown>) => {
@@ -318,3 +357,4 @@ export const exportApi = {
   conflictsCsv: (modelVersionId?: number | null) =>
     http.blob("/api/export/disagreement-cases.csv" + query({ modelVersionId })),
 };
+

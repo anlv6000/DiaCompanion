@@ -11,7 +11,8 @@ public sealed partial class EfRepository
         DateTime? fromUtc, DateTime? toExclusiveUtc, PageQuery page, CancellationToken ct = default)
     {
         var query = _db.Visits.AsNoTracking().AsQueryable();
-        if (patientId is int pid) query = query.Where(v => v.PatientId == pid);
+        if (patientId is int pid) query = query.Where(v => v.MedicalRecord.PatientId == pid);
+        //v.PatientId == pid
         if (doctorId is int did) query = query.Where(v => v.DoctorId == did);
         if (status is byte st) query = query.Where(v => (byte)v.Status == st);
         if (fromUtc is DateTime from) query = query.Where(v => v.VisitDate >= from);
@@ -30,7 +31,7 @@ public sealed partial class EfRepository
         _db.Patients.AsNoTracking().AnyAsync(p => p.Id == patientId, ct);
         
     public Task<bool> HasOpenVisitAsync(int patientId, CancellationToken ct = default) =>
-        _db.Visits.AsNoTracking().AnyAsync(v => v.PatientId == patientId && v.Status == VisitStatus.InProgress, ct);
+        _db.Visits.AsNoTracking().AnyAsync(v => v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.InProgress, ct);
 
     public Task<bool> IsDoctorOnDutyAsync(int doctorId, byte dayOfWeek, CancellationToken ct = default) =>
         _db.DoctorShifts.AsNoTracking().AnyAsync(s => s.DoctorId == doctorId && s.DayOfWeek == dayOfWeek && s.IsActive, ct);
@@ -70,7 +71,7 @@ public sealed partial class EfRepository
 
     public async Task<VisitPage> GetCompletedVisitsForPatientAsync(int patientId, PageQuery page, CancellationToken ct = default)
     {
-        var query = _db.Visits.AsNoTracking().Where(v => v.PatientId == patientId && v.Status == VisitStatus.Completed);
+        var query = _db.Visits.AsNoTracking().Where(v => v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed);
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id)
             .Skip(page.Skip).Take(page.PageSize).Select(VisitProjection).ToListAsync(ct);
@@ -79,15 +80,15 @@ public sealed partial class EfRepository
 
     public Task<VisitDto?> GetCompletedVisitForPatientAsync(int patientId, int visitId, CancellationToken ct = default) =>
         _db.Visits.AsNoTracking()
-            .Where(v => v.Id == visitId && v.PatientId == patientId && v.Status == VisitStatus.Completed)
+            .Where(v => v.Id == visitId && v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed)
             .Select(VisitProjection).FirstOrDefaultAsync(ct);
 
     private static readonly System.Linq.Expressions.Expression<Func<Visit, VisitDto>> VisitProjection = v => new VisitDto
     {
         Id = v.Id,
-        PatientId = v.PatientId,
-        PatientName = v.Patient!.FullName,
-        PatientCode = v.Patient.Code,
+        PatientId = v.MedicalRecord.PatientId,
+        PatientName = v.MedicalRecord.Patient!.FullName,
+        PatientCode = v.MedicalRecord.Patient.Code,
         DoctorId = v.DoctorId,
         DoctorName = v.Doctor != null ? v.Doctor.FullName : null,
         VisitDate = v.VisitDate,

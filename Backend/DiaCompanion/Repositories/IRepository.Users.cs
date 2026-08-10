@@ -35,6 +35,10 @@ public partial interface IRepository
         string email,
         int? exceptUserId = null,
         CancellationToken ct = default);
+    Task<bool> PhoneExistsAsync(
+        string phone,
+        int? exceptUserId = null,
+        CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> GetActiveRoleNamesByNamesAsync(
         IEnumerable<string> names,

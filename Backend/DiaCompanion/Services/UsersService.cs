@@ -58,16 +58,23 @@ public class UsersService : BaseService, IUsersService
         var staffRole = ResolveRequestedStaffRole(req.Role, req.Roles);
         await EnsureRoleExistsAndActive(staffRole);
 
-        if (staffRole == Roles.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo))
-            throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề.");
+        if (staffRole == Roles.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo)
+            && string.IsNullOrWhiteSpace(req.FullName)
+            &&string.IsNullOrWhiteSpace(req.Phone)
+            &&string.IsNullOrWhiteSpace(req.Email))
+            throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề, họ và tên, số điện thoại và email.");
 
         var email = req.Email.Trim().ToLowerInvariant();
         if (await _repository.EmailExistsAsync(email))
             throw AppException.Conflict(Msg.PhoneTaken, "Email đã được sử dụng cho tài khoản khác.");
-
+        var phone = req.Phone.Trim();
+        if (await _repository.PhoneExistsAsync(phone))
+            throw AppException.Conflict(Msg.PhoneTaken, "Phone đã được sử dụng cho tài khoản khác.");
+        
         var temp = _hasher.GenerateTempPassword() + "Aa";
         var user = new User
         {
+            Phone = phone,
             Email = email,
             PasswordHash = _hasher.Hash(temp),
             FullName = req.FullName.Trim(),

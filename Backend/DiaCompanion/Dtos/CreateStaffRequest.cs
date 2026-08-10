@@ -4,6 +4,7 @@ namespace DiaCompanion.Api.Dtos;
 
 public class CreateStaffRequest
 {
+    [Required, MaxLength(20)] public string Phone { get; set; } = "";
     [Required, EmailAddress] public string Email { get; set; } = "";
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
 
