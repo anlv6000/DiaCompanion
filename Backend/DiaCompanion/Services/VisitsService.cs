@@ -158,7 +158,6 @@ public class VisitsService : BaseService, IVisitsService
         var visit = await _repository.GetVisitForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám cần đóng.");
         _repository.ApplyOriginalRowVersion(visit, req.RowVersion);
-
         if (visit.Status == VisitStatus.Completed)
             throw AppException.BadRequest(Msg.ApptImmutable, "Lượt khám đã được đóng.");
         if (visit.DoctorId != _me.RequireId())
