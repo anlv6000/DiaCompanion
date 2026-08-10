@@ -20,9 +20,12 @@ public class UsersController : BaseApiController
     [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
     [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
-    [FromQuery] PageQuery page)
+    [FromQuery] PageQuery paging)
     {
-        return await _service.List(q, role, isActive, page);
+        var testPage = paging.Page;         // phải = 1
+        var testSize = paging.PageSize;     // phải = 3
+        var testDesc = paging.Desc;
+        return await _service.List(q, role, isActive, paging);
     }
 
 

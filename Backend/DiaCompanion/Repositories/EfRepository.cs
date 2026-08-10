@@ -130,10 +130,9 @@ public sealed partial class EfRepository : IRepository
             // 3. Loại User đã có hồ sơ Patient đang hoạt động.
             .Where(u =>
                 !_db.Patients.IgnoreQueryFilters().Any(p =>
-                
+   
                     p.UserId == u.Id ))
             
-
             // 4. Admin không được dùng để tạo hồ sơ Patient qua luồng này.
             .Where(u => 
             !u.UserRoles.Any(ur =>

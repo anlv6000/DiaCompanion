@@ -28,11 +28,12 @@ public class UsersService : BaseService, IUsersService
     }
 
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
-        [FromQuery] string? q,
-        [FromQuery] string? role,
-        [FromQuery] bool? isActive,
-        [FromQuery] PageQuery page)
+        string? q,
+         string? role,
+         bool? isActive,
+         PageQuery page)
     {
+
         var data = await _repository.GetStaffPageAsync(q, role, isActive, page);
 
         return Ok(new PagedResult<StaffUserDto>

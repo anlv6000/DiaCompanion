@@ -18,8 +18,8 @@ public class BlogController : BaseApiController
     public async Task<ActionResult<PagedResult<BlogPostDto>>> Published(
         [FromQuery] string? q,
         [FromQuery] BlogCategory? category,
-        [FromQuery] PageQuery page) =>
-        await _service.Published(q, category, page);
+        [FromQuery] PageQuery paging) =>
+        await _service.Published(q, category, paging);
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<BlogPostDto>> Get(int id) => await _service.Get(id);
@@ -31,8 +31,8 @@ public class BlogController : BaseApiController
         [FromQuery] bool? published,
         [FromQuery] BlogCategory? category,
         [FromQuery] int? authorId,
-        [FromQuery] PageQuery page) =>
-        await _service.Manage(q, published, category, authorId, page);
+        [FromQuery] PageQuery paging) =>
+        await _service.Manage(q, published, category, authorId, paging);
 
     [HttpPost]
     [Authorize(Roles = Roles.DoctorOrAdmin)]

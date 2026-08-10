@@ -26,9 +26,9 @@ public class PatientsController : BaseApiController
     [FromQuery] string? q,
     [FromQuery] byte? diabetesType,
     [FromQuery] byte? grade,
-    [FromQuery] PageQuery page)
+    [FromQuery] PageQuery paging)
     {
-        return await _service.Search(q, diabetesType, grade, page);
+        return await _service.Search(q, diabetesType, grade, paging);
     }
 
 
@@ -143,12 +143,12 @@ public async Task<IActionResult> ConfirmPhoneChange(ConfirmPhoneChangeRequest re
     public async Task<ActionResult<PagedResult<AdminPatientDto>>> AdminList(
         [FromQuery] string? q,
         [FromQuery] string? status,
-        [FromQuery] PageQuery page)
+        [FromQuery] PageQuery paging)
     {
         return await _service.AdminList(
             q,
             status,
-            page);
+            paging);
     }
 
 
