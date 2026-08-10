@@ -66,12 +66,23 @@ public class VoidService : IVoidService
         var currentRoles = string.Join(",", _me.Roles);
 
         // Chỉ Admin được thu hồi toàn bộ hồ sơ bệnh nhân
-        if (!_me.IsInRole(Roles.Admin, Roles.Doctor))
+        if (!_me.IsInRole(Roles.Receptionist))
         {
             throw AppException.Forbidden(
                 Msg.Forbidden,
-                "Chỉ quản trị viên hoặc bác sĩ được thu hồi hồ sơ bệnh nhân.");
+                "Chỉ lễ tân được thu hồi hồ sơ bệnh nhân.");
         }
+
+
+
+        var existPatientVisit = await _repository.ExistVisitPatientIds(id);
+
+        var phoneDoctorsift = await _repository.shiftDoctorInformation(id);
+        if (existPatientVisit) throw AppException.Forbidden(
+                Msg.VoidReason,
+                "không thu hồi được do đã tồn tại ca khám này, liên hệ bác sĩ để thu hồi ca khám "+phoneDoctorsift.phone +" | "+phoneDoctorsift.name);
+
+
 
         var patient = await _repository.GetPatientForVoidAsync(id)
             ?? throw AppException.NotFound(

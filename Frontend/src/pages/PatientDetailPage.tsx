@@ -140,11 +140,30 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
   const [voiding, setVoiding] = useState(false);
 
   const reissue = async () => setCred(await data.patients.reissue(patient.id));
-  const doVoid = async (reason: string) => {
-    await data.patients.void(patient.id, reason, patient.rowVersion);
-    toast.push("Đã thu hồi hồ sơ và chuỗi lâm sàng liên quan.", "success");
+ const doVoid = async (reason: string) => {
+  try {
+    await data.patients.void(
+      patient.id,
+      reason,
+      patient.rowVersion,
+    );
+
+    toast.push(
+      "Đã thu hồi hồ sơ bệnh nhân.",
+      "success",
+    );
+
+    setVoiding(false);
     navigate("/patients");
-  };
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Không thể thu hồi hồ sơ bệnh nhân.";
+
+    toast.push(message, "error");
+  }
+};
 
   return (
     <>
@@ -208,7 +227,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
         </Panel>
       )}
 
-      {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Bác sĩ. */}
+      {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Lễ tân. */}
       {can.voidPatient(user) && (
         <Panel title="Thu hồi hồ sơ" className="danger-zone">
           <p>

@@ -53,6 +53,11 @@ export interface OtpResponse {
   devCode?: string | null;
   note?: string | null;
 }
+export interface ResetPasswordRequest {
+  phone: string;
+  code: string;
+  newPassword: string;
+}
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
@@ -61,6 +66,7 @@ export interface StaffUserDto {
   id: number;
   fullName: string;
   email?: string | null;
+  phone?: string | null;
   /** Vai trò ưu tiên do backend trả để tương thích client cũ. */
   role?: Role;
   /** Danh sách role active thực tế của User. */
@@ -91,6 +97,7 @@ export interface TempCredentialResponse {
 export interface CreateStaffRequest {
   email: string;
   fullName: string;
+  phone: string;
   /** Role nhân viên được chọn trên UI. */
   role?: StaffRole;
   /** FE gửi mảng 1 phần tử để tương thích backend dùng UserRoles. */
@@ -99,6 +106,7 @@ export interface CreateStaffRequest {
 }
 export interface UpdateStaffRequest {
   fullName: string;
+  phone: string;
   licenseNo?: string | null;
   /** FE gửi tối đa 1 role nhân viên; backend giữ nguyên role Patient nếu User đang có. */
   roles?: StaffRole[];

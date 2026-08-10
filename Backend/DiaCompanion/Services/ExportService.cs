@@ -37,7 +37,7 @@ public class ExportService : BaseService, IExportService
         var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
-        EnsureCanAccessPatient(_me, visit.PatientId);
+        EnsureCanAccessPatient(_me, visit.MedicalRecord.PatientId);
 
         // Báo cáo khám chỉ được phát hành sau khi bác sĩ phụ trách đóng lượt khám.
         if (visit.Status != VisitStatus.Completed)
@@ -84,13 +84,13 @@ public class ExportService : BaseService, IExportService
             clinic = new { name = "DiaCompanion", subtitle = "Hệ thống hỗ trợ sàng lọc bệnh võng mạc đái tháo đường" },
             patient = new
             {
-                visit.Patient!.Code,
-                visit.Patient.FullName,
-                visit.Patient.DateOfBirth,
-                visit.Patient.Gender,
-                visit.Patient.Phone,
-                visit.Patient.DiabetesType,
-                visit.Patient.DiabetesDurationYears
+                visit.MedicalRecord.Patient!.Code,
+                visit.MedicalRecord.Patient.FullName,
+                visit.MedicalRecord.Patient.DateOfBirth,
+                visit.MedicalRecord.Patient.Gender,
+                visit.MedicalRecord.Patient.Phone,
+                visit.MedicalRecord.Patient.DiabetesType,
+                visit.MedicalRecord.Patient.DiabetesDurationYears
             },
             visit = new
             {
@@ -139,7 +139,7 @@ public class ExportService : BaseService, IExportService
         var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
-        EnsureCanAccessPatient(_me, visit.PatientId);
+        EnsureCanAccessPatient(_me, visit.MedicalRecord.PatientId);
         if (visit.Status != VisitStatus.Completed)
             throw AppException.Forbidden(Msg.Forbidden,
                 "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo PDF.");
@@ -176,10 +176,10 @@ public class ExportService : BaseService, IExportService
             "Diabetic Retinopathy Screening Support System",
             "",
             $"Report ID: VISIT-{visit.Id}",
-            $"Patient code: {visit.Patient!.Code}",
-            $"Patient name: {visit.Patient.FullName}",
-            $"Date of birth: {visit.Patient.DateOfBirth:dd/MM/yyyy}",
-            $"Phone: {visit.Patient.Phone}",
+            $"Patient code: {visit.MedicalRecord.Patient!.Code}",
+            $"Patient name: {visit.MedicalRecord.Patient.FullName}",
+            $"Date of birth: {visit.MedicalRecord.Patient.DateOfBirth:dd/MM/yyyy}",
+            $"Phone: {visit.MedicalRecord.Patient.Phone}",
             $"Visit date: {visitLocal:dd/MM/yyyy HH:mm}",
             $"Assigned doctor: {visit.Doctor?.FullName ?? "N/A"}",
             $"License number: {visit.Doctor?.LicenseNo ?? "N/A"}",

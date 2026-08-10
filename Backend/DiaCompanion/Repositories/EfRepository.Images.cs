@@ -15,7 +15,7 @@ public sealed partial class EfRepository
 
     public Task<Visit?> GetVisitForPatientAsync(int visitId, int patientId, bool tracking = false, CancellationToken ct = default)
     {
-        IQueryable<Visit> q = _db.Visits.Where(v => v.Id == visitId && v.PatientId == patientId);
+        IQueryable<Visit> q = _db.Visits.Where(v => v.Id == visitId && v.MedicalRecord.PatientId == patientId);
         if (!tracking) q = q.AsNoTracking();
         return q.FirstOrDefaultAsync(ct);
     }

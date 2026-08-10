@@ -109,7 +109,6 @@ public class VisitsService : BaseService, IVisitsService
             // --------------------------------------------------------
             var visit = new Visit
             {
-                PatientId = patient.Id,
 
                 MedicalRecordId = medicalRecord.Id,
 
@@ -129,7 +128,7 @@ public class VisitsService : BaseService, IVisitsService
 
             if (visit.DoctorId is int doctorId)
             {
-                var patientName = await _repository.GetPatientNameAsync(visit.PatientId) ?? "bệnh nhân";
+                var patientName = await _repository.GetPatientNameAsync(visit.MedicalRecord.PatientId) ?? "bệnh nhân";
                 _notify.Push(doctorId, NotificationType.Visit, "Lượt khám mới được giao",
                     $"Bạn được giao lượt khám cho {patientName}.", nameof(Visit), visit.Id);
                 await _repository.CommitAsync();
@@ -189,7 +188,7 @@ public class VisitsService : BaseService, IVisitsService
         visit.Status = VisitStatus.Completed;
         visit.ClosedAt = _clock.UtcNow;
 
-        var patient = await _repository.GetPatientAsync(visit.PatientId)
+        var patient = await _repository.GetPatientAsync(visit.MedicalRecord.PatientId)
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
         _notify.PushToPatient(patient, NotificationType.Result, "Kết quả khám đã được xác nhận",

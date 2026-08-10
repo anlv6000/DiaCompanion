@@ -21,7 +21,7 @@ interface AuthValue {
   user: LoginResponse | null;
   isAuthenticated: boolean;
   checking: boolean;
-  login: (email: string, password: string) => Promise<LoginResponse>;
+  login: (loginId: string, password: string) => Promise<LoginResponse>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   changePassword: (body: ChangePasswordRequest) => Promise<void>;
@@ -51,20 +51,34 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const res = await authApi.login({ email, password });
-      tokenStore.set(res.token || null);
-      persist(res);
-      navigate(
-        res.mustChangePassword
-          ? "/change-password"
-          : resolveLandingRoute(res, res.defaultRoute),
-        { replace: true },
-      );
-      return res;
-    },
-    [navigate, persist],
-  );
+  async (loginId: string, password: string) => {
+    const value = loginId.trim();
+
+    const isEmail = value.includes("@");
+
+    const res = await authApi.login({
+      email: isEmail ? value : undefined,
+      phone: isEmail ? undefined : value,
+      password,
+    });
+
+    tokenStore.set(res.token || null);
+    persist(res);
+
+    navigate(
+      res.mustChangePassword
+        ? "/change-password"
+        : resolveLandingRoute(
+            res,
+            res.defaultRoute,
+          ),
+      { replace: true },
+    );
+
+    return res;
+  },
+  [navigate, persist],
+);
 
   const logout = useCallback(async () => {
     try {

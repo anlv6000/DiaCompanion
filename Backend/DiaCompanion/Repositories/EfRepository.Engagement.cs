@@ -41,7 +41,7 @@ public sealed partial class EfRepository
                 .SetProperty(n => n.ReadAt, now), ct);
 
     public Task<int?> GetLatestResponsibleDoctorIdAsync(int patientId, CancellationToken ct = default) =>
-        _db.Visits.AsNoTracking().Where(v => v.PatientId == patientId && v.DoctorId != null)
+        _db.Visits.AsNoTracking().Where(v => v.MedicalRecord.PatientId == patientId && v.DoctorId != null)
             .OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id)
             .Select(v => v.DoctorId).FirstOrDefaultAsync(ct);
 

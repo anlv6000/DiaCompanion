@@ -87,7 +87,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         var visit = await _repository.GetVisitForUpdateAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
         EnsureAssignedDoctor(visit, doctorId);
-        if (visit.PatientId != req.PatientId)
+        if (visit.MedicalRecord.PatientId != req.PatientId)
             throw AppException.BadRequest(Msg.InvalidData, "Bệnh nhân không thuộc lượt khám đã chọn.");
         if (visit.Status != VisitStatus.InProgress)
             throw AppException.BadRequest(Msg.ApptImmutable, "Không thể tạo đơn mới sau khi lượt khám đã hoàn tất.");
@@ -156,7 +156,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
             var visit = await _repository.GetVisitForUpdateAsync(visitId)
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám liên quan.");
             EnsureAssignedDoctor(visit, doctorId);
-            if (visit.PatientId != prescription.PatientId)
+            if (visit.MedicalRecord.PatientId != prescription.PatientId)
                 throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc không khớp bệnh nhân của lượt khám.");
 
             _repository.ApplyOriginalRowVersion(prescription, req.RowVersion);

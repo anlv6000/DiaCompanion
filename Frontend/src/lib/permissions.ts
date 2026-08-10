@@ -8,7 +8,7 @@ import { hasAnyRole, hasRole, primaryWebRole, type RoleSource } from "@/lib/role
 export const can = {
   reviewDiagnosis: (r: RoleSource) => hasRole(r, "Doctor"),
 
-  voidPatient: (r: RoleSource) => hasRole(r, "Doctor"),
+  voidPatient: (r: RoleSource) => hasRole(r, "Receptionist"),
   voidVisit: (r: RoleSource) => hasAnyRole(r, ["Doctor", "Receptionist"]),
   voidImage: (r: RoleSource) => hasRole(r, "Doctor"),
   voidDiagnosis: (r: RoleSource) => hasRole(r, "Doctor"),

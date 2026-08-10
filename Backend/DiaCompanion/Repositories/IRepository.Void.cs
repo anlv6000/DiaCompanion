@@ -1,9 +1,12 @@
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Dtos;
 
 namespace DiaCompanion.Api.Repositories;
 
 public partial interface IRepository
 {
+    Task<ShiftDoctorInformation> shiftDoctorInformation(int id, CancellationToken ct = default);
+    Task<bool> ExistVisitPatientIds(int id, CancellationToken ct = default);
     Task<Patient?> GetPatientForVoidAsync(int id, CancellationToken ct = default);
     Task<Visit?> GetVisitForVoidAsync(int id, CancellationToken ct = default);
     Task<FundusImage?> GetImageForVoidAsync(int id, CancellationToken ct = default);

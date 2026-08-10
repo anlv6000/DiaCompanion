@@ -193,7 +193,7 @@ public class EngagementService : BaseService, IEngagementService
         {
             var visit = await _repository.GetVisitForUpdateAsync(visitId)
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
-            if (visit.PatientId != patientId)
+            if (visit.MedicalRecord.PatientId != patientId)
                 throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền phản hồi lượt khám này.");
             if (visit.Status != VisitStatus.Completed)
                 throw AppException.BadRequest(Msg.ApptImmutable, "Chỉ có thể phản hồi sau khi lượt khám đã hoàn tất.");

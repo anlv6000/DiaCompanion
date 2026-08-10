@@ -11,8 +11,8 @@ public sealed partial class EfRepository
             .Where(v => v.Status == VisitStatus.Completed && v.ClosedAt != null && v.RecheckMonths != null)
             .Select(v => new
             {
-                v.Id, v.PatientId, ClosedAt = v.ClosedAt!.Value, RecheckMonths = v.RecheckMonths!.Value,
-                v.Referral, v.Patient!.Code, v.Patient.FullName, v.Patient.Phone
+                v.Id, v.MedicalRecord.PatientId, ClosedAt = v.ClosedAt!.Value, RecheckMonths = v.RecheckMonths!.Value,
+                v.Referral, v.MedicalRecord.Patient!.Code, v.MedicalRecord.Patient.FullName, v.MedicalRecord.Patient.Phone
             }).ToListAsync(ct);
         if (allCompleted.Count == 0) return Array.Empty<RecheckCandidate>();
 
@@ -22,8 +22,8 @@ public sealed partial class EfRepository
         var patientIds = lastVisits.Select(v => v.PatientId).ToArray();
         var visitIds = lastVisits.Select(v => v.Id).ToArray();
 
-        var latestDates = await _db.Visits.AsNoTracking().Where(v => patientIds.Contains(v.PatientId))
-            .GroupBy(v => v.PatientId)
+        var latestDates = await _db.Visits.AsNoTracking().Where(v => patientIds.Contains(v.MedicalRecord.PatientId))
+            .GroupBy(v => v.MedicalRecord.PatientId)
             .Select(g => new { PatientId = g.Key, Latest = g.Max(v => v.VisitDate) })
             .ToDictionaryAsync(x => x.PatientId, x => x.Latest, ct);
         var grades = visitIds.Length == 0
@@ -44,23 +44,23 @@ public sealed partial class EfRepository
     public async Task<RecheckCandidate?> GetRecheckCandidateAsync(int patientId, CancellationToken ct = default)
     {
         var visit = await _db.Visits.AsNoTracking()
-            .Where(v => v.PatientId == patientId && v.Status == VisitStatus.Completed &&
+            .Where(v => v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed &&
                         v.ClosedAt != null && v.RecheckMonths != null)
             .OrderByDescending(v => v.ClosedAt)
             .Select(v => new
             {
                 v.Id,
-                v.PatientId,
+                PatientId = v.MedicalRecord.PatientId,
                 ClosedAt = v.ClosedAt!.Value,
                 Months = v.RecheckMonths!.Value,
                 v.Referral,
-                v.Patient!.Code,
-                v.Patient.FullName,
-                v.Patient.Phone
+                v.MedicalRecord.Patient!.Code,
+                v.MedicalRecord.Patient.FullName,
+                v.MedicalRecord.Patient.Phone
             }).FirstOrDefaultAsync(ct);
         if (visit is null) return null;
 
-        var latestVisitDate = await _db.Visits.AsNoTracking().Where(v => v.PatientId == patientId)
+        var latestVisitDate = await _db.Visits.AsNoTracking().Where(v => v.MedicalRecord.PatientId == patientId)
             .MaxAsync(v => (DateTime?)v.VisitDate, ct);
         var grade = await _db.DiagnosisReviews.AsNoTracking()
             .Where(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&

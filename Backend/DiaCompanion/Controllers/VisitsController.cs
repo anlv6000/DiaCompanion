@@ -87,7 +87,7 @@ public class VisitsController : BaseApiController
         return await _service.Void(id, req);
     }
 
-    [HttpGet("me")]
+    [HttpGet("me")] 
     [Authorize(Roles = Roles.Patient)]
     public async Task<ActionResult<PagedResult<VisitDto>>> Mine(
         [FromQuery] PageQuery page)

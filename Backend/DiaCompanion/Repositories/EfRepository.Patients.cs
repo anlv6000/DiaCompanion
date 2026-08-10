@@ -117,7 +117,7 @@ public sealed partial class EfRepository
     public async Task<PatientDetailStats> GetPatientDetailStatsAsync(int patientId, CancellationToken ct = default)
     {
         var doctorInCharge = await _db.Visits.AsNoTracking()
-            .Where(v => v.PatientId == patientId)
+            .Where(v => v.MedicalRecord.PatientId == patientId)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => v.Doctor != null ? v.Doctor.FullName : null)
             .FirstOrDefaultAsync(ct);
@@ -128,7 +128,7 @@ public sealed partial class EfRepository
             .Select(r => (byte?)(byte)r.FinalGrade)
             .FirstOrDefaultAsync(ct);
 
-        var visitCount = await _db.Visits.CountAsync(v => v.PatientId == patientId, ct);
+        var visitCount = await _db.Visits.CountAsync(v => v.MedicalRecord.PatientId == patientId, ct);
         return new PatientDetailStats(doctorInCharge, latestGrade, visitCount);
     }
 
