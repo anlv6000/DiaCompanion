@@ -258,8 +258,13 @@ public class VisitsService : BaseService, IVisitsService
     public async Task<VisitDto> GetMineByIdAsync(int userId, int visitId)
     {
         var patientId = await RequirePatientIdForUserAsync(userId);
-        return await _repository.GetCompletedVisitForPatientAsync(patientId, visitId)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+        var dto = await _repository.GetCompletedVisitForPatientAsync(patientId, visitId)
+        ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
+        dto.CreatedAt = _clock.ToLocal(dto.CreatedAt)!.Value;
+        dto.ClosedAt = _clock.ToLocal(dto.ClosedAt);
+
+        return dto;
     }
 
     private async Task<int> RequirePatientIdForUserAsync(int userId)
