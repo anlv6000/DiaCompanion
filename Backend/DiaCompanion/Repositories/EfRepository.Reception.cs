@@ -11,6 +11,7 @@ public sealed partial class EfRepository
     {
         var shifts = _db.DoctorShifts.AsNoTracking()
             .Where(s => s.IsActive && s.DayOfWeek == dayOfWeek);
+
         if (shift is 1 or 2) shifts = shifts.Where(s => (byte)s.Shift == shift);
 
         var rows = await shifts

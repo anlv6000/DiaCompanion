@@ -9,7 +9,7 @@ public class User : IHasRowVersion
     public Guid PublicId { get; set; } = Guid.NewGuid();
 
     /// <summary>Định danh đăng nhập của bệnh nhân (LI-6). Unique CÓ ĐIỀU KIỆN.</summary>
-    [MaxLength(20)] public string Phone { get; set; }
+    [MaxLength(20)] public string? Phone { get; set; }
     [MaxLength(256)] public string? Email { get; set; }
 
     [Required, MaxLength(256)] public string PasswordHash { get; set; } = "";
