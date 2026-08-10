@@ -40,7 +40,7 @@ public sealed partial class EfRepository
         _db.Patients.AsNoTracking().Where(p => p.Id == patientId).Select(p => p.FullName).FirstOrDefaultAsync(ct);
 
     public Task<Visit?> GetVisitForUpdateAsync(int id, CancellationToken ct = default) =>
-        _db.Visits.FirstOrDefaultAsync(v => v.Id == id, ct);
+        _db.Visits.Include(v=>v.MedicalRecord).FirstOrDefaultAsync(v => v.Id == id, ct);
 
     public async Task<VisitCloseData> GetVisitCloseDataAsync(int visitId, CancellationToken ct = default)
     {
