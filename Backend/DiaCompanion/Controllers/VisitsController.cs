@@ -28,9 +28,9 @@ public class VisitsController : BaseApiController
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
         [FromQuery] int? patientId, [FromQuery] int? doctorId,
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] byte? status, [FromQuery] PageQuery page)
+        [FromQuery] byte? status, [FromQuery] PageQuery paging)
     {
-        return await _service.List(patientId, doctorId, from, to, status, page);
+        return await _service.List(patientId, doctorId, from, to, status, paging);
     }
 
 
@@ -42,10 +42,10 @@ public class VisitsController : BaseApiController
     [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<PagedResult<VisitDto>>> AssignedToMe(
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] byte? status, [FromQuery] PageQuery page)
+        [FromQuery] byte? status, [FromQuery] PageQuery paging)
     {
         var doctorId = _me.RequireId();
-        return await _service.List(null, doctorId, from, to, status, page);
+        return await _service.List(null, doctorId, from, to, status, paging);
     }
 
 
@@ -90,13 +90,13 @@ public class VisitsController : BaseApiController
     [HttpGet("me")] 
     [Authorize(Roles = Roles.Patient)]
     public async Task<ActionResult<PagedResult<VisitDto>>> Mine(
-        [FromQuery] PageQuery page)
+        [FromQuery] PageQuery paging)
     {
         var userId = _me.RequireId();
 
         var result = await _service.GetMineAsync(
             userId,
-            page);
+            paging);
 
         return Ok(result);
     }
