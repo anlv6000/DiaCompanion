@@ -32,21 +32,26 @@ public class VisitsService : BaseService, IVisitsService
         DateTime? toExclusiveUtc = to is DateOnly t ? _clock.ToUtc(t.AddDays(1).ToDateTime(TimeOnly.MinValue)) : null;
         var data = await _repository.GetVisitPageAsync(patientId, doctorId, status, fromUtc, toExclusiveUtc, page);
         return Ok(new PagedResult<VisitDto>
-        { Items = data.Items.ToList(), Page = page.Page, PageSize = page.PageSize, TotalItems = data.Total });
+        {
+            Items = data.Items.Select(ToLocalVisitDto).ToList(),
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = data.Total
+        });
     }
 
     public async Task<ActionResult<VisitDto>> Get(int id)
     {
         var visit = await _repository.GetVisitDtoAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
-        return Ok(visit);
+        return Ok(ToLocalVisitDto(visit));
     }
 
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
         var patient = await _repository.GetPatientByIdAsync(
-       req.PatientId,
-       tracking: false);
+                req.PatientId,
+                tracking: false);
 
         if (patient is null)
         {
@@ -63,8 +68,8 @@ public class VisitsService : BaseService, IVisitsService
                 "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
 
         var dayOfWeek = (byte)_clock.LocalNow.DayOfWeek;
-        if (!await _repository.IsDoctorOnDutyAsync(req.DoctorId, dayOfWeek))
-            throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
+        //if (!await _repository.IsDoctorOnDutyAsync(req.DoctorId, dayOfWeek))
+        //    throw AppException.BadRequest(Msg.SlotTaken, "Bác sĩ được chọn không có ca trực tại thời điểm tiếp nhận.");
         Visit? createdVisit = null;
         //var visit = new Visit
         //{
@@ -73,7 +78,6 @@ public class VisitsService : BaseService, IVisitsService
         //    VisitDate = _clock.UtcNow,
         //    Status = VisitStatus.InProgress
         //};
-
         await _repository.ExecuteInTransactionAsync(async () =>
         {
             var medicalRecord =
@@ -248,7 +252,7 @@ public class VisitsService : BaseService, IVisitsService
         var patientId = await RequirePatientIdForUserAsync(userId);
         var data = await _repository.GetCompletedVisitsForPatientAsync(patientId, page);
         return new PagedResult<VisitDto>
-        { Items = data.Items.ToList(), Page = page.Page, PageSize = page.PageSize, TotalItems = data.Total };
+        { Items = data.Items.Select(ToLocalVisitDto).ToList(), Page = page.Page, PageSize = page.PageSize, TotalItems = data.Total };
     }
 
     public async Task<VisitDto> GetMineByIdAsync(int userId, int visitId)
@@ -268,4 +272,12 @@ public class VisitsService : BaseService, IVisitsService
     private async Task<VisitDto> RequireVisitDtoAsync(int id) =>
         await _repository.GetVisitDtoAsync(id)
         ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+    private VisitDto ToLocalVisitDto(VisitDto dto)
+    {
+        dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
+        dto.CreatedAt = _clock.ToLocal(dto.CreatedAt)!.Value;
+        dto.ClosedAt = _clock.ToLocal(dto.ClosedAt);
+
+        return dto;
+    }
 }

@@ -42,6 +42,7 @@ public sealed partial class EfRepository
     public Task<Visit?> GetVisitForUpdateAsync(int id, CancellationToken ct = default) =>
         _db.Visits.Include(v=>v.MedicalRecord).FirstOrDefaultAsync(v => v.Id == id, ct);
 
+
     public async Task<VisitCloseData> GetVisitCloseDataAsync(int visitId, CancellationToken ct = default)
     {
         var pending = await _db.FundusImages.AsNoTracking()
@@ -54,6 +55,7 @@ public sealed partial class EfRepository
         var diagnoses = _db.AiDiagnoses.AsNoTracking()
             .Where(d => d.FundusImage != null && d.FundusImage.VisitId == visitId
                         && d.FundusImage.QualityStatus == QualityStatus.Gradable);
+
         var totalAi = await diagnoses.CountAsync(ct);
         var reviewed = await diagnoses.CountAsync(d => _db.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id), ct);
 
