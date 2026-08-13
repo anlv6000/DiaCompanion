@@ -97,7 +97,7 @@ export function UsersPage() {
                   <option key={r.value} value={r.value}>
                     {r.label}
                   </option>
-                  ))}
+                ))}
 
             </select>
           </Field>
@@ -298,6 +298,7 @@ function UserEditor({
           <input
             type="tel"
             value={phone}
+            disabled={!isNew}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="VD: 0912345678"
           />

@@ -334,6 +334,7 @@ public class UsersService : BaseService, IUsersService
 
         return new StaffUserDto
         {
+            phone = user.Phone,
             Id = user.Id,
             FullName = user.FullName,
             Email = user.Email,
