@@ -2,6 +2,7 @@ namespace DiaCompanion.Api.Dtos;
 
 public class StaffUserDto
 {
+    
     public int Id { get; set; }
     public string FullName { get; set; } = "";
     public string? Email { get; set; }
@@ -11,7 +12,7 @@ public class StaffUserDto
 
     /// <summary>Trạng thái staff lấy từ UserRoles.IsActive của Doctor/Receptionist.</summary>
     public bool IsActive { get; set; }
-
+    public string? phone { get; set; }
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public string RowVersion { get; set; } = "";

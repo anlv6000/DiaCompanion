@@ -148,10 +148,10 @@ public sealed class ClinicalReminderWorker : BackgroundService
             // GIỮ NGUYÊN các mốc cũ 30/7/1 ngày và đúng ngày.
             // Bổ sung: ngày đầu tiên quá hạn và sau đó mỗi 7 ngày nếu vẫn chưa quay lại.
             var shouldSend = daysUntilDue is 30 or 7 or 1 or 0
-                             || daysPastDue == 1
-                             || (daysPastDue > 0);
+                             || daysPastDue == 1;
             if (!shouldSend)
                 continue;
+
 
             // Giữ nguyên format title cũ để NotificationExistsAsync nhận ra
             // các thông báo 30/7/1/0 ngày đã phát hành trước khi nâng cấp code.

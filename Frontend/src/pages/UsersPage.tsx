@@ -296,6 +296,7 @@ function UserEditor({
     <input
       type="tel"
       value={phone}
+      disabled={!isNew}
       onChange={(e) => setPhone(e.target.value)}
       placeholder="VD: 0912345678"
     />

@@ -51,8 +51,8 @@ export default function ChangePasswordScreen({ navigation, route }) {
       );
 
       if (!force && navigation.canGoBack()) {
-        navigation.goBack();
-      }
+  navigation.goBack();
+}
     } catch (e) {
       toast.push(e.message, "error");
     } finally {
