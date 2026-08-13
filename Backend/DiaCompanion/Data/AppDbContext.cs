@@ -221,8 +221,13 @@ public class AppDbContext : DbContext
 
             e.HasOne(x => x.FundusImage).WithMany(f => f.Diagnoses)
                 .HasForeignKey(x => x.FundusImageId).OnDelete(DeleteBehavior.NoAction);
+            // ModelVersionId là DR model (giữ tên cũ để tương thích).
             e.HasOne(x => x.ModelVersion).WithMany()
                 .HasForeignKey(x => x.ModelVersionId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.LesionModelVersion).WithMany()
+                .HasForeignKey(x => x.LesionModelVersionId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.FractalModelVersion).WithMany()
+                .HasForeignKey(x => x.FractalModelVersionId).OnDelete(DeleteBehavior.NoAction);
         });
 
         /* ---------------------------------------------- DiagnosisReviews */
@@ -245,8 +250,10 @@ public class AppDbContext : DbContext
         b.Entity<ModelVersion>(e =>
         {
             e.HasIndex(x => x.Name).IsUnique();
-            // BR-15: tại mỗi thời điểm chỉ một phiên bản kích hoạt
-            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
+            e.Property(x => x.ModelType).HasConversion<byte>();
+            // Mỗi loại model (DR/Lesion/Fractal) có tối đa một version active.
+            e.HasIndex(x => x.ModelType).IsUnique().HasFilter("[IsActive] = 1")
+                .HasDatabaseName("UX_ModelVersions_ActivePerType");
             e.Property(x => x.Qwk).HasPrecision(5, 4);
             e.Property(x => x.Dice).HasPrecision(5, 4);
             e.Property(x => x.IoU).HasPrecision(5, 4);

@@ -20,7 +20,7 @@ public class ReceptionService : BaseService, IReceptionService
         var day = date ?? _clock.LocalToday;
         var dow = (byte)day.DayOfWeek;
         var start = _clock.ToUtc(day.ToDateTime(TimeOnly.MinValue));
-        var end = _clock.ToUtc(day.ToDateTime(TimeOnly.MaxValue));
+        var end = _clock.ToUtc(day.AddDays(1).ToDateTime(TimeOnly.MinValue));
         var rows = await _repository.GetOnDutyDoctorsAsync(dow, shift, start, end);
 
         var doctors = rows

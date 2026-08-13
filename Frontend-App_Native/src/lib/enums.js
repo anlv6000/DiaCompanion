@@ -25,6 +25,7 @@ export const medicationStatuses = {
   2: { label: "Bỏ lỡ", kind: "alert" },
   3: { label: "Đã hủy", kind: "muted" },
   4: { label: "Bỏ qua liều", kind: "alert" },
+
 };
 
 export const referralTypes = {

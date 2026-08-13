@@ -1,3 +1,4 @@
+using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
 
 namespace DiaCompanion.Api.Repositories;
@@ -38,7 +39,7 @@ public partial interface IRepository
     Task<IReadOnlyList<ModelVersionWithCount>> GetModelVersionsWithCountsAsync(CancellationToken ct = default);
     Task<ModelVersion?> GetModelVersionAsync(int id, bool tracking, CancellationToken ct = default);
     Task<bool> ModelNameExistsAsync(string name, CancellationToken ct = default);
-    Task<IReadOnlyList<ModelVersion>> GetOtherActiveModelsForUpdateAsync(int excludedModelId, CancellationToken ct = default);
+    Task<IReadOnlyList<ModelVersion>> GetOtherActiveModelsForUpdateAsync(int excludedModelId, ModelType modelType, CancellationToken ct = default);
     Task<bool> ModelHasDiagnosesAsync(int modelVersionId, CancellationToken ct = default);
     Task<int> CountDiagnosesForModelAsync(int modelVersionId, CancellationToken ct = default);
 

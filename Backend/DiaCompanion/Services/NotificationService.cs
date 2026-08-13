@@ -1,31 +1,38 @@
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
 
 namespace DiaCompanion.Api.Services;
 
 /// <summary>
-/// NF-10 / NF-11. Ghi thông báo vào CSDL để ứng dụng đọc khi mở.
-/// PHẠM VI v1.0: chưa có hạ tầng đẩy (FCM/APNs) — thông báo hiển thị khi
-/// bệnh nhân mở ứng dụng. Ghi rõ trong Report 3 để tránh mô tả quá năng lực thật.
+/// Ghi thông báo vào CSDL. Không dùng SignalR/FCM/APNs trong phiên bản này;
+/// web/mobile đọc thông báo qua API engagement khi mở hoặc refresh.
+/// Timestamp luôn lưu UTC; API Notifications() đổi CreatedAt sang giờ clinic.
 /// </summary>
 public interface INotificationService
 {
-    void Push(int userId, NotificationType type, string title, string message,
-              string? linkEntity = null, int? linkEntityId = null);
-    void PushToPatient(Patient patient, NotificationType type, string title, string message,
-                       string? linkEntity = null, int? linkEntityId = null);
+    Notification Push(int userId, NotificationType type, string title, string message,
+        string? linkEntity = null, int? linkEntityId = null);
+
+    Notification? PushToPatient(Patient patient, NotificationType type, string title, string message,
+        string? linkEntity = null, int? linkEntityId = null);
 }
 
-public class NotificationService : INotificationService
+public sealed class NotificationService : INotificationService
 {
     private readonly IRepository _repository;
-    public NotificationService(IRepository repository) => _repository = repository;
+    private readonly IClinicClock _clock;
 
-    public void Push(int userId, NotificationType type, string title, string message,
-                     string? linkEntity = null, int? linkEntityId = null)
+    public NotificationService(IRepository repository, IClinicClock clock)
     {
-        _repository.Add(new Notification
+        _repository = repository;
+        _clock = clock;
+    }
+
+    public Notification Push(int userId, NotificationType type, string title, string message,
+        string? linkEntity = null, int? linkEntityId = null)
+    {
+        var notification = new Notification
         {
             UserId = userId,
             Type = type,
@@ -33,17 +40,20 @@ public class NotificationService : INotificationService
             Message = message,
             LinkEntity = linkEntity,
             LinkEntityId = linkEntityId,
-            CreatedAt = DateTime.UtcNow,
-            // Archive sau 90 ngày để bảng không phình vô hạn
-            ExpiresAt = DateTime.UtcNow.AddDays(90)
-        });
+            CreatedAt = _clock.UtcNow,
+            ExpiresAt = _clock.UtcNow.AddDays(90)
+        };
+
+        _repository.Add(notification);
+        return notification;
     }
 
-    public void PushToPatient(Patient patient, NotificationType type, string title, string message,
-                              string? linkEntity = null, int? linkEntityId = null)
+    public Notification? PushToPatient(Patient patient, NotificationType type, string title, string message,
+        string? linkEntity = null, int? linkEntityId = null)
     {
-        // Bệnh nhân chưa có tài khoản thì bỏ qua, không ném lỗi làm hỏng
-        // giao dịch nghiệp vụ chính.
-        if (patient.UserId is int uid) Push(uid, type, title, message, linkEntity, linkEntityId);
+        if (patient.UserId is not int userId)
+            return null;
+
+        return Push(userId, type, title, message, linkEntity, linkEntityId);
     }
 }

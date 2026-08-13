@@ -65,7 +65,7 @@ export function BlogPage() {
     <>
       <PageHeader
         title="Quản lý Blog"
-        subtitle="Bài mới luôn được lưu nháp trước; thao tác đăng/gỡ tách riêng."
+        subtitle="Bác sĩ chỉ quản lý bài do chính mình tạo; Admin có thể quản lý toàn bộ. Bài mới luôn được lưu nháp trước."
         actions={
           <Button kind="primary" onClick={() => setEditor("new")}>
             <Icon name="plus" />
@@ -330,8 +330,8 @@ export function FeedbackPage() {
   return (
     <>
       <PageHeader
-        title="Phản hồi dịch vụ"
-        subtitle="Dữ liệu do bệnh nhân gửi; không sử dụng dữ liệu mẫu."
+        title="Phản hồi lượt khám"
+        subtitle="Admin xem toàn hệ thống; bác sĩ chỉ thấy phản hồi của các lượt khám mình phụ trách."
         actions={
           <Button onClick={csv} disabled={!list.data?.items.length}>
             Xuất CSV
@@ -347,7 +347,7 @@ export function FeedbackPage() {
           <span>Tổng phản hồi</span>
           <b className="mono">{summary.data?.total ?? "—"}</b>
         </div>
-        {[1, 2, 3, 4].map((i) => (
+        {[1, 2, 3, 4, 5].map((i) => (
           <div className="stat" key={i}>
             <span>{i} sao</span>
             <b className="mono">
@@ -380,11 +380,15 @@ export function FeedbackPage() {
           onRetry={list.reload}
         >
           <DataTable
-            headers={["Ngày", "Điểm", "Lượt khám", "Tags", "Nhận xét"]}
+            headers={["Ngày", "Bệnh nhân", "Điểm", "Lượt khám", "Tags", "Nhận xét"]}
           >
             {list.data?.items.map((f) => (
               <tr key={f.id}>
                 <td className="mono">{fmtDate(f.createdAt, true)}</td>
+                <td>
+                  <b>{f.patientName || "—"}</b>
+                  <div className="faint mono">{f.patientCode || ""}</div>
+                </td>
                 <td className="mono">{f.rating}/5</td>
                 <td className="mono">{f.visitId ? `#${f.visitId}` : "—"}</td>
                 <td>{f.tags || "—"}</td>

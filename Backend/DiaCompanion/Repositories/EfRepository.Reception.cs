@@ -25,7 +25,7 @@ public sealed partial class EfRepository
 
         var counts = await _db.Visits.AsNoTracking()
             .Where(v => v.Status == VisitStatus.InProgress && v.DoctorId != null
-                        && v.VisitDate >= dayStartUtc && v.VisitDate <= dayEndUtc)
+                        && v.VisitDate >= dayStartUtc && v.VisitDate < dayEndUtc)
             .GroupBy(v => v.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.DoctorId, x => x.Count, ct);

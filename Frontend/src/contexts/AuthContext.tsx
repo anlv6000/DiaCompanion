@@ -107,10 +107,11 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
 
   const changePassword = useCallback(
     async (body: ChangePasswordRequest) => {
-      await authApi.change(body);
-      if (user) persist({ ...user, mustChangePassword: false });
+      const response = await authApi.change(body);
+      tokenStore.set(response.token || null);
+      persist(response);
     },
-    [persist, user],
+    [persist],
   );
 
   const clearMustChange = useCallback(() => {

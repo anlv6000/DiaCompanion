@@ -66,7 +66,7 @@ public class PatientsService : BaseService, IPatientsService
             DiabetesType = r.DiabetesType,
             DiabetesDurationYears = r.DiabetesDurationYears,
             LatestDrGrade = r.LatestDrGrade,
-            LatestVisitDate = r.LatestVisitDate,
+            LatestVisitDate = _clock.ToLocal(r.LatestVisitDate),
             HasAccount = r.HasAccount
         }).ToList();
 
@@ -486,7 +486,7 @@ public class PatientsService : BaseService, IPatientsService
         patient.DiabetesDurationYears = req.DiabetesDurationYears;
         patient.BaselineHbA1c = req.BaselineHbA1c;
         patient.Note = req.Note;
-        patient.UpdatedAt = DateTime.UtcNow;
+        patient.UpdatedAt = _clock.UtcNow;
 
         if (patient.UserId is int userId)
         {
@@ -495,7 +495,7 @@ public class PatientsService : BaseService, IPatientsService
             {
                 user.Phone = phone;
                 user.FullName = patient.FullName;
-                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedAt = _clock.UtcNow;
             }
         }
 
@@ -529,7 +529,7 @@ public class PatientsService : BaseService, IPatientsService
         patient.Gender = req.Gender;
         patient.DateOfBirth = req.DateOfBirth;
         patient.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
-        patient.UpdatedAt = DateTime.UtcNow;
+        patient.UpdatedAt = _clock.UtcNow;
 
         if (patient.UserId is int userId)
         {
@@ -537,7 +537,7 @@ public class PatientsService : BaseService, IPatientsService
             if (user is not null)
             {
                 user.FullName = fullName;
-                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedAt = _clock.UtcNow;
             }
         }
 
@@ -599,14 +599,14 @@ public class PatientsService : BaseService, IPatientsService
 
             var oldPhone = patient.Phone;
             patient.Phone = newPhone;
-            patient.UpdatedAt = DateTime.UtcNow;
+            patient.UpdatedAt = _clock.UtcNow;
 
             if (patient.UserId is int userId)
             {
                 var user = await _repository.GetUserForUpdateAsync(userId)
                     ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy tài khoản liên kết với bệnh nhân.");
                 user.Phone = newPhone;
-                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedAt = _clock.UtcNow;
             }
 
             await _audit.LogAsync(
@@ -643,7 +643,7 @@ public class PatientsService : BaseService, IPatientsService
                 user.MustChangePassword = true;
                 user.Phone = patient.Phone;
                 user.FullName = patient.FullName;
-                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedAt = _clock.UtcNow;
             }
             else
             {
@@ -719,7 +719,7 @@ public class PatientsService : BaseService, IPatientsService
             DiabetesDurationYears = patient.DiabetesDurationYears,
             BaselineHbA1c = patient.BaselineHbA1c,
             Note = patient.Note,
-            CreatedAt = patient.CreatedAt,
+            CreatedAt = _clock.ToLocal(patient.CreatedAt)!.Value,
             HasAccount = patient.UserId != null,
             LatestDrGrade = stats.LatestDrGrade,
             DoctorInCharge = stats.DoctorInCharge,

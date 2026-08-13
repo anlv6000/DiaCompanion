@@ -20,7 +20,6 @@ namespace DiaCompanion.Api.Controllers;
 public class RecheckController : BaseApiController
 {
     private readonly IRecheckService _service;
-
     public RecheckController(IRecheckService service) => _service = service;
 
 

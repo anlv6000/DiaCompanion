@@ -107,7 +107,7 @@ const NAV: [string, NavItem[]][] = [
         roles: ["Doctor", "Admin"],
       },
       { to: "/blog", label: "Blog", icon: "file", roles: ["Doctor", "Admin"] },
-      { to: "/feedback", label: "Phản hồi", icon: "heart", roles: ["Admin"] },
+      { to: "/feedback", label: "Phản hồi", icon: "heart", roles: ["Doctor", "Admin"] },
     ],
   ],
   [
@@ -132,6 +132,13 @@ const NAV: [string, NavItem[]][] = [
     ],
   ],
 ];
+
+
+function modelPipelineStatus(activeModel: string) {
+  const text = activeModel.toLowerCase();
+  const count = ["dr:", "lesion:", "fractal:"].filter((x) => text.includes(x)).length;
+  return `AI models ${count}/3 active`;
+}
 
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -191,7 +198,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           <small>Console lâm sàng — sàng lọc võng mạc ĐTĐ</small>
           <div className="top-actions">
             {dash.data?.activeModel && (
-              <StatusBadge text={dash.data.activeModel} />
+              <StatusBadge
+                text={modelPipelineStatus(dash.data.activeModel)}
+                kind={modelPipelineStatus(dash.data.activeModel).includes("3/3") ? "ok" : "alert"}
+              />
             )}
             <button
               className="notification-button"

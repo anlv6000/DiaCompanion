@@ -112,9 +112,9 @@ public class MonitoringService : BaseService, IMonitoringService
     public async Task<ActionResult<HealthMetricDto>> CreateMetric(CreateMetricRequest req)
     {
         var pid = ResolvePatientId(null);
-        var recordedUtc = req.RecordedAtUtc ?? DateTime.UtcNow;
+        var recordedUtc = req.RecordedAtUtc ?? _clock.UtcNow;
 
-        if (recordedUtc > DateTime.UtcNow)
+        if (recordedUtc > _clock.UtcNow)
             throw AppException.BadRequest(Msg.RequiredFields, "Không thể ghi chỉ số ở thời điểm tương lai.");
 
         if (req.MetricType == MetricType.HbA1c)
@@ -743,7 +743,7 @@ public class MonitoringService : BaseService, IMonitoringService
         _repository.ApplyOriginalRowVersion(l, req.RowVersion);
 
         l.IsDeleted = true;
-        l.DeletedAt = DateTime.UtcNow;
+        l.DeletedAt = _clock.UtcNow;
         await _audit.LogAsync(
             AuditAction.LifestyleDelete,
             nameof(LifestyleLog),
@@ -787,7 +787,7 @@ public class MonitoringService : BaseService, IMonitoringService
     public async Task<ActionResult<MedicationLogDto>> UpdateMedicationStatus(
         int id, UpdateMedicationStatusRequest req)
     {
-        if (req.Status is not (MedicationStatus.Taken or MedicationStatus.Skipped or MedicationStatus.Pending))
+        if (req.Status is not (MedicationStatus.Taken or MedicationStatus.Skipped or MedicationStatus.Pending ))
             throw AppException.BadRequest(Msg.InvalidData, "Trạng thái xác nhận thuốc không hợp lệ.");
 
         var log = await _repository.GetMedicationLogForUpdateAsync(id)
@@ -845,15 +845,15 @@ public class MonitoringService : BaseService, IMonitoringService
        
     }
 
-    private static MedicationLogDto MapMedication(MedicationLog m) => new()
+    private MedicationLogDto MapMedication(MedicationLog m) => new()
     {
         Id = m.Id,
         PrescriptionId = m.PrescriptionItem?.PrescriptionId ?? 0,
         PrescriptionItemId = m.PrescriptionItemId,
         DrugName = m.PrescriptionItem?.DrugName ?? "",
         Dose = m.PrescriptionItem?.Dose ?? "",
-        ScheduledAt = m.ScheduledAt,
-        TakenAt = m.TakenAt,
+        ScheduledAt = _clock.ToLocal(m.ScheduledAt)!.Value,
+        TakenAt = _clock.ToLocal(m.TakenAt),
         Status = (byte)m.Status,
         StatusLabel = MedicationStatusLabel(m.Status),
         RowVersion = m.ToRowVersion()

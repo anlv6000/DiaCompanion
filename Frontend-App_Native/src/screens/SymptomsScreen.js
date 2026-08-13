@@ -57,12 +57,24 @@ export default function SymptomsScreen({ route }) {
                 <View style={styles.replyBox}>
                   <View style={styles.replyHead}>
                     <Ionicons name="medical-outline" size={16} color={colors.primary} />
-                    <Text style={styles.replyLabel}>Bác sĩ {s.repliedByName ? `· ${s.repliedByName}` : ""}</Text>
+                    <Text style={styles.replyLabel}>
+                      Phản hồi từ {s.repliedByName || s.responsibleDoctorName || "bác sĩ phụ trách"}
+                    </Text>
                   </View>
                   <Text style={styles.replyText}>{s.doctorReply}</Text>
+                  {s.repliedAt ? (
+                    <Text style={styles.replyDate}>Phản hồi lúc {fmtDate(s.repliedAt, true)}</Text>
+                  ) : null}
                 </View>
               ) : (
-                <Badge text="Chờ bác sĩ xem" kind="warn" />
+                <View style={styles.pendingReply}>
+                  <Badge text={s.state || "Chờ bác sĩ xem"} kind="warn" />
+                  {s.responsibleDoctorName ? (
+                    <Text style={styles.pendingDoctor}>
+                      Bác sĩ phụ trách: {s.responsibleDoctorName}
+                    </Text>
+                  ) : null}
+                </View>
               )}
             </Card>
           ))}
@@ -157,6 +169,9 @@ const styles = StyleSheet.create({
   replyHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   replyLabel: { ...font.small, color: colors.primary, fontWeight: "700" },
   replyText: { ...font.body, color: colors.ink, lineHeight: 21 },
+  replyDate: { ...font.tiny, color: colors.muted, marginTop: 8 },
+  pendingReply: { marginTop: spacing.sm, alignItems: "flex-start", gap: 6 },
+  pendingDoctor: { ...font.small, color: colors.muted },
 
   fab: {
     position: "absolute", right: spacing.lg, bottom: spacing.lg, width: 56, height: 56, borderRadius: 28,
