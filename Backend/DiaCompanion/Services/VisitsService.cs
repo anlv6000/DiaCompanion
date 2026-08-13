@@ -226,6 +226,11 @@ public class VisitsService : BaseService, IVisitsService
         var visit = await _repository.GetVisitForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
+        if (visit.Status == VisitStatus.Completed)
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã được đóng. Hồ sơ của lượt khám này chỉ được xem và không thể chỉnh sửa hoặc thu hồi.");
+
         var allowedAsDoctor = _me.IsInRole(Roles.Doctor) && visit.DoctorId == _me.RequireId();
         var allowedAsReceptionist = false;
         if (_me.IsInRole(Roles.Receptionist))

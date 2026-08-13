@@ -21,6 +21,6 @@ public partial interface IRepository
 
     Task<bool> FeedbackExistsAsync(int patientId, int visitId, CancellationToken ct = default);
     Task<FeedbackPage> GetFeedbackPageAsync(byte? rating, string? keyword, string? normalizedKeyword,
-        DateTime? fromUtc, DateTime? toExclusiveUtc, PageQuery page, CancellationToken ct = default);
-    Task<IReadOnlyList<byte>> GetFeedbackRatingsAsync(CancellationToken ct = default);
+        DateTime? fromUtc, DateTime? toExclusiveUtc, int? doctorId, PageQuery page, CancellationToken ct = default);
+    Task<IReadOnlyList<byte>> GetFeedbackRatingsAsync(int? doctorId, CancellationToken ct = default);
 }

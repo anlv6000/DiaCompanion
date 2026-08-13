@@ -18,11 +18,12 @@ public class DiagnosesService : BaseService, IDiagnosesService
     private readonly IConfigService _cfg;
     private readonly IVoidService _void;
     private readonly IFileStorageService _storage;
+    private readonly IClinicClock _clock;
 
     public DiagnosesService(IRepository repository, ICurrentUser me, IAuditService audit,
                                IAiInferenceClient ai, IDeferralService deferral,
-                               IConfigService cfg, IVoidService voidSvc, IFileStorageService storage)
-    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _cfg = cfg; _void = voidSvc; _storage = storage; }
+                               IConfigService cfg, IVoidService voidSvc, IFileStorageService storage, IClinicClock clock)
+    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _cfg = cfg; _void = voidSvc; _storage = storage; _clock = clock; }
 
     /// <summary>
     /// UC-25 + UC-27 + UC-28 — chạy suy luận cho một ảnh.
@@ -47,6 +48,12 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 Msg.Forbidden,
                 "Bạn không phải bác sĩ phụ trách lượt khám này.");
         }
+        if (image.Visit?.Status != VisitStatus.InProgress)
+        {
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã đóng. Kết quả AI chỉ được xem và không thể chạy lại.");
+        }
         // BR-01 — van chặn bắt buộc. Chạy AI trên ảnh mờ sinh ra kết quả trông
         // hợp lệ nhưng vô nghĩa, nguy hiểm hơn là không có kết quả.
         if (image.QualityStatus != QualityStatus.Gradable)
@@ -59,9 +66,18 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 "Kết quả AI đã được phê duyệt",
                 "Không thể chạy lại AI sau khi bác sĩ đã phê duyệt hoặc ghi đè kết quả.");
 
-        var model = await _repository.GetActiveModelVersionAsync(ct)
-            ?? throw AppException.BadRequest(Msg.AiUnavailable,
-                "Chưa có phiên bản mô hình nào được kích hoạt.");
+        var activeModels = await _repository.GetActiveModelVersionsAsync(ct);
+        var drModel = activeModels.SingleOrDefault(m => m.ModelType == ModelType.Dr);
+        var lesionModel = activeModels.SingleOrDefault(m => m.ModelType == ModelType.Lesion);
+        var fractalModel = activeModels.SingleOrDefault(m => m.ModelType == ModelType.Fractal);
+
+        var missing = new List<string>();
+        if (drModel is null) missing.Add("DR");
+        if (lesionModel is null) missing.Add("Lesion");
+        if (fractalModel is null) missing.Add("Fractal");
+        if (missing.Count > 0)
+            throw AppException.BadRequest(Msg.AiUnavailable,
+                $"Chưa kích hoạt đủ 3 model AI. Thiếu: {string.Join(", ", missing)}.");
 
         // Đọc ngưỡng TẠI THỜI ĐIỂM CHẠY và lưu vào bản ghi. Admin đổi ngưỡng
         // sau này không được làm thay đổi kết quả đã sinh ra (BR-17).
@@ -70,7 +86,12 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
         // Nếu dịch vụ suy luận lỗi thì ném ra ngoài — KHÔNG tạo bản ghi rỗng
         // (E2 của UC-25).
-        var result = await _ai.RunAsync(image.FilePath, model.FilePath, ct);
+        var result = await _ai.RunAsync(
+            image.FilePath,
+            drModel!.FilePath,
+            lesionModel!.FilePath,
+            fractalModel!.FilePath,
+            ct);
 
         var lesionGrade = result.LesionGradeImplied is byte lg ? (DrGrade)lg : (DrGrade?)null;
         var deferral = _deferral.Evaluate(
@@ -97,7 +118,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
             var diagnosis = new AiDiagnosis
             {
                 FundusImageId = image.Id,
-                ModelVersionId = model.Id,
+                ModelVersionId = drModel!.Id,
+                LesionModelVersionId = lesionModel!.Id,
+                FractalModelVersionId = fractalModel!.Id,
                 DrGrade = (DrGrade)result.DrGrade,
                 Confidence = result.Confidence,
                 GradeProbabilities = result.Probabilities is null
@@ -130,8 +153,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
             await _audit.LogAsync(AuditAction.AiRun, nameof(AiDiagnosis), diagnosis.Id, null, new
             {
-                imageId, model = model.Name, grade = diagnosis.DrGrade.ToString(),
-                confidence = diagnosis.Confidence, disagreement = diagnosis.Disagreement,
+                imageId,
+                drModel = drModel!.Name,
+                lesionModel = lesionModel!.Name,
+                fractalModel = fractalModel!.Name,
+                grade = diagnosis.DrGrade.ToString(),
+                confidence = diagnosis.Confidence,
+                disagreement = diagnosis.Disagreement,
                 deferred = diagnosis.IsDeferred
             });
             await _repository.CommitAsync(ct);
@@ -211,7 +239,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)
     {
         EnsureCanAccessPatient(_me, patientId);
-        var from = DateTime.UtcNow.AddMonths(-months);
+        var from = _clock.UtcNow.AddMonths(-months);
 
         // Chỉ lấy mức đã được bác sĩ xác nhận — không đưa kết quả AI thô vào
         // biểu đồ diễn tiến (BR-13).
@@ -220,7 +248,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
         // Gom theo NGÀY để ba chuỗi rơi vào cùng một điểm trên biểu đồ
         var points = confirmed
-            .GroupBy(x => x.CreatedAt.Date)
+            .GroupBy(x => (_clock.ToLocal(x.CreatedAt) ?? x.CreatedAt).Date)
             .Select(g => new ProgressionPoint
             {
                 Date = g.Key,
@@ -232,7 +260,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
         foreach (var h in hba1c)
         {
-            var day = h.RecordedAtUtc.Date;
+            var day = (_clock.ToLocal(h.RecordedAtUtc) ?? h.RecordedAtUtc).Date;
             var point = points.FirstOrDefault(p => p.Date == day);
             if (point is null) points.Add(new ProgressionPoint { Date = day, HbA1c = h.Value });
             else point.HbA1c = h.Value;
@@ -285,8 +313,16 @@ public class DiagnosesService : BaseService, IDiagnosesService
         {
             Id = d.Id,
             FundusImageId = d.FundusImageId,
+            VisitId = d.FundusImage?.VisitId,
+            VisitStatus = d.FundusImage?.Visit is null ? null : (byte)d.FundusImage.Visit.Status,
             Eye = (byte)(d.FundusImage?.Eye ?? 0),
             ModelVersion = d.ModelVersion?.Name ?? "",
+            DrModelVersionId = d.ModelVersionId,
+            DrModelVersion = d.ModelVersion?.Name ?? "",
+            LesionModelVersionId = d.LesionModelVersionId,
+            LesionModelVersion = d.LesionModelVersion?.Name,
+            FractalModelVersionId = d.FractalModelVersionId,
+            FractalModelVersion = d.FractalModelVersion?.Name,
             DrGrade = (byte)d.DrGrade,
             DrGradeLabel = GradeLabel((byte)d.DrGrade),
             Confidence = d.Confidence,
@@ -303,7 +339,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
             FractalNote = d.FractalNote,
             HasLesionMask = !string.IsNullOrWhiteSpace(d.LesionMaskPath),
             HasFractalImage = !string.IsNullOrWhiteSpace(d.VesselMaskPath),
-            CreatedAt = d.CreatedAt,
+            CreatedAt = _clock.ToLocal(d.CreatedAt)!.Value,
             // NT-3: chỉ "đã xác nhận" khi có review của bác sĩ
             IsConfirmed = review is not null,
             RowVersion = d.ToRowVersion(),
@@ -317,7 +353,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 FinalGradeLabel = GradeLabel((byte)review.FinalGrade),
                 Reason = review.Reason,
                 DoctorName = review.Doctor?.FullName ?? "",
-                CreatedAt = review.CreatedAt,
+                CreatedAt = _clock.ToLocal(review.CreatedAt)!.Value,
                 RowVersion = review.ToRowVersion()
             }
         };

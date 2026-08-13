@@ -8,7 +8,7 @@ public sealed partial class EfRepository
     public async Task<IReadOnlyList<RecheckCandidate>> GetRecheckCandidatesAsync(CancellationToken ct = default)
     {
         var allCompleted = await _db.Visits.AsNoTracking()
-            .Where(v => v.Status == VisitStatus.Completed && v.ClosedAt != null && v.RecheckMonths != null)
+            .Where(v => !v.IsVoided && v.Status == VisitStatus.Completed && v.ClosedAt != null && v.RecheckMonths != null)
             .Select(v => new
             {
                 v.Id, v.MedicalRecord.PatientId, ClosedAt = v.ClosedAt!.Value, RecheckMonths = v.RecheckMonths!.Value,
@@ -22,14 +22,19 @@ public sealed partial class EfRepository
         var patientIds = lastVisits.Select(v => v.PatientId).ToArray();
         var visitIds = lastVisits.Select(v => v.Id).ToArray();
 
-        var latestDates = await _db.Visits.AsNoTracking().Where(v => patientIds.Contains(v.MedicalRecord.PatientId))
+        var latestDates = await _db.Visits.AsNoTracking()
+            .Where(v => !v.IsVoided
+                        && patientIds.Contains(v.MedicalRecord.PatientId)
+                        && (v.RecheckMonths != null
+                            || v.Images.Any(i => !i.IsVoided)
+                            || _db.Prescriptions.Any(p => p.VisitId == v.Id && !p.IsVoided)))
             .GroupBy(v => v.MedicalRecord.PatientId)
             .Select(g => new { PatientId = g.Key, Latest = g.Max(v => v.VisitDate) })
             .ToDictionaryAsync(x => x.PatientId, x => x.Latest, ct);
         var grades = visitIds.Length == 0
             ? new Dictionary<int, byte>()
             : await _db.DiagnosisReviews.AsNoTracking()
-                .Where(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&
+                .Where(r => !r.IsVoided && r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&
                             r.AiDiagnosis.FundusImage.VisitId.HasValue && visitIds.Contains(r.AiDiagnosis.FundusImage.VisitId.Value))
                 .GroupBy(r => r.AiDiagnosis!.FundusImage!.VisitId!.Value)
                 .Select(g => new { VisitId = g.Key, Grade = (byte)g.Max(x => (byte)x.FinalGrade) })
@@ -44,7 +49,7 @@ public sealed partial class EfRepository
     public async Task<RecheckCandidate?> GetRecheckCandidateAsync(int patientId, CancellationToken ct = default)
     {
         var visit = await _db.Visits.AsNoTracking()
-            .Where(v => v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed &&
+            .Where(v => !v.IsVoided && v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed &&
                         v.ClosedAt != null && v.RecheckMonths != null)
             .OrderByDescending(v => v.ClosedAt)
             .Select(v => new
@@ -60,10 +65,15 @@ public sealed partial class EfRepository
             }).FirstOrDefaultAsync(ct);
         if (visit is null) return null;
 
-        var latestVisitDate = await _db.Visits.AsNoTracking().Where(v => v.MedicalRecord.PatientId == patientId)
+        var latestVisitDate = await _db.Visits.AsNoTracking()
+            .Where(v => !v.IsVoided
+                        && v.MedicalRecord.PatientId == patientId
+                        && (v.RecheckMonths != null
+                            || v.Images.Any(i => !i.IsVoided)
+                            || _db.Prescriptions.Any(p => p.VisitId == v.Id && !p.IsVoided)))
             .MaxAsync(v => (DateTime?)v.VisitDate, ct);
         var grade = await _db.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&
+            .Where(r => !r.IsVoided && r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&
                         r.AiDiagnosis.FundusImage.VisitId == visit.Id)
             .Select(r => (byte?)(byte)r.FinalGrade).MaxAsync(ct);
 

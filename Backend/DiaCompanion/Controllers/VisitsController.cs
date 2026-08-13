@@ -12,10 +12,12 @@ public class VisitsController : BaseApiController
 {
     private readonly IVisitsService _service;
     private readonly CurrentUser _me;
-    public VisitsController(IVisitsService service, CurrentUser me)
+    private readonly IVisitMaintenanceService _maintenance;
+    public VisitsController(IVisitsService service, CurrentUser me, IVisitMaintenanceService maintenance)
     {
         _service = service;
         _me = me;
+        _maintenance = maintenance;
     }
 
 
@@ -85,6 +87,21 @@ public class VisitsController : BaseApiController
     public async Task<IActionResult> Void(int id, VoidRequest req)
     {
         return await _service.Void(id, req);
+    }
+
+
+    /// <summary>Admin chạy thủ công để test xử lý lượt khám cuối ngày.</summary>
+    [HttpPost("maintenance/process-open")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> ProcessOpenVisits([FromQuery] bool includeToday = true, CancellationToken ct = default)
+    {
+        var result = await _maintenance.ProcessAsync(includeToday, ct);
+        return Ok(new
+        {
+            checkedCount = result.Checked,
+            autoClosed = result.AutoClosed,
+            carriedForward = result.CarriedForward
+        });
     }
 
     [HttpGet("me")] 

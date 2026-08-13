@@ -372,7 +372,10 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     setBusy(true);
     setError("");
     try {
-      await changePassword({ currentPassword: current, newPassword: next });
+      await changePassword({
+        ...(user?.mustChangePassword ? {} : { currentPassword: current }),
+        newPassword: next,
+      });
       toast.push("Đã cập nhật mật khẩu.", "success");
       setCurrent("");
       setNext("");
@@ -401,13 +404,15 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
       />
       <Panel>
         <form onSubmit={submit} style={{ maxWidth: 460 }}>
-          <Field labelText="Mật khẩu hiện tại" required>
-            <input
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
-          </Field>
+          {!user?.mustChangePassword && (
+            <Field labelText="Mật khẩu hiện tại" required>
+              <input
+                type="password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+              />
+            </Field>
+          )}
           <Field labelText="Mật khẩu mới" required>
   <div className="input-with-action">
     <input

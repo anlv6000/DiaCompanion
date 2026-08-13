@@ -71,6 +71,7 @@ builder.Services.AddScoped<IMonitoringService, MonitoringService>();
 builder.Services.AddScoped<IPatientsService, PatientsService>();
 builder.Services.AddScoped<IPrescriptionsService, PrescriptionsService>();
 builder.Services.AddScoped<IRecheckService, RecheckService>();
+builder.Services.AddScoped<IVisitMaintenanceService, VisitMaintenanceService>();
 builder.Services.AddScoped<IReceptionService, ReceptionService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();

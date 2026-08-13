@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAsync } from "@/lib/hooks";
 import {
@@ -6,28 +6,44 @@ import {
   Panel,
   Button,
   LoadState,
-  DataTable,
   GradeBadge,
-  EyeBadge,
   StatusBadge,
   Icon,
 } from "@/components/ui";
+import { ProtectedImage } from "@/components/ProtectedImage";
 import { fmtDate, pct, num } from "@/lib/format";
-import { diabetesTypes, genders, referralTypes, label } from "@/lib/enums";
-import type { VisitReport } from "@/types/api";
+import {
+  diabetesTypes,
+  genders,
+  referralTypes,
+  metricContexts,
+  label,
+} from "@/lib/enums";
+import type {
+  VisitReport,
+  VisitReportFinding,
+  VisitReportImage,
+} from "@/types/api";
 
 const vi = {
-  patient: "Thông tin bệnh nhân",
-  visit: "Lượt khám và kết luận",
-  findings: "Kết quả xác nhận",
+  patient: "Hồ sơ bệnh án",
+  visit: "Lượt khám",
+  findings: "Ảnh đáy mắt",
+  metrics: "Chỉ số",
   prescriptions: "Đơn thuốc",
+  conclusion: "Kết luận",
+  feedback: "Phản hồi bệnh nhân",
   disclaimer: "Lưu ý lâm sàng",
 };
+
 const en = {
-  patient: "Patient information",
-  visit: "Visit and conclusion",
-  findings: "Confirmed findings",
+  patient: "Medical record",
+  visit: "Visit",
+  findings: "Fundus images",
+  metrics: "Health metrics",
   prescriptions: "Prescriptions",
+  conclusion: "Conclusion",
+  feedback: "Patient feedback",
   disclaimer: "Clinical notice",
 };
 
@@ -42,17 +58,47 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
     patient: true,
     visit: true,
     findings: true,
+    metrics: true,
     prescriptions: true,
+    conclusion: true,
+    feedback: true,
     disclaimer: true,
   });
+
   const labels = language === "vi" ? vi : en;
   const toggle = (key: keyof typeof sections) =>
     setSections((x) => ({ ...x, [key]: !x[key] }));
+
+  const report = data.data;
+
+  // Tương thích cả API cũ và API mới.
+  // API cũ có thể chưa trả images / healthMetrics, nên tuyệt đối không đọc
+  // .length hoặc property con trực tiếp từ undefined.
+  const findings: VisitReportFinding[] = report?.findings ?? [];
+  const images: VisitReportImage[] =
+    report?.images ??
+    findings.map(
+      (f: any) =>
+        ({
+          imageId: f.imageId,
+          eye: f.eye,
+          qualityStatus: f.qualityStatus ?? 0,
+          qualityStatusLabel: f.qualityStatusLabel ?? "Chưa có dữ liệu",
+          qualityNote: f.qualityNote ?? null,
+        }) as VisitReportImage,
+    );
+  const prescriptions = report?.prescriptions ?? [];
+  const healthMetrics = report?.healthMetrics ?? {
+    glucose: null,
+    hbA1c: null,
+    bloodPressure: null,
+  };
+
   return (
     <>
       <PageHeader
         title={`Báo cáo lượt khám #${visitId}`}
-        subtitle="Dữ liệu lấy trực tiếp từ GET /api/export/visit-report/{visitId}; frontend chỉ dựng bản xem trước và lệnh in PDF."
+        subtitle="Hồ sơ bệnh án của một lượt khám đã hoàn tất, gồm ảnh đáy mắt, kết quả AI, xác nhận bác sĩ, chỉ số, đơn thuốc và phản hồi bệnh nhân."
         actions={
           <Button kind="primary" onClick={() => window.print()}>
             <Icon name="download" />
@@ -60,6 +106,7 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
           </Button>
         }
       />
+
       <div className="report-layout">
         <Panel title="Thiết lập báo cáo">
           <label className="field">
@@ -72,6 +119,7 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
               <option value="en">English</option>
             </select>
           </label>
+
           <div className="stack" style={{ marginTop: 12 }}>
             {(Object.keys(sections) as (keyof typeof sections)[]).map((k) => (
               <label className="checkbox" key={k}>
@@ -84,157 +132,165 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
               </label>
             ))}
           </div>
+
           <p className="help">
             Chọn “Save as PDF” trong hộp thoại in của trình duyệt để lưu tệp.
           </p>
         </Panel>
+
         <LoadState
           loading={data.loading}
           error={data.error}
-          empty={!data.data}
+          empty={!report}
           onRetry={data.reload}
         >
-          {data.data && (
-            <article className="report-preview">
-              <header className="report-header">
+          {report && (
+            <article className="report-preview medical-report">
+              <header className="report-header medical-report-header">
                 <div>
-                  <h1>{data.data.clinic.name}</h1>
-                  <p>{data.data.clinic.subtitle}</p>
+                  <div className="report-clinic-name">{report.clinic.name}</div>
+                  <h1>HỒ SƠ BỆNH ÁN</h1>
+                  <p>{report.clinic.subtitle}</p>
                 </div>
-                <div className="mono">
-                  #{visitId}
+                <div className="mono report-meta">
+                  VISIT-{report.visit.id}
                   <br />
-                  {fmtDate(data.data.generatedAt, true)}
+                  Xuất: {fmtDate(report.generatedAt, true)}
                 </div>
               </header>
+
               {sections.patient && (
                 <ReportSection title={labels.patient}>
-                  <div className="detail-grid">
-                    <Info k="Mã bệnh nhân" v={data.data.patient.code} />
-                    <Info k="Họ tên" v={data.data.patient.fullName} />
-                    <Info
-                      k="Ngày sinh"
-                      v={fmtDate(data.data.patient.dateOfBirth)}
-                    />
-                    <Info
-                      k="Giới tính"
-                      v={label(genders, data.data.patient.gender)}
-                    />
-                    <Info k="Số điện thoại" v={data.data.patient.phone} />
+                  <div className="detail-grid report-detail-grid">
+                    <Info k="Mã bệnh nhân" v={report.patient.code} />
+                    <Info k="Họ tên" v={report.patient.fullName} />
+                    <Info k="Ngày sinh" v={fmtDate(report.patient.dateOfBirth)} />
+                    <Info k="Giới tính" v={label(genders, report.patient.gender)} />
                     <Info
                       k="Loại ĐTĐ"
-                      v={label(diabetesTypes, data.data.patient.diabetesType)}
+                      v={label(diabetesTypes, report.patient.diabetesType)}
                     />
                     <Info
                       k="Thời gian mắc"
                       v={
-                        data.data.patient.diabetesDurationYears == null
+                        report.patient.diabetesDurationYears == null
                           ? "—"
-                          : `${data.data.patient.diabetesDurationYears} năm`
+                          : `${report.patient.diabetesDurationYears} năm`
                       }
                     />
+                    <Info k="Số điện thoại" v={report.patient.phone} />
                   </div>
                 </ReportSection>
               )}
+
               {sections.visit && (
                 <ReportSection title={labels.visit}>
-                  <div className="detail-grid">
-                    <Info
-                      k="Ngày khám"
-                      v={fmtDate(data.data.visit.visitDate, true)}
-                    />
-                    <Info k="Bác sĩ" v={data.data.visit.doctorName} />
-                    <Info k="Số chứng chỉ" v={data.data.visit.doctorLicense} />
+                  <div className="detail-grid report-detail-grid">
+                    <Info k="Mã lượt" v={`#${report.visit.id}`} />
+                    <Info k="Ngày khám" v={fmtDate(report.visit.visitDate, true)} />
+                    <Info k="Bác sĩ" v={report.visit.doctorName} />
+                    <Info k="Số chứng chỉ" v={report.visit.doctorLicense} />
                     <Info
                       k="Trạng thái"
-                      v={data.data.visit.status === 1 ? "Đã đóng" : "Đang khám"}
+                      v={report.visit.status === 1 ? "Đã đóng" : "Đang khám"}
                     />
-                    <Info
-                      k="Chuyển tuyến"
-                      v={label(referralTypes, data.data.visit.referral)}
-                    />
-                    <Info
-                      k="Tái khám"
-                      v={
-                        data.data.visit.recheckMonths == null
-                          ? "—"
-                          : `${data.data.visit.recheckMonths} tháng`
-                      }
-                    />
-                    <Info
-                      k="Đóng lúc"
-                      v={fmtDate(data.data.visit.closedAt, true)}
-                    />
-                  </div>
-                  <div className="report-conclusion">
-                    <b>Kết luận</b>
-                    <p>{data.data.visit.conclusion || "—"}</p>
+                    <Info k="Đóng lúc" v={fmtDate(report.visit.closedAt, true)} />
                   </div>
                 </ReportSection>
               )}
+
               {sections.findings && (
                 <ReportSection title={labels.findings}>
-                  {data.data.findings.length ? (
-                    <DataTable
-                      headers={[
-                        "Mắt",
-                        "Phân độ cuối",
-                        "AI đề xuất",
-                        "Tin cậy",
-                        "Bất đồng",
-                        "Model",
-                        "Xác nhận bởi",
-                      ]}
-                    >
-                      {data.data.findings.map((f, i) => (
-                        <tr key={`${f.imageId}-${i}`}>
-                          <td>
-                            <EyeBadge eye={f.eye} />
-                          </td>
-                          <td>
-                            <GradeBadge grade={f.finalGrade} />
-                          </td>
-                          <td>
-                            <GradeBadge grade={f.ai.grade} />
-                            {f.ai.wasOverridden && (
-                              <StatusBadge text="Đã ghi đè" kind="defer" />
-                            )}
-                          </td>
-                          <td className="mono">{pct(f.ai.confidence)}</td>
-                          <td className="mono">{num(f.ai.disagreement, 3)}</td>
-                          <td className="mono">{f.ai.model || "—"}</td>
-                          <td>
-                            {f.confirmedBy}
-                            <div className="mono faint">
-                              {fmtDate(f.createdAt, true)}
-                            </div>
-                          </td>
-                        </tr>
+                  {images.length ? (
+                    <div className="report-eye-list">
+                      {images.map((image) => (
+                        <RetinalImageCard
+                          key={image.imageId}
+                          image={image}
+                          finding={findings.find(
+                            (f) => f.imageId === image.imageId,
+                          )}
+                        />
                       ))}
-                    </DataTable>
+                    </div>
                   ) : (
-                    <p>Chưa có kết quả được bác sĩ xác nhận.</p>
+                    <p>Không có ảnh đáy mắt trong lượt khám này.</p>
                   )}
                 </ReportSection>
               )}
+
+              {sections.metrics && (
+                <ReportSection title={labels.metrics}>
+                  <div className="report-metric-grid">
+                    <MetricCard
+                      title="Glucose"
+                      value={
+                        healthMetrics.glucose
+                          ? `${num(healthMetrics.glucose.value)} ${healthMetrics.glucose.unit}`
+                          : "Chưa ghi nhận"
+                      }
+                      detail={
+                        healthMetrics.glucose
+                          ? `${label(metricContexts, healthMetrics.glucose.context)} · ${fmtDate(healthMetrics.glucose.recordedAt, true)}`
+                          : `Không có chỉ số trong ngày khám ${fmtDate(report.visit.visitDate)}`
+                      }
+                      abnormal={healthMetrics.glucose?.isAbnormal}
+                    />
+                    <MetricCard
+                      title="HbA1c"
+                      value={
+                        healthMetrics.hbA1c
+                          ? `${num(healthMetrics.hbA1c.value)} ${healthMetrics.hbA1c.unit}`
+                          : "Chưa ghi nhận"
+                      }
+                      detail={
+                        healthMetrics.hbA1c
+                          ? fmtDate(healthMetrics.hbA1c.recordedAt, true)
+                          : `Không có chỉ số trong ngày khám ${fmtDate(report.visit.visitDate)}`
+                      }
+                      abnormal={healthMetrics.hbA1c?.isAbnormal}
+                    />
+                    <MetricCard
+                      title="Blood Pressure"
+                      value={
+                        healthMetrics.bloodPressure
+                          ? `${num(healthMetrics.bloodPressure.systolic, 0)}/${num(healthMetrics.bloodPressure.diastolic, 0)} ${healthMetrics.bloodPressure.unit}`
+                          : "Chưa ghi nhận"
+                      }
+                      detail={
+                        healthMetrics.bloodPressure
+                          ? fmtDate(
+                              healthMetrics.bloodPressure.recordedAt,
+                              true,
+                            )
+                          : `Không có chỉ số trong ngày khám ${fmtDate(report.visit.visitDate)}`
+                      }
+                      abnormal={healthMetrics.bloodPressure?.isAbnormal}
+                    />
+                  </div>
+                </ReportSection>
+              )}
+
               {sections.prescriptions && (
                 <ReportSection title={labels.prescriptions}>
-                  {data.data.prescriptions.length ? (
-                    data.data.prescriptions.map((p, i) => (
+                  {prescriptions.length ? (
+                    prescriptions.map((p, i) => (
                       <div className="report-rx" key={`${p.issuedAt}-${i}`}>
-                        <div className="split">
-                          <b>{fmtDate(p.issuedAt, true)}</b>
+                        <div className="split report-rx-head">
+                          <b>Ngày kê: {fmtDate(p.issuedAt, true)}</b>
                           <span>{p.note || ""}</span>
                         </div>
-                        <ul>
+                        <div className="report-prescription-list">
                           {p.items.map((x, j) => (
-                            <li key={j}>
-                              <b>{x.drugName}</b> — {x.dose}, {x.timesPerDay}{" "}
-                              lần/ngày trong {x.durationDays} ngày
-                              {x.instruction ? ` · ${x.instruction}` : ""}
-                            </li>
+                            <div className="report-prescription-item" key={j}>
+                              <strong>{x.drugName}</strong>
+                              <span>{x.dose}</span>
+                              <span>{x.timesPerDay} lần/ngày</span>
+                              <span>{x.durationDays} ngày</span>
+                              {x.instruction && <small>{x.instruction}</small>}
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -242,10 +298,62 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                   )}
                 </ReportSection>
               )}
+
+              {sections.conclusion && (
+                <ReportSection title={labels.conclusion}>
+                  <div className="report-conclusion">
+                    <p>{report.visit.conclusion || "Chưa có kết luận."}</p>
+                  </div>
+                  <div className="detail-grid report-detail-grid report-followup-grid">
+                    <Info
+                      k="Chuyển tuyến"
+                      v={label(referralTypes, report.visit.referral)}
+                    />
+                    <Info
+                      k="Tái khám"
+                      v={
+                        report.visit.recheckMonths == null
+                          ? "—"
+                          : `${report.visit.recheckMonths} tháng`
+                      }
+                    />
+                    <Info
+                      k="Ngày dự kiến"
+                      v={fmtDate(report.visit.recheckDueDate)}
+                    />
+                  </div>
+                </ReportSection>
+              )}
+
+              {sections.feedback && (
+                <ReportSection title={labels.feedback}>
+                  {report.feedback ? (
+                    <div className="report-feedback">
+                      <div className="report-rating" aria-label={`${report.feedback.rating}/5 sao`}>
+                        <strong>{report.feedback.rating}/5 sao</strong>
+                        <span>
+                          {"★".repeat(report.feedback.rating)}
+                          {"☆".repeat(Math.max(0, 5 - report.feedback.rating))}
+                        </span>
+                      </div>
+                      {report.feedback.tags && (
+                        <p>
+                          <b>Nhãn:</b> {report.feedback.tags}
+                        </p>
+                      )}
+                      <p>{report.feedback.comment || "Không có nhận xét."}</p>
+                      <small className="faint">
+                        Gửi lúc {fmtDate(report.feedback.createdAt, true)}
+                      </small>
+                    </div>
+                  ) : (
+                    <p>Bệnh nhân chưa gửi phản hồi cho lượt khám này.</p>
+                  )}
+                </ReportSection>
+              )}
+
               {sections.disclaimer && (
-                <footer className="report-disclaimer">
-                  {data.data.disclaimer}
-                </footer>
+                <footer className="report-disclaimer">{report.disclaimer}</footer>
               )}
             </article>
           )}
@@ -254,6 +362,238 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
     </>
   );
 }
+
+function RetinalImageCard({
+  image,
+  finding,
+}: {
+  image: VisitReportImage;
+  finding?: VisitReportFinding;
+}) {
+  const eyeName = image.eye === 1 ? "Mắt trái (OS)" : "Mắt phải (OD)";
+  const legacyFinding = finding as any;
+  const action =
+    finding?.action ?? (legacyFinding?.ai?.wasOverridden ? 1 : 0);
+  const actionLabel =
+    finding?.actionLabel ?? (action === 1 ? "Override" : "Approve");
+  const reason =
+    finding?.reason ?? legacyFinding?.ai?.overrideReason ?? null;
+
+  return (
+    <section className="report-eye-card">
+      <h3>{eyeName}</h3>
+
+      <div className="report-image-gallery">
+        <div className="report-image-primary">
+          <div className="report-image-label">
+            <strong>Ảnh gốc</strong>
+            <small className="mono">Image #{image.imageId}</small>
+          </div>
+          <ProtectedImage
+            imageId={image.imageId}
+            alt={`Ảnh đáy mắt gốc ${eyeName}`}
+            className="report-clinical-image report-original-image"
+            style={{ width: "100%", height: "100%" }}
+          />
+        </div>
+
+        <div className="report-image-derived-column">
+          <ReportAiImage
+            title="Lesion mask"
+            diagnosisId={finding?.diagnosisId}
+            kind="lesion"
+            available={Boolean(finding?.urlImageLesionAfterMedical)}
+            alt={`Ảnh lesion ${eyeName}`}
+          />
+          <ReportAiImage
+            title="Vessel / Fractal"
+            diagnosisId={finding?.diagnosisId}
+            kind="fractal"
+            available={Boolean(finding?.urlImageVesselAfterMedical)}
+            alt={`Ảnh vessel fractal ${eyeName}`}
+          />
+        </div>
+      </div>
+
+      <div className="report-eye-details">
+        <div className="report-subblock">
+          <b>Quality</b>
+          <div>
+            <StatusBadge
+              text={image.qualityStatusLabel}
+              kind={
+                image.qualityStatus === 1
+                  ? "ok"
+                  : image.qualityStatus === 2
+                    ? "alert"
+                    : ""
+              }
+            />
+          </div>
+          {image.qualityNote && <small>{image.qualityNote}</small>}
+        </div>
+
+        {finding ? (
+          <>
+            <div className="report-eye-summary-grid">
+              <div className="report-subblock">
+                <b>AI DR</b>
+                <div className="report-inline-value">
+                  <GradeBadge grade={finding.ai.grade} />
+                  <span>Confidence: {pct(finding.ai.confidence)}</span>
+                </div>
+                <small>Model: {finding.ai.model || "—"}</small>
+                {finding.ai.isDeferred && (
+                  <small>
+                    AI đánh dấu cần bác sĩ xem xét do độ tin cậy/bất đồng.
+                  </small>
+                )}
+              </div>
+
+              <div className="report-subblock">
+                <b>Lesion</b>
+                <div className="report-lesion-grid mono">
+                  <span>MA: {finding.lesions.countMA ?? "—"}</span>
+                  <span>HE: {finding.lesions.countHE ?? "—"}</span>
+                  <span>EX: {finding.lesions.countEX ?? "—"}</span>
+                  <span>SE: {finding.lesions.countSE ?? "—"}</span>
+                </div>
+              </div>
+
+              <div className="report-subblock">
+                <b>Fractal</b>
+                <div className="mono">FD: {num(finding.fractal, 3)}</div>
+              </div>
+            </div>
+
+            <div className="report-subblock report-doctor-confirmation">
+              <b>Bác sĩ xác nhận</b>
+              <div className="report-confirm-row">
+                <span>Final Grade:</span>
+                <GradeBadge grade={finding.finalGrade} />
+              </div>
+              <div className="report-confirm-row">
+                <span>Action:</span>
+                <StatusBadge
+                  text={actionLabel}
+                  kind={action === 1 ? "defer" : "ok"}
+                />
+              </div>
+              <div className="report-confirm-row report-reason-row">
+                <span>Reason:</span>
+                <strong>{reason || "—"}</strong>
+              </div>
+              <small>
+                {finding.confirmedBy} · {fmtDate(finding.createdAt, true)}
+              </small>
+            </div>
+          </>
+        ) : (
+          <div className="report-subblock">
+            <b>Kết quả AI / xác nhận</b>
+            <p>
+              {image.qualityStatus === 2
+                ? "Ảnh Ungradable nên không có kết quả AI."
+                : "Chưa có kết quả được bác sĩ xác nhận cho ảnh này."}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ReportAiImage({
+  title,
+  diagnosisId,
+  kind,
+  available,
+  alt,
+}: {
+  title: string;
+  diagnosisId?: number;
+  kind: "lesion" | "fractal";
+  available: boolean;
+  alt: string;
+}) {
+  const data = useData();
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = "";
+
+    setUrl("");
+    setError("");
+
+    if (!diagnosisId || !available) return;
+
+    const loader =
+      kind === "lesion"
+        ? data.diagnoses.lesionMask(diagnosisId)
+        : data.diagnoses.fractalImage(diagnosisId);
+
+    loader
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [available, data.diagnoses, diagnosisId, kind]);
+
+  return (
+    <div className="report-image-derived">
+      <div className="report-image-label">
+        <strong>{title}</strong>
+        {diagnosisId ? (
+          <small className="mono">AI #{diagnosisId}</small>
+        ) : null}
+      </div>
+
+      {!diagnosisId || !available ? (
+        <div className="report-image-placeholder">Chưa có ảnh</div>
+      ) : error ? (
+        <div className="report-image-placeholder" title={error}>
+          Không tải được ảnh
+        </div>
+      ) : !url ? (
+        <div className="report-image-placeholder">Đang tải…</div>
+      ) : (
+        <img src={url} alt={alt} className="report-clinical-image" />
+      )}
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  detail,
+  abnormal,
+}: {
+  title: string;
+  value: string;
+  detail: string;
+  abnormal?: boolean;
+}) {
+  return (
+    <div className={`report-metric-card ${abnormal ? "is-abnormal" : ""}`}>
+      <small>{title}</small>
+      <strong>{value}</strong>
+      <span className="faint">{detail}</span>
+    </div>
+  );
+}
+
 function ReportSection({ title, children }: { title: string; children?: any }) {
   return (
     <section className="report-section">
@@ -262,6 +602,7 @@ function ReportSection({ title, children }: { title: string; children?: any }) {
     </section>
   );
 }
+
 function Info({ k, v }: { k: string; v: any }) {
   return (
     <div className="detail-item">

@@ -50,7 +50,7 @@ public class EngagementController : BaseApiController
         await _service.CreateFeedback(req);
 
     [HttpGet("feedback")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = Roles.DoctorOrAdmin)]
     public async Task<ActionResult<PagedResult<FeedbackDto>>> Feedbacks(
         [FromQuery] byte? rating,
         [FromQuery] string? q,
@@ -60,6 +60,6 @@ public class EngagementController : BaseApiController
         await _service.Feedbacks(rating, q, from, to, paging);
 
     [HttpGet("feedback/summary")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = Roles.DoctorOrAdmin)]
     public async Task<IActionResult> FeedbackSummary() => await _service.FeedbackSummary();
 }

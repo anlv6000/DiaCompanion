@@ -30,7 +30,7 @@ import {
 } from "@/lib/enums";
 import { can } from "@/lib/permissions";
 import { ProtectedImage } from "@/components/ProtectedImage";
-import { fmtDate, num } from "@/lib/format";
+import { clinicToday, fmtDate, num } from "@/lib/format";
 import type {
   VisitDto,
   FundusImageDto,
@@ -54,7 +54,7 @@ export function DoctorVisitsPage() {
   const { user } = useAuth();
   const toast = useToast();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = clinicToday();
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState<string>("");
   const [selected, setSelected] = useState<VisitDto | null>(null);
@@ -133,7 +133,7 @@ export function DoctorVisitsPage() {
                   </td>
                   <td>
                     <Button kind="primary" onClick={() => setSelected(v)}>
-                      Mở lượt
+                      {v.status === 1 ? "Xem lượt" : "Mở lượt"}
                     </Button>
                   </td>
                 </tr>
@@ -239,6 +239,16 @@ function VisitWorkspace({
     <Modal title={`Lượt khám · ${visit.patientName}`} onClose={onClose} width="80%">
       <PatientSummary patient={patient.data} loading={patient.loading} />
 
+      {closed && (
+        <div className="state" style={{ marginBottom: 12 }}>
+          <b>Lượt khám đã đóng · chỉ đọc</b>
+          <div>
+            Kết luận, ảnh, AI, review và đơn thuốc của lượt này được giữ nguyên.
+            Bạn chỉ có thể xem hồ sơ hoặc xuất báo cáo.
+          </div>
+        </div>
+      )}
+
       <div className="visit-tabs">
         <button
           className={tab === "images" ? "active" : ""}
@@ -266,8 +276,8 @@ function VisitWorkspace({
             Đóng lượt
           </button>
         )}
-        <button onClick={() => navigate(`/patients/${visit.patientId}`)}>
-          Mở hồ sơ đầy đủ
+        <button onClick={() => navigate(`/patients/${visit.patientId}?tab=profile`)}>
+          Hồ sơ bệnh án
         </button>
       </div>
 
@@ -275,7 +285,7 @@ function VisitWorkspace({
         <VisitImages visit={visit} closed={closed} onChanged={onChanged} />
       )}
       {tab === "prescriptions" && (
-        <PrescriptionPanel visit={visit} />
+        <PrescriptionPanel visit={visit} closed={closed} />
       )}
       {tab === "monitoring" && <MonitoringPanel patientId={visit.patientId} />}
       {tab === "close" && !closed && (
@@ -472,7 +482,7 @@ function VisitImages({
   const runAi = async (imageId: number) => {
     try {
       await data.diagnoses.run(imageId);
-      toast.push("Đã chạy AI cho ảnh.", "success");
+      toast.push("Đã chạy đủ 3 model AI cho ảnh.", "success");
       images.reload();
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -547,7 +557,7 @@ function VisitImages({
                 </td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user) && (
+                    {!closed && can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>Chất lượng</Button>
                     )}
                     <Button
@@ -561,7 +571,7 @@ function VisitImages({
                     >
                       Xem
                     </Button>
-                    {can.voidImage(user) && (
+                    {!closed && can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
                         Void
                       </Button>
@@ -656,7 +666,13 @@ function QualityModal({
   );
 }
 
-function PrescriptionPanel({ visit }: { visit: VisitDto }) {
+function PrescriptionPanel({
+  visit,
+  closed,
+}: {
+  visit: VisitDto;
+  closed: boolean;
+}) {
   const data = useData();
   const toast = useToast();
   const prescriptions = useAsync(
@@ -718,6 +734,11 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
 
   return (
     <>
+      {closed ? (
+        <div className="state" style={{ marginBottom: 12 }}>
+          Lượt khám đã đóng. Đơn thuốc của lượt này chỉ được xem.
+        </div>
+      ) : (
       <Panel title="Kê đơn thuốc">
         <p className="muted">
           Nhập thuốc cho lượt khám này. Mỗi dòng gồm tên thuốc, liều dùng, số lần/ngày và số ngày.
@@ -790,17 +811,20 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
           </Button>
         </div>
       </Panel>
+      )}
 
-      <Panel title="Lịch sử đơn thuốc">
+      <Panel title="Đơn thuốc của lượt khám">
         <LoadState
           loading={prescriptions.loading}
           error={prescriptions.error}
-          empty={!prescriptions.data?.items.length}
-          emptyText="Chưa có đơn thuốc nào cho bệnh nhân này."
+          empty={!prescriptions.data?.items.some((p) => p.visitId === visit.id)}
+          emptyText="Lượt khám này chưa có đơn thuốc."
         >
           {prescriptions.data && (
             <DataTable headers={["Ngày kê", "Bác sĩ", "Thuốc", "Ghi chú"]}>
-              {prescriptions.data.items.map((p) => (
+              {prescriptions.data.items
+                .filter((p) => p.visitId === visit.id)
+                .map((p) => (
                 <tr key={p.id}>
                   <td>{fmtDate(p.issuedAt, true)}</td>
                   <td>{p.doctorName}</td>

@@ -46,7 +46,7 @@ import type {
 } from "@/types/api";
 
 const TABS = [
-  { key: "profile", label: "Hồ sơ" },
+  { key: "profile", label: "Hồ sơ bệnh án" },
   { key: "visits", label: "Lượt khám" },
   { key: "images", label: "Ảnh & AI" },
   { key: "prescriptions", label: "Đơn thuốc" },
@@ -473,6 +473,10 @@ function ImagesTab({ patientId }: { patientId: number }) {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const visits = useAsync(
+    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
+    [patientId],
+  );
   const list = useAsync(async () => {
     const images = await data.images.list({ patientId });
     return Promise.all(
@@ -486,6 +490,9 @@ function ImagesTab({ patientId }: { patientId: number }) {
       }),
     );
   }, [patientId]);
+  const visitStatus = new Map(
+    (visits.data?.items || []).map((v) => [v.id, v.status] as const),
+  );
   const [quality, setQuality] = useState<FundusImageDto | null>(null);
   const [voiding, setVoiding] = useState<FundusImageDto | null>(null);
   const [running, setRunning] = useState<number | null>(null);
@@ -494,7 +501,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
     setRunning(img.id);
     try {
       const d = await data.diagnoses.run(img.id);
-      toast.push("AI đã hoàn tất suy luận.", "success");
+      toast.push("Cả 3 model AI đã hoàn tất suy luận.", "success");
       navigate(`/fundus/${img.id}?diagnosis=${d.id}`);
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -551,7 +558,9 @@ function ImagesTab({ patientId }: { patientId: number }) {
               "Thao tác",
             ]}
           >
-            {list.data?.map((img) => (
+            {list.data?.map((img) => {
+              const closed = img.visitId != null && visitStatus.get(img.visitId) === 1;
+              return (
               <tr key={img.id}>
                 <td>
                   <ProtectedImage
@@ -622,13 +631,13 @@ function ImagesTab({ patientId }: { patientId: number }) {
                 <td className="mono">{fmtDate(img.createdAt, true)}</td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user) && (
+                    {!closed && can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>
                         Chất lượng
                       </Button>
                     )}
                     <Button
-                      disabled={img.qualityStatus !== 1 || running === img.id}
+                      disabled={(!img.latestDiagnosis && (closed || img.qualityStatus !== 1)) || running === img.id}
                       busy={running === img.id}
                       onClick={() =>
                         img.latestDiagnosis
@@ -638,10 +647,10 @@ function ImagesTab({ patientId }: { patientId: number }) {
                           : run(img)
                       }
                     >
-                      {img.latestDiagnosis ? "Xem" : "Chạy AI"}
+                      {img.latestDiagnosis ? "Xem" : closed ? "Chỉ đọc" : "Chạy 3 model AI"}
                     </Button>
                     {/* Void ảnh: Bác sĩ hoặc Admin. */}
-                    {can.voidImage(user) && (
+                    {!closed && can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
                         Void
                       </Button>
@@ -649,7 +658,8 @@ function ImagesTab({ patientId }: { patientId: number }) {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </DataTable>
         </LoadState>
       </Panel>
@@ -733,6 +743,13 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
     () => data.prescriptions.list({ patientId, page: 1, pageSize: 100 }),
     [patientId],
   );
+  const visits = useAsync(
+    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
+    [patientId],
+  );
+  const visitStatus = new Map(
+    (visits.data?.items || []).map((v) => [v.id, v.status] as const),
+  );
   const adherence = useAsync(
     () => data.prescriptions.adherence(patientId),
     [patientId],
@@ -794,8 +811,8 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
           {/* Tạo đơn thuốc mới gắn với LƯỢT KHÁM — thực hiện ở trang lượt khám
               của bác sĩ. Tại đây chỉ xem lại và SỬA đơn đã có (nút Sửa bên dưới). */}
           <p className="help">
-            Kê đơn mới được thực hiện trong lượt khám. Tại đây có thể xem và sửa
-            các đơn thuốc đã có.
+            Kê đơn mới được thực hiện trong lượt khám. Đơn thuộc lượt đã đóng chỉ được xem;
+            chỉ đơn của lượt đang mở mới có thể sửa hoặc thu hồi.
           </p>
         </Panel>
       </div>
@@ -817,7 +834,9 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
               "Thao tác",
             ]}
           >
-            {list.data?.items.map((p) => (
+            {list.data?.items.map((p) => {
+              const closed = p.visitId != null && visitStatus.get(p.visitId) === 1;
+              return (
               <tr key={p.id}>
                 <td className="mono">#{p.id}</td>
                 <td className="mono">{fmtDate(p.issuedAt, true)}</td>
@@ -834,11 +853,11 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
                 <td className="wrap-text">{p.note || "—"}</td>
                 <td>
                   <div className="actions">
-                    {can.prescribe(user) && (
+                    {!closed && can.prescribe(user) && (
                       <Button onClick={() => setEditor(p)}>Sửa</Button>
                     )}
                     {/* Void đơn thuốc: CHỈ Bác sĩ. */}
-                    {can.voidPrescription(user) && (
+                    {!closed && can.voidPrescription(user) && (
                       <Button kind="danger" onClick={() => setVoiding(p)}>
                         Void
                       </Button>
@@ -846,7 +865,8 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </DataTable>
         </LoadState>
       </Panel>

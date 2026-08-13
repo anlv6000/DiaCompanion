@@ -11,6 +11,14 @@ public enum VisitStatus : byte { InProgress = 0, Completed = 1 }
 public enum ReferralType : byte { None = 0, FollowUp = 1, Ophthalmology = 2, Urgent = 3 }
 public enum ReviewAction : byte { Approve = 0, Override = 1 }
 
+/// <summary>Loại mô hình AI. Mỗi loại có tối đa một phiên bản đang kích hoạt.</summary>
+public enum ModelType : byte
+{
+    Dr = 1,
+    Lesion = 2,
+    Fractal = 3
+}
+
 /// <summary>Lý do một ca được chuyển cho bác sĩ (Gap 2).</summary>
 public enum DeferReason : byte
 {
@@ -20,7 +28,7 @@ public enum DeferReason : byte
     MissingBranch = 4
 }
 
-public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Cancelled = 3, Skipped = 4 }
+public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Skipped = 3, Cancelled = 4 }
 public enum MetricType : byte { Glucose = 1, HbA1c = 2, SystolicBp = 3, DiastolicBp = 4 }
 public enum MetricContext : byte { BeforeMeal = 1, AfterMeal = 2}
 public enum SymptomSeverity : byte { Mild = 1, Moderate = 2, Severe = 3 }
