@@ -19,6 +19,7 @@ import { PatientDetailPage } from "@/pages/PatientDetailPage";
 import { FundusPage } from "@/pages/FundusPage";
 import { RecheckPage } from "@/pages/RecheckPage";
 import { DoctorVisitsPage } from "@/pages/DoctorVisitsPage";
+import { ProfilePage } from "@/pages/ProfilePage";
 import {
   ReceptionNewVisitPage,
   ReceptionVisitsPage,
@@ -228,6 +229,15 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
+      <Route
+        path="/profile"
+        element={
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
+            <ProfilePage />
+          </RequireAuth>
+        }
+      />
+
       <Route
         path="/progression"
         element={

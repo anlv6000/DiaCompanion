@@ -1,5 +1,7 @@
 export type Role = "Admin" | "Doctor" | "Patient" | "Receptionist";
 export type StaffRole = Exclude<Role, "Patient">;
+export type DoctorOrReceptionist = "Doctor" | "Receptionist";
+
 export type ModelType = 1 | 2 | 3;
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
@@ -66,6 +68,23 @@ export interface ChangePasswordRequest {
 }
 export interface ChangePasswordResponse extends LoginResponse {
   message: string;
+}
+export interface StaffProfileDto {
+  id: number;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  role: DoctorOrReceptionist;
+  licenseNo?: string | null;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  rowVersion: string;
+}
+export interface UpdateStaffProfileRequest {
+  fullName: string;
+  phone: string;
+  licenseNo?: string | null;
+  rowVersion: string;
 }
 export interface StaffUserDto {
   id: number;
