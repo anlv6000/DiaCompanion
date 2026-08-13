@@ -199,13 +199,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 }
             }
         };
-    }); 
+    });
 
 builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
 
-    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081" , "app://.")
+    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081", "http://192.168.1.5:8081", "app://.")
     .AllowAnyHeader().AllowAnyMethod()));
 
 
