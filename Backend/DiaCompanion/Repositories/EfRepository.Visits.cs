@@ -57,19 +57,32 @@ public sealed partial class EfRepository
                         && d.FundusImage.QualityStatus == QualityStatus.Gradable);
 
         var totalAi = await diagnoses.CountAsync(ct);
-        var reviewed = await diagnoses.CountAsync(d => _db.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id), ct);
+        var reviewed = await diagnoses.CountAsync(d => _db.DiagnosisReviews.Any(r => r.AiDiagnosisId == d.Id && !r.IsVoided), ct);
 
         var worst = await _db.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null
+            .Where(r => !r.IsVoided && r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null
                         && r.AiDiagnosis.FundusImage.VisitId == visitId)
             .Select(r => (byte?)(byte)r.FinalGrade)
             .MaxAsync(ct);
         return new VisitCloseData(pending, withoutAi, totalAi, reviewed, worst);
     }
 
-    public async Task<bool> VisitHasClinicalDataAsync(int visitId, CancellationToken ct = default) =>
-        await _db.FundusImages.AsNoTracking().AnyAsync(i => i.VisitId == visitId, ct)
-        || await _db.Prescriptions.AsNoTracking().AnyAsync(p => p.VisitId == visitId, ct);
+    public async Task<bool> VisitHasClinicalDataAsync(int visitId, CancellationToken ct = default)
+    {
+        // "Có dữ liệu" nghĩa là lượt khám đã phát sinh bất kỳ dữ liệu nghiệp vụ nào.
+        // Worker không được tự đóng một lượt đã có kết luận/referral/recheck/ảnh/thuốc/feedback.
+        var hasVisitFields = await _db.Visits.AsNoTracking().AnyAsync(v =>
+            v.Id == visitId &&
+            (v.Conclusion != null && v.Conclusion != ""
+             || v.Referral != null
+             || v.RecheckMonths != null), ct);
+
+        if (hasVisitFields) return true;
+
+        return await _db.FundusImages.AsNoTracking().AnyAsync(i => i.VisitId == visitId && !i.IsVoided, ct)
+            || await _db.Prescriptions.AsNoTracking().AnyAsync(p => p.VisitId == visitId && !p.IsVoided, ct)
+            || await _db.Feedbacks.AsNoTracking().AnyAsync(f => f.VisitId == visitId, ct);
+    }
 
     public async Task<VisitPage> GetCompletedVisitsForPatientAsync(int patientId, PageQuery page, CancellationToken ct = default)
     {
@@ -102,6 +115,6 @@ public sealed partial class EfRepository
         CreatedAt = v.CreatedAt,
         RowVersion = Convert.ToBase64String(v.RowVer),
         ImageCount = v.Images.Count(),
-        PendingReviewCount = v.Images.SelectMany(i => i.Diagnoses).Count(d => !d.Reviews.Any())
+        PendingReviewCount = v.Images.SelectMany(i => i.Diagnoses).Count(d => !d.Reviews.Any(r => !r.IsVoided))
     };
 }

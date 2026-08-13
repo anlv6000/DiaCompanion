@@ -289,7 +289,7 @@ export function AppRoutes() {
       <Route
         path="/feedback"
         element={
-          <RequireAuth roles={["Admin"]}>
+          <RequireAuth roles={["Doctor", "Admin"]}>
             <FeedbackPage />
           </RequireAuth>
         }

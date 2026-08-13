@@ -33,7 +33,7 @@ public sealed partial class EfRepository
         CancellationToken ct = default)
     {
         var rows = await _db.Visits.AsNoTracking()
-            .Where(v => v.Status == VisitStatus.Completed
+            .Where(v => !v.IsVoided && v.Status == VisitStatus.Completed
                         && v.ClosedAt != null
                         && v.RecheckMonths != null
                         && v.MedicalRecord.Patient != null
@@ -61,7 +61,11 @@ public sealed partial class EfRepository
 
         var patientIds = latestVisits.Select(x => x.PatientId).ToArray();
         var latestDates = await _db.Visits.AsNoTracking()
-            .Where(v => patientIds.Contains(v.MedicalRecord.PatientId))
+            .Where(v => !v.IsVoided
+                        && patientIds.Contains(v.MedicalRecord.PatientId)
+                        && (v.RecheckMonths != null
+                            || v.Images.Any(i => !i.IsVoided)
+                            || _db.Prescriptions.Any(p => p.VisitId == v.Id && !p.IsVoided)))
             .GroupBy(v => v.MedicalRecord.PatientId)
             .Select(g => new { PatientId = g.Key, LatestVisitDate = g.Max(v => v.VisitDate) })
             .ToDictionaryAsync(x => x.PatientId, x => x.LatestVisitDate, ct);

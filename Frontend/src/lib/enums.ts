@@ -3,6 +3,20 @@ export const roles = [
   { value: "Doctor", label: "Bác sĩ", key: "Doctor" },
   { value: "Receptionist", label: "Lễ tân", key: "Receptionist" },
 ] as const;
+export const modelTypes = [
+  { value: 1, label: "DR grading", shortLabel: "DR" },
+  { value: 2, label: "Lesion segmentation", shortLabel: "Lesion" },
+  { value: 3, label: "Fractal / vessel", shortLabel: "Fractal" },
+] as const;
+
+export function modelTypeLabel(value: number | null | undefined) {
+  return modelTypes.find((x) => x.value === value)?.label ?? `Model type ${value ?? "—"}`;
+}
+
+export function modelTypeShortLabel(value: number | null | undefined) {
+  return modelTypes.find((x) => x.value === value)?.shortLabel ?? `Type ${value ?? "—"}`;
+}
+
 export const grades = ["Bình thường", "Nhẹ", "Trung bình", "Nặng", "PDR"];
 export const gradeCodes = ["Normal", "Mild", "Moderate", "Severe", "PDR"];
 export const eyes = ["OD", "OS"];

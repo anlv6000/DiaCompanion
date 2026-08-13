@@ -1,3 +1,17 @@
+const CLINIC_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+/** YYYY-MM-DD theo ngày của phòng khám (+07), không phụ thuộc timezone máy đang mở web. */
+export const clinicToday = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CLINIC_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+};
+
 export const fmtDate = (value?: string | null, withTime = false) => {
   if (!value) return "—";
   const d = new Date(value);
@@ -6,8 +20,8 @@ export const fmtDate = (value?: string | null, withTime = false) => {
     : new Intl.DateTimeFormat(
         "vi-VN",
         withTime
-          ? { dateStyle: "short", timeStyle: "short" }
-          : { dateStyle: "short" },
+          ? { dateStyle: "short", timeStyle: "short", timeZone: CLINIC_TIME_ZONE }
+          : { dateStyle: "short", timeZone: CLINIC_TIME_ZONE },
       ).format(d);
 };
 export const fmtTime = (value?: string | null) =>
@@ -15,6 +29,7 @@ export const fmtTime = (value?: string | null) =>
     ? new Intl.DateTimeFormat("vi-VN", {
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: CLINIC_TIME_ZONE,
       }).format(new Date(value))
     : "—";
 export const pct = (value?: number | null) =>

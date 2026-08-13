@@ -76,15 +76,29 @@ export function AuthProvider({ children }) {
     await clearSession();
   }, [clearSession]);
 
-  const changePassword = useCallback(async (currentPassword, newPassword) => {
-    await authApi.changePassword(currentPassword, newPassword);
+  const markPasswordChanged = useCallback((response) => {
+    if (response?.token) tokenStore.set(response.token);
     setUser((prev) => {
       if (!prev) return prev;
-      const updated = { ...prev, mustChangePassword: false };
+      const updated = {
+        ...prev,
+        ...(response || {}),
+        mustChangePassword: false,
+      };
       AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(updated)).catch(() => {});
       return updated;
     });
   }, []);
+
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    const response = await authApi.changePassword(currentPassword, newPassword);
+    markPasswordChanged(response);
+  }, [markPasswordChanged]);
+
+  const changeFirstPassword = useCallback(async (newPassword) => {
+    const response = await authApi.changeFirstPassword(newPassword);
+    markPasswordChanged(response);
+  }, [markPasswordChanged]);
 
   return (
     <AuthContext.Provider
@@ -98,6 +112,7 @@ export function AuthProvider({ children }) {
         loginOtp,
         logout,
         changePassword,
+        changeFirstPassword,
       }}
     >
       {children}

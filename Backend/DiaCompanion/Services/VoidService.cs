@@ -202,6 +202,13 @@ public class VoidService : IVoidService
                 "Lượt khám này đã được thu hồi trước đó.");
         }
 
+        if (visit.Status == VisitStatus.Completed)
+        {
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã được đóng. Không thể thu hồi hoặc thay đổi dữ liệu của lượt khám này.");
+        }
+
         var currentUserId = _me.RequireId();
         var currentRoles = string.Join(",", _me.Roles);
 
@@ -346,6 +353,19 @@ public class VoidService : IVoidService
                 "Ảnh đáy mắt này đã được thu hồi trước đó.");
         }
 
+        if (image.VisitId is int imageVisitId)
+        {
+            var imageVisit = await _repository.GetVisitForVoidAsync(imageVisitId)
+                ?? throw AppException.Conflict(
+                    Msg.LoadFailed,
+                    "Không tìm thấy lượt khám liên quan đến ảnh.");
+
+            if (imageVisit.Status == VisitStatus.Completed)
+                throw AppException.Conflict(
+                    Msg.ApptImmutable,
+                    "Lượt khám đã đóng. Ảnh của lượt khám chỉ được xem và không thể thu hồi.");
+        }
+
         /*
          * Doctor chỉ được void ảnh thuộc lượt khám
          * mà chính Doctor đó được phân công.
@@ -482,6 +502,19 @@ public class VoidService : IVoidService
             throw AppException.Conflict(
                 "Ảnh đã được thu hồi",
                 "Không thể thao tác trên kết quả AI của ảnh đã bị thu hồi.");
+        }
+
+        if (image.VisitId is int diagnosisVisitId)
+        {
+            var diagnosisVisit = await _repository.GetVisitForVoidAsync(diagnosisVisitId)
+                ?? throw AppException.Conflict(
+                    Msg.LoadFailed,
+                    "Không tìm thấy lượt khám liên quan đến kết quả AI.");
+
+            if (diagnosisVisit.Status == VisitStatus.Completed)
+                throw AppException.Conflict(
+                    Msg.ApptImmutable,
+                    "Lượt khám đã đóng. Kết quả AI chỉ được xem và không thể thu hồi.");
         }
 
         /*
@@ -667,6 +700,13 @@ public class VoidService : IVoidService
                 "Không thể thay đổi bản duyệt của lượt khám đã bị thu hồi.");
         }
 
+        if (visit.Status == VisitStatus.Completed)
+        {
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã đóng. Bản duyệt chẩn đoán chỉ được xem và không thể thu hồi.");
+        }
+
         // E4 - Doctor phải là bác sĩ được phân công cho Visit
         if (visit.DoctorId != currentUserId)
         {
@@ -777,6 +817,13 @@ public class VoidService : IVoidService
             throw AppException.Conflict(
                 Msg.InvalidData,
                 "Không thể thu hồi riêng đơn thuốc của lượt khám đã được thu hồi.");
+        }
+
+        if (visit.Status == VisitStatus.Completed)
+        {
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã đóng. Đơn thuốc của lượt khám chỉ được xem và không thể thu hồi.");
         }
 
         // E4 - Doctor phải là bác sĩ được phân công

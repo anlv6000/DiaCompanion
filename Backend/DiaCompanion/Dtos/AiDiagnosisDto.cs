@@ -1,14 +1,22 @@
-using System.ComponentModel.DataAnnotations;
-using DiaCompanion.Api.Common;
-
 namespace DiaCompanion.Api.Dtos;
 
 public class AiDiagnosisDto
 {
     public int Id { get; set; }
     public int FundusImageId { get; set; }
+    public int? VisitId { get; set; }
+    public byte? VisitStatus { get; set; }
     public byte Eye { get; set; }
+
+    // Giữ field cũ để FE hiện tại không vỡ; giá trị là DR model.
     public string ModelVersion { get; set; } = "";
+
+    public int DrModelVersionId { get; set; }
+    public string DrModelVersion { get; set; } = "";
+    public int? LesionModelVersionId { get; set; }
+    public string? LesionModelVersion { get; set; }
+    public int? FractalModelVersionId { get; set; }
+    public string? FractalModelVersion { get; set; }
 
     public byte DrGrade { get; set; }
     public string DrGradeLabel { get; set; } = "";
@@ -20,24 +28,18 @@ public class AiDiagnosisDto
     public int? CountEX { get; set; }
     public int? CountSE { get; set; }
 
-    // Gap 2
     public decimal? Disagreement { get; set; }
     public bool IsDeferred { get; set; }
     public byte? DeferReason { get; set; }
     public string? DeferReasonLabel { get; set; }
 
-    // Gap 3
     public decimal? FractalDimension { get; set; }
     public string? FractalNote { get; set; }
     public bool HasLesionMask { get; set; }
     public bool HasFractalImage { get; set; }
 
     public DateTime CreatedAt { get; set; }
-
-    /// <summary>NT-3: false cho tới khi bác sĩ duyệt hoặc ghi đè.</summary>
     public bool IsConfirmed { get; set; }
     public ReviewDto? Review { get; set; }
-
-    /// <summary>Token chống tương tranh; client phải gửi lại khi duyệt (QT-9).</summary>
     public string? RowVersion { get; set; }
 }

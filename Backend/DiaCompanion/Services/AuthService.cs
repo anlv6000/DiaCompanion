@@ -14,6 +14,7 @@ public class AuthService : BaseService, IAuthService
     private readonly IOtpService _otp;
     private readonly IAuditService _audit;
     private readonly ICurrentUser _me;
+    private readonly IClinicClock _clock;
 
     public AuthService(
         IRepository repository,
@@ -21,7 +22,8 @@ public class AuthService : BaseService, IAuthService
         IJwtTokenService jwt,
         IOtpService otp,
         IAuditService audit,
-        ICurrentUser me)
+        ICurrentUser me,
+        IClinicClock clock)
     {
         _repository = repository;
         _hasher = hasher;
@@ -29,6 +31,7 @@ public class AuthService : BaseService, IAuthService
         _otp = otp;
         _audit = audit;
         _me = me;
+        _clock = clock;
     }
 
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req)
@@ -127,7 +130,7 @@ public class AuthService : BaseService, IAuthService
         var user = auth.User;
         user.PasswordHash = _hasher.Hash(req.NewPassword);
         user.MustChangePassword = false;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = _clock.UtcNow;
 
         await _audit.LogAsync(AuditAction.PasswordReset, "User", user.Id, detail: "Đặt lại mật khẩu qua OTP");
         await _repository.CommitAsync();
@@ -155,7 +158,7 @@ public class AuthService : BaseService, IAuthService
 
         user.PasswordHash = _hasher.Hash(req.NewPassword);
         user.MustChangePassword = false;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = _clock.UtcNow;
 
         await _audit.LogAsync(
             AuditAction.PasswordChange,
@@ -164,9 +167,24 @@ public class AuthService : BaseService, IAuthService
             detail: wasTemporaryPassword ? "Đổi mật khẩu tạm lần đầu" : "Đổi mật khẩu chủ động");
         await _repository.CommitAsync();
 
+        // Token đăng nhập cũ vẫn chứa claim mustChangePassword=true. Nếu tiếp tục
+        // dùng token đó, MustChangePasswordMiddleware sẽ chặn các API khác dù DB
+        // đã đổi mật khẩu xong. Cấp token mới ngay để web/mobile hoàn tất first-login.
+        var token = _jwt.CreateAccessToken(user, auth.Roles, auth.PatientId, out var expiresAt);
+        var refreshToken = _jwt.CreateRefreshToken(user.Id, out var refreshExpiresAt);
+
         return Ok(new
         {
             message = "Đổi mật khẩu thành công.",
+            token,
+            expiresAt = _clock.ToLocal(expiresAt)!.Value,
+            refreshToken,
+            refreshTokenExpiresAt = _clock.ToLocal(refreshExpiresAt)!.Value,
+            userId = user.Id,
+            fullName = user.FullName,
+            role = Roles.Primary(auth.Roles),
+            roles = auth.Roles.ToList(),
+            patientId = auth.PatientId,
             mustChangePassword = false,
             defaultRoute = Roles.DefaultRoute(auth.Roles)
         });
@@ -194,7 +212,7 @@ public class AuthService : BaseService, IAuthService
 
         if (updateLastLogin)
         {
-            auth.User.LastLoginAt = DateTime.UtcNow;
+            auth.User.LastLoginAt = _clock.UtcNow;
             await _audit.LogAsync(AuditAction.Login, "User", auth.User.Id);
             await _repository.CommitAsync();
         }
@@ -202,7 +220,7 @@ public class AuthService : BaseService, IAuthService
         return Ok(ToResponse(auth, token, expiresAt, refreshToken, refreshExpiresAt));
     }
 
-    private static LoginResponse ToResponse(
+    private LoginResponse ToResponse(
         AuthUserData auth,
         string token,
         DateTime expiresAt,
@@ -210,9 +228,9 @@ public class AuthService : BaseService, IAuthService
         DateTime refreshExpiresAt) => new()
     {
         Token = token,
-        ExpiresAt = expiresAt,
+        ExpiresAt = expiresAt == default ? default : _clock.ToLocal(expiresAt)!.Value,
         RefreshToken = refreshToken,
-        RefreshTokenExpiresAt = refreshExpiresAt,
+        RefreshTokenExpiresAt = refreshExpiresAt == default ? default : _clock.ToLocal(refreshExpiresAt)!.Value,
         UserId = auth.User.Id,
         FullName = auth.User.FullName,
         Role = Roles.Primary(auth.Roles),

@@ -6,6 +6,13 @@ namespace DiaCompanion.Api.Entities;
 public class ModelVersion : IHasRowVersion
 {
     public int Id { get; set; }
+
+    /// <summary>
+    /// Một lần chạy AI cần đúng 3 loại model active: DR, Lesion và Fractal.
+    /// Mỗi loại được quản lý version/activate độc lập.
+    /// </summary>
+    public ModelType ModelType { get; set; }
+
     [Required, MaxLength(100)] public string Name { get; set; } = "";
     [Required, MaxLength(400)] public string FilePath { get; set; } = "";
     /// <summary>QT-20: verify lúc nạp. Trả lời được "làm sao biết file model không bị tráo?".</summary>

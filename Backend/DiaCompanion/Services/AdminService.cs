@@ -38,7 +38,7 @@ public class AdminService : BaseService, IAdminService
             toExclusiveUtc,
             modelVersionId,
             doctorId,
-            countAllPatients: systemScope && from is null && to is null);
+            countAllPatients: systemScope && from is null && to is null && modelVersionId is null);
 
         return Ok(new DashboardDto
         {
@@ -70,7 +70,7 @@ public class AdminService : BaseService, IAdminService
             Description = c.Description,
             MinValue = c.MinValue,
             MaxValue = c.MaxValue,
-            UpdatedAt = c.UpdatedAt,
+            UpdatedAt = _clock.ToLocal(c.UpdatedAt),
             RowVersion = c.ToRowVersion()
         }).ToList());
     }
@@ -97,7 +97,7 @@ public class AdminService : BaseService, IAdminService
         var oldValue = config.Value;
         config.Value = req.Value;
         config.UpdatedBy = _me.RequireId();
-        config.UpdatedAt = DateTime.UtcNow;
+        config.UpdatedAt = _clock.UtcNow;
         await _audit.LogAsync(AuditAction.ConfigChange, nameof(SystemConfig), null,
             new { key, value = oldValue }, new { key, value = req.Value });
 
@@ -152,6 +152,9 @@ public class AdminService : BaseService, IAdminService
 
     public async Task<ActionResult<ModelVersionDto>> RegisterModel(RegisterModelRequest req)
     {
+        if (!Enum.IsDefined(typeof(ModelType), req.ModelType))
+            throw AppException.BadRequest(Msg.InvalidData, "ModelType phải là 1=Dr, 2=Lesion hoặc 3=Fractal.");
+
         var sha256 = req.Sha256.Trim().ToLowerInvariant();
         if (sha256.Length != 64 || sha256.Any(c => !Uri.IsHexDigit(c)))
             throw AppException.BadRequest(Msg.InvalidData, "SHA-256 phải gồm đúng 64 ký tự hệ 16.");
@@ -168,6 +171,7 @@ public class AdminService : BaseService, IAdminService
 
         var model = new ModelVersion
         {
+            ModelType = req.ModelType,
             Name = name,
             FilePath = req.FilePath.Trim(),
             Sha256 = sha256,
@@ -182,7 +186,7 @@ public class AdminService : BaseService, IAdminService
         _repository.Add(model);
         await _repository.CommitAsync();
         await _audit.LogAsync(AuditAction.ModelRegister, nameof(ModelVersion), model.Id,
-            null, new { model.Name, model.Sha256, model.Qwk, model.Dice, model.IoU });
+            null, new { model.ModelType, model.Name, model.Sha256, model.Qwk, model.Dice, model.IoU });
         await _repository.CommitAsync();
         return Ok(await GetModelDtoAsync(model.Id));
     }
@@ -195,14 +199,31 @@ public class AdminService : BaseService, IAdminService
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy phiên bản mô hình.");
             _repository.ApplyOriginalRowVersion(model, req.RowVersion);
 
-            if (model.Qwk is null && model.Dice is null && model.IoU is null)
-                throw AppException.BadRequest(Msg.RequiredFields,
-                    "Phiên bản chưa có chỉ số đánh giá nên không thể kích hoạt.");
-            if (model.IsActive)
-                return Ok(new { message = "Phiên bản này đang được sử dụng.", rowVersion = model.ToRowVersion() });
+            ValidateActivationMetrics(model);
 
-            var current = await _repository.GetOtherActiveModelsForUpdateAsync(model.Id);
-            foreach (var activeModel in current) activeModel.IsActive = false;
+            if (model.IsActive)
+                return Ok(new
+                {
+                    message = "Phiên bản này đang được sử dụng.",
+                    rowVersion = model.ToRowVersion()
+                });
+
+            var current = await _repository.GetOtherActiveModelsForUpdateAsync(
+                model.Id,
+                model.ModelType);
+
+            // Tắt model cũ cùng loại và SAVE trước. Việc tách hai SaveChanges vẫn
+            // nằm trong cùng transaction, nên vừa tránh va unique filtered index
+            // UX_ModelVersions_ActivePerType vừa đảm bảo lỗi ở bước sau sẽ rollback.
+            foreach (var activeModel in current)
+                activeModel.IsActive = false;
+
+            if (!await _repository.TryCommitAsync())
+                throw AppException.Conflict(
+                    Msg.StaleVersion,
+                    "Model đang được sử dụng đã thay đổi. Vui lòng tải lại trước khi kích hoạt.");
+
+            // Sau khi slot active của ModelType đã được giải phóng mới bật version mới.
             model.IsActive = true;
             model.WasActivated = true;
             model.ActivatedAt = _clock.UtcNow;
@@ -211,19 +232,53 @@ public class AdminService : BaseService, IAdminService
                 AuditAction.ModelActivate,
                 nameof(ModelVersion),
                 model.Id,
-                new { active = current.FirstOrDefault()?.Name },
-                new { active = model.Name });
+                new
+                {
+                    modelType = model.ModelType.ToString(),
+                    active = current.FirstOrDefault()?.Name
+                },
+                new
+                {
+                    modelType = model.ModelType.ToString(),
+                    active = model.Name
+                });
 
             if (!await _repository.TryCommitAsync())
-                throw AppException.Conflict(Msg.StaleVersion,
+                throw AppException.Conflict(
+                    Msg.StaleVersion,
                     "Trạng thái phiên bản mô hình đã thay đổi. Vui lòng tải lại trước khi kích hoạt.");
 
             return Ok(new
             {
-                message = $"Đã kích hoạt {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản mới; kết quả đã lưu giữ nguyên phiên bản cũ.",
+                message = current.Count > 0
+                    ? $"Đã thay {ModelTypeLabel(model.ModelType)} từ {current[0].Name} sang {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản mới; kết quả đã lưu giữ nguyên phiên bản cũ."
+                    : $"Đã kích hoạt {ModelTypeLabel(model.ModelType)}: {model.Name}. Các ca chạy sau thời điểm này sẽ dùng phiên bản này.",
                 rowVersion = model.ToRowVersion()
             });
         });
+    }
+
+
+
+    private static void ValidateActivationMetrics(ModelVersion model)
+    {
+        switch (model.ModelType)
+        {
+            case ModelType.Dr when model.Qwk is null:
+                throw AppException.BadRequest(
+                    Msg.RequiredFields,
+                    "Model DR chưa có QWK nên không thể kích hoạt.");
+
+            case ModelType.Lesion when model.Dice is null && model.IoU is null:
+                throw AppException.BadRequest(
+                    Msg.RequiredFields,
+                    "Model Lesion cần có Dice hoặc IoU trước khi kích hoạt.");
+
+            case ModelType.Fractal when model.Dice is null && model.IoU is null:
+                throw AppException.BadRequest(
+                    Msg.RequiredFields,
+                    "Model Fractal cần có Dice hoặc IoU trước khi kích hoạt.");
+        }
     }
 
     public async Task<IActionResult> DeleteModel(int id, string rowVersion)
@@ -257,13 +312,16 @@ public class AdminService : BaseService, IAdminService
     {
         size = size is < 1 or > 100 ? 25 : size;
         var decoded = Cursor.Decode(cursor);
+        // Query string from/to được hiểu là giờ clinic; DB lưu UTC.
+        var fromUtc = from.HasValue ? _clock.ToUtc(DateTime.SpecifyKind(from.Value, DateTimeKind.Unspecified)) : (DateTime?)null;
+        var toUtc = to.HasValue ? _clock.ToUtc(DateTime.SpecifyKind(to.Value, DateTimeKind.Unspecified)) : (DateTime?)null;
         var page = await _repository.GetAuditPageAsync(
             action,
             entityType,
             entityId,
             userId,
-            from,
-            to,
+            fromUtc,
+            toUtc,
             decoded?.At,
             decoded?.Id,
             size);
@@ -279,7 +337,7 @@ public class AdminService : BaseService, IAdminService
             NewValue = a.NewValue,
             Detail = a.Detail,
             IpAddress = a.IpAddress,
-            CreatedAt = a.CreatedAt
+            CreatedAt = _clock.ToLocal(a.CreatedAt)!.Value
         }).ToList();
         var last = page.Items.LastOrDefault();
         return Ok(new KeysetResult<AuditLogDto>
@@ -299,9 +357,19 @@ public class AdminService : BaseService, IAdminService
         return MapModel(model, diagnosisCount);
     }
 
-    private static ModelVersionDto MapModel(ModelVersion model, int diagnosisCount) => new()
+    private static string ModelTypeLabel(ModelType type) => type switch
+    {
+        ModelType.Dr => "DR grading",
+        ModelType.Lesion => "Lesion segmentation",
+        ModelType.Fractal => "Fractal/vessel",
+        _ => type.ToString()
+    };
+
+    private ModelVersionDto MapModel(ModelVersion model, int diagnosisCount) => new()
     {
         Id = model.Id,
+        ModelType = (byte)model.ModelType,
+        ModelTypeLabel = ModelTypeLabel(model.ModelType),
         Name = model.Name,
         FilePath = model.FilePath,
         Sha256 = model.Sha256,
@@ -311,7 +379,7 @@ public class AdminService : BaseService, IAdminService
         Note = model.Note,
         IsActive = model.IsActive,
         WasActivated = model.WasActivated,
-        ActivatedAt = model.ActivatedAt,
+        ActivatedAt = _clock.ToLocal(model.ActivatedAt),
         DiagnosisCount = diagnosisCount,
         RowVersion = model.ToRowVersion()
     };

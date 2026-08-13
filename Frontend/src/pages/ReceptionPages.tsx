@@ -14,7 +14,7 @@ import {
   ConfirmDialog,
   Icon,
 } from "@/components/ui";
-import { fmtDate } from "@/lib/format";
+import { clinicToday, fmtDate } from "@/lib/format";
 import { visitStatuses, label } from "@/lib/enums";
 import type {
   PatientListItemDto,
@@ -47,7 +47,7 @@ export function ReceptionNewVisitPage() {
   );
 
   // Bước 2: chọn bác sĩ đang trực hôm nay.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = clinicToday();
   const onDuty = useAsync(() => data.reception.onDuty(today), []);
   const [doctorId, setDoctorId] = useState<number | null>(null);
 
@@ -419,7 +419,7 @@ export function ReceptionVisitsPage() {
   );
 
   const setToday = () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = clinicToday();
     setFrom(today);
     setTo(today);
     setPage(1);

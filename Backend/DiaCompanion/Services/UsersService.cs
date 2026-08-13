@@ -14,17 +14,20 @@ public class UsersService : BaseService, IUsersService
     private readonly ICurrentUser _me;
     private readonly IAuditService _audit;
     private readonly IPasswordHasher _hasher;
+    private readonly IClinicClock _clock;
 
     public UsersService(
         IRepository repository,
         ICurrentUser me,
         IAuditService audit,
-        IPasswordHasher hasher)
+        IPasswordHasher hasher,
+        IClinicClock clock)
     {
         _repository = repository;
         _me = me;
         _audit = audit;
         _hasher = hasher;
+        _clock = clock;
     }
 
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
@@ -143,7 +146,7 @@ public class UsersService : BaseService, IUsersService
 
         user.FullName = req.FullName.Trim();
         user.LicenseNo = requestedRole == Roles.Doctor ? req.LicenseNo?.Trim() : null;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = _clock.UtcNow;
 
         // Chỉ sync khi thực sự đổi role, tránh cập nhật thông tin làm mở khóa staff ngoài ý muốn.
         if (roleChanged)
@@ -202,7 +205,7 @@ public class UsersService : BaseService, IUsersService
 
         // Chỉ cập nhật timestamp để RowVersion của User đổi cho concurrency.
         // Không dùng và không sửa Users.IsActive.
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = _clock.UtcNow;
 
         await _audit.LogAsync(
             AuditAction.UserLock,
@@ -233,7 +236,7 @@ public class UsersService : BaseService, IUsersService
         var temp = _hasher.GenerateTempPassword() + "Aa";
         user.PasswordHash = _hasher.Hash(temp);
         user.MustChangePassword = true;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.UpdatedAt = _clock.UtcNow;
 
         await _audit.LogAsync(
             AuditAction.PasswordReset,
@@ -323,7 +326,7 @@ public class UsersService : BaseService, IUsersService
             .ThenByDescending(r => r.AssignedAt)
             .FirstOrDefault();
 
-    private static StaffUserDto MapStaff(StaffUserData staff)
+    private StaffUserDto MapStaff(StaffUserData staff)
     {
         var user = staff.User;
         var staffRole = SelectStaffRole(staff.Roles);
@@ -341,8 +344,8 @@ public class UsersService : BaseService, IUsersService
             // Trạng thái hiển thị lấy từ UserRoles.IsActive, không phải Users.IsActive.
             IsActive = staffRole?.IsActive ?? false,
 
-            LastLoginAt = user.LastLoginAt,
-            CreatedAt = user.CreatedAt,
+            LastLoginAt = _clock.ToLocal(user.LastLoginAt),
+            CreatedAt = _clock.ToLocal(user.CreatedAt)!.Value,
             RowVersion = user.ToRowVersion()
         };
     }

@@ -17,6 +17,8 @@ public sealed partial class EfRepository
         await _db.DiagnosisReviews.AsNoTracking()
             .Include(r => r.Doctor)
             .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.ModelVersion)
+            .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.LesionModelVersion)
+            .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.FractalModelVersion)
             .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.FundusImage)!.ThenInclude(f => f.Patient)
             .Where(r => r.AiDiagnosis!.FundusImage!.VisitId == visitId)
             .OrderBy(r => r.AiDiagnosis!.FundusImage!.Eye)
@@ -40,13 +42,17 @@ public sealed partial class EfRepository
         var query = _db.DiagnosisReviews.AsNoTracking()
             .Include(r => r.Doctor)
             .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.ModelVersion)
+            .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.LesionModelVersion)
+            .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.FractalModelVersion)
             .Include(r => r.AiDiagnosis)!.ThenInclude(d => d.FundusImage)!.ThenInclude(f => f.Patient)
             .AsQueryable();
 
         if (overridesOnly)
             query = query.Where(r => r.Action == ReviewAction.Override);
         if (modelVersionId is int mv)
-            query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv);
+            query = query.Where(r => r.AiDiagnosis!.ModelVersionId == mv
+                || r.AiDiagnosis.LesionModelVersionId == mv
+                || r.AiDiagnosis.FractalModelVersionId == mv);
         if (fromUtc is DateTime from)
             query = query.Where(r => r.CreatedAt >= from);
         if (toExclusiveUtc is DateTime to)

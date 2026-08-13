@@ -61,9 +61,12 @@ public class ExportService : BaseService, IExportService
             r.AiDiagnosis.CountHE,
             r.AiDiagnosis.CountEX,
             r.AiDiagnosis.CountSE,
-            ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
+            ModelVersion = ModelSetLabel(r.AiDiagnosis),
             DoctorName = r.Doctor!.FullName,
-            r.CreatedAt
+            r.CreatedAt,
+            urlImageLesionAfterMedical = r.AiDiagnosis.LesionMaskPath,
+            urlImageVesselAfterMedical = r.AiDiagnosis.VesselMaskPath,
+            urlImgBeforeMEDICAL = r.AiDiagnosis.FundusImage.FilePath
         }).ToList();
 
         var prescriptionRows = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
@@ -95,23 +98,29 @@ public class ExportService : BaseService, IExportService
             visit = new
             {
                 visit.Id,
-                visit.VisitDate,
+                VisitDate = _clock.ToLocal(visit.VisitDate)!.Value,
                 Status = (byte)visit.Status,
                 visit.Conclusion,
                 Referral = (byte?)visit.Referral,
                 visit.RecheckMonths,
-                visit.ClosedAt,
+                ClosedAt = _clock.ToLocal(visit.ClosedAt),
                 DoctorName = visit.Doctor?.FullName,
                 DoctorLicense = visit.Doctor?.LicenseNo
             },
             findings = findings.Select(f => new
             {
+                //urlImageLesionAfterMedical = r.AiDiagnosis.LesionMaskPath,
+                //urlImageVesselAfterMedical = r.AiDiagnosis.VesselMaskPath,
+                //urlImgBeforeMEDICAL = r.AiDiagnosis.FundusImage.FilePath
+                f.urlImageLesionAfterMedical,
+                f.urlImageVesselAfterMedical,
+                f.urlImgBeforeMEDICAL,
                 f.Eye,
                 f.ImageId,
                 finalGrade = f.FinalGrade,
                 finalGradeLabel = DiagnosesService.GradeLabel(f.FinalGrade),
                 confirmedBy = f.DoctorName,
-                f.CreatedAt,
+                CreatedAt = _clock.ToLocal(f.CreatedAt)!.Value,
                 // Ghi rõ AI đề xuất gì và bác sĩ quyết định gì — minh bạch cho hồ sơ
                 ai = new
                 {
@@ -129,7 +138,7 @@ public class ExportService : BaseService, IExportService
             }),
             prescriptions,
             disclaimer = "Kết quả AI mang tính hỗ trợ quyết định. Phân độ cuối cùng do bác sĩ xác lập.",
-            generatedAt = DateTime.UtcNow
+            generatedAt = _clock.LocalNow
         });
     }
 
@@ -153,7 +162,7 @@ public class ExportService : BaseService, IExportService
             r.Action,
             r.Reason,
             r.AiDiagnosis.Confidence,
-            Model = r.AiDiagnosis.ModelVersion!.Name,
+            Model = ModelSetLabel(r.AiDiagnosis),
             ConfirmedBy = r.Doctor!.FullName
         }).ToList();
 
@@ -257,7 +266,7 @@ public class ExportService : BaseService, IExportService
             r.AiDiagnosisId,
             PatientCode = r.AiDiagnosis!.FundusImage!.Patient!.Code,
             Eye = r.AiDiagnosis.FundusImage.Eye,
-            ModelVersion = r.AiDiagnosis.ModelVersion!.Name,
+            ModelVersion = ModelSetLabel(r.AiDiagnosis),
             AiGrade = r.AiDiagnosis.DrGrade,
             DoctorGrade = r.FinalGrade,
             Confidence = r.AiDiagnosis.Confidence,
@@ -288,7 +297,7 @@ public class ExportService : BaseService, IExportService
             Disagreement = r.Disagreement,
             WasDeferred = r.WasDeferred,
             Reason = r.Reason,
-            ReviewedAt = r.ReviewedAt
+            ReviewedAt = _clock.ToLocal(r.ReviewedAt)!.Value
         })
         .OrderByDescending(r => r.GradeDistance)
         .ThenByDescending(r => r.ReviewedAt)
@@ -345,7 +354,7 @@ public class ExportService : BaseService, IExportService
             r.AiDiagnosisId,
             PatientCode = r.AiDiagnosis!.FundusImage!.Patient!.Code,
             Eye = (byte)r.AiDiagnosis.FundusImage.Eye,
-            Model = r.AiDiagnosis.ModelVersion!.Name,
+            Model = ModelSetLabel(r.AiDiagnosis),
             AiGrade = (byte)r.AiDiagnosis.DrGrade,
             LesionGrade = (byte?)r.AiDiagnosis.LesionGradeImplied,
             DoctorGrade = (byte)r.FinalGrade,
@@ -367,9 +376,10 @@ public class ExportService : BaseService, IExportService
             // Bọc lý do trong dấu nháy kép và nhân đôi nháy bên trong, vì lý do
             // là văn bản tự do có thể chứa dấu phẩy
             var reason = (r.Reason ?? "").Replace("\"", "\"\"");
+            var reviewedLocal = _clock.ToLocal(r.CreatedAt) ?? r.CreatedAt;
             sb.AppendLine($"{r.AiDiagnosisId},{r.PatientCode},{r.Eye},{r.Model},{r.AiGrade}," +
                           $"{r.LesionGrade},{r.DoctorGrade},{distance},{r.Confidence},{r.Disagreement}," +
-                          $"{(r.IsDeferred ? 1 : 0)},{r.FractalDimension},{r.CreatedAt:O},\"{reason}\"");
+                          $"{(r.IsDeferred ? 1 : 0)},{r.FractalDimension},{reviewedLocal:O},\"{reason}\"");
         }
 
         await _audit.LogAsync(AuditAction.Export, "DisagreementCases", null,
@@ -378,7 +388,15 @@ public class ExportService : BaseService, IExportService
 
         // BOM để Excel mở đúng tiếng Việt
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
-        return File(bytes, "text/csv", $"disagreement-cases-{DateTime.UtcNow:yyyyMMdd}.csv");
+        return File(bytes, "text/csv", $"disagreement-cases-{_clock.LocalNow:yyyyMMdd}.csv");
+    }
+
+    private static string ModelSetLabel(AiDiagnosis diagnosis)
+    {
+        var dr = diagnosis.ModelVersion?.Name ?? "legacy/unknown";
+        var lesion = diagnosis.LesionModelVersion?.Name ?? dr;
+        var fractal = diagnosis.FractalModelVersion?.Name ?? dr;
+        return $"DR={dr} | Lesion={lesion} | Fractal={fractal}";
     }
 
     private (DateTime? FromUtc, DateTime? ToExclusiveUtc) ResolveReviewDateRange(DateOnly? from, DateOnly? to)

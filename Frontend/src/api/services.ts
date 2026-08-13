@@ -59,11 +59,13 @@ export const authApi = {
       "/api/auth/logout",
     ),
 
-  change: (body: T.ChangePasswordRequest) =>
-    http.post<T.ApiMessage>(
-      "/api/auth/change-password",
-      body,
-    ),
+  change: async (body: T.ChangePasswordRequest) =>
+    normalizeLogin(
+      await http.post<T.ChangePasswordResponse>(
+        "/api/auth/change-password",
+        body,
+      ),
+    ) as T.ChangePasswordResponse,
 };
 export const usersApi = {
   list: async (p: Record<string, unknown>) => {
@@ -322,7 +324,8 @@ export const blogApi = {
     ),
 };
 export const adminApi = {
-  dashboard: () => http.get<T.DashboardDto>("/api/admin/dashboard"),
+  dashboard: (p: Record<string, unknown> = {}) =>
+    http.get<T.DashboardDto>("/api/admin/dashboard" + query(p)),
   configs: () => http.get<T.SystemConfigDto[]>("/api/admin/configs"),
   updateConfig: (key: string, value: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/admin/configs/${encodeURIComponent(key)}`, {
