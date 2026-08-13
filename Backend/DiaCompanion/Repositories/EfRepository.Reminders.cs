@@ -43,7 +43,6 @@ public sealed partial class EfRepository
                 v.Id,
                 PatientId =
                 v.MedicalRecord.PatientId,
-                
                 UserId = v.MedicalRecord.Patient!.UserId!.Value,
                 PatientName = v.MedicalRecord.Patient.FullName,
                 ClosedAt = v.ClosedAt!.Value,
