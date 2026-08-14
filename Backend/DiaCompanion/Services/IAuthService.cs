@@ -15,4 +15,6 @@ public interface IAuthService
     Task<IActionResult> ChangePassword(ChangePasswordRequest req);
     Task<IActionResult> Logout();
     Task<ActionResult<LoginResponse>> Me();
+    Task<ActionResult<StaffProfileDto>> GetProfile();
+    Task<ActionResult<StaffProfileDto>> UpdateProfile(UpdateStaffProfileRequest req);
 }

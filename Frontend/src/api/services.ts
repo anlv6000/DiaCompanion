@@ -46,6 +46,12 @@ export const authApi = {
       ),
     ),
 
+  profile: () =>
+    http.get<T.StaffProfileDto>("/api/auth/profile"),
+
+  updateProfile: (body: T.UpdateStaffProfileRequest) =>
+    http.put<T.StaffProfileDto>("/api/auth/profile", body),
+
   refresh: async (refreshToken: string) =>
     normalizeLogin(
       await http.post<T.LoginResponse>(

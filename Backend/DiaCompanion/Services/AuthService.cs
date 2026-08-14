@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
+using DiaCompanion.Api.Entities;
 
 namespace DiaCompanion.Api.Services;
 
@@ -205,6 +206,63 @@ public class AuthService : BaseService, IAuthService
         return Ok(ToResponse(auth, token: "", expiresAt: default, refreshToken: "", refreshExpiresAt: default));
     }
 
+    public async Task<ActionResult<StaffProfileDto>> GetProfile()
+    {
+        var auth = await _repository.GetAuthUserByIdAsync(_me.RequireId())
+            ?? throw AppException.Unauthorized(Msg.SessionExpired, "Phiên đăng nhập đã hết hạn.");
+
+        EnsureAccountCanAuthenticate(auth);
+        var staffRole = ResolveProfileStaffRole(auth.Roles);
+        return Ok(ToStaffProfile(auth.User, staffRole));
+    }
+
+    public async Task<ActionResult<StaffProfileDto>> UpdateProfile(UpdateStaffProfileRequest req)
+    {
+        var auth = await _repository.GetAuthUserByIdAsync(_me.RequireId())
+            ?? throw AppException.Unauthorized(Msg.SessionExpired, "Phiên đăng nhập đã hết hạn.");
+
+        EnsureAccountCanAuthenticate(auth);
+        var staffRole = ResolveProfileStaffRole(auth.Roles);
+        var user = auth.User;
+        _repository.ApplyOriginalRowVersion(user, req.RowVersion);
+
+        var fullName = req.FullName.Trim();
+        var phone = req.Phone.Trim();
+        var licenseNo = string.IsNullOrWhiteSpace(req.LicenseNo) ? null : req.LicenseNo.Trim();
+
+        if (string.IsNullOrWhiteSpace(fullName))
+            throw AppException.BadRequest(Msg.RequiredFields, "Họ tên không được để trống.");
+
+        if (staffRole == Roles.Doctor && string.IsNullOrWhiteSpace(licenseNo))
+            throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề.");
+
+        if (await _repository.PhoneExistsAsync(phone, user.Id))
+            throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại đã được sử dụng cho tài khoản khác.");
+
+        var before = new
+        {
+            user.FullName,
+            user.Phone,
+            user.LicenseNo
+        };
+
+        user.FullName = fullName;
+        user.Phone = phone;
+        user.LicenseNo = staffRole == Roles.Doctor ? licenseNo : null;
+        user.UpdatedAt = _clock.UtcNow;
+
+        await _audit.LogAsync(
+            AuditAction.UserUpdate,
+            nameof(User),
+            user.Id,
+            before,
+            new { user.FullName, user.Phone, user.LicenseNo },
+            detail: "Người dùng tự cập nhật hồ sơ cá nhân");
+
+        await _repository.CommitAsync();
+        return Ok(ToStaffProfile(user, staffRole));
+    }
+
     private async Task<ActionResult<LoginResponse>> IssueTokenAsync(AuthUserData auth, bool updateLastLogin = true)
     {
         var token = _jwt.CreateAccessToken(auth.User, auth.Roles, auth.PatientId, out var expiresAt);
@@ -238,6 +296,30 @@ public class AuthService : BaseService, IAuthService
         PatientId = auth.PatientId,
         MustChangePassword = auth.User.MustChangePassword,
         DefaultRoute = Roles.DefaultRoute(auth.Roles)
+    };
+
+    private static string ResolveProfileStaffRole(IEnumerable<string> roles)
+    {
+        var set = new HashSet<string>(roles, StringComparer.OrdinalIgnoreCase);
+        if (set.Contains(Roles.Doctor)) return Roles.Doctor;
+        if (set.Contains(Roles.Receptionist)) return Roles.Receptionist;
+
+        throw AppException.Forbidden(
+            Msg.Forbidden,
+            "Trang hồ sơ nhân viên chỉ dành cho Bác sĩ hoặc Lễ tân.");
+    }
+
+    private StaffProfileDto ToStaffProfile(DiaCompanion.Api.Entities.User user, string role) => new()
+    {
+        Id = user.Id,
+        FullName = user.FullName,
+        Email = user.Email,
+        Phone = user.Phone,
+        Role = role,
+        LicenseNo = role == Roles.Doctor ? user.LicenseNo : null,
+        LastLoginAt = _clock.ToLocal(user.LastLoginAt),
+        CreatedAt = _clock.ToLocal(user.CreatedAt)!.Value,
+        RowVersion = user.ToRowVersion()
     };
 
     private static void EnsureAccountCanAuthenticate(AuthUserData auth)
