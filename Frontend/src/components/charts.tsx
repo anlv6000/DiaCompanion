@@ -19,7 +19,7 @@ export function LineChart({
   if (!all.length)
     return (
       <div className="empty">
-        <b>Chưa có số liệu</b>Biểu đồ sẽ xuất hiện khi backend có dữ liệu.
+        <b>Chưa có số liệu</b>Biểu đồ sẽ xuất hiện khi có dữ liệu phù hợp.
       </div>
     );
 

@@ -103,6 +103,7 @@ public sealed partial class EfRepository
 
         return await _db.FundusImages.AsNoTracking().AnyAsync(i => i.VisitId == visitId && !i.IsVoided, ct)
             || await _db.Prescriptions.AsNoTracking().AnyAsync(p => p.VisitId == visitId && !p.IsVoided, ct)
+            || await _db.HealthMetrics.AsNoTracking().AnyAsync(m => m.VisitId == visitId, ct)
             || await _db.Feedbacks.AsNoTracking().AnyAsync(f => f.VisitId == visitId, ct);
     }
 
@@ -119,6 +120,21 @@ public sealed partial class EfRepository
         _db.Visits.AsNoTracking()
             .Where(v => v.Id == visitId && v.MedicalRecord.PatientId == patientId && v.Status == VisitStatus.Completed)
             .Select(VisitProjection).FirstOrDefaultAsync(ct);
+
+
+    public async Task<IReadOnlyList<HealthMetric>> GetVisitHealthMetricsAsync(
+        int visitId, bool tracking = false, CancellationToken ct = default)
+    {
+        IQueryable<HealthMetric> query = _db.HealthMetrics
+            .Where(m => m.VisitId == visitId);
+
+        if (!tracking) query = query.AsNoTracking();
+
+        return await query
+            .OrderBy(m => m.MetricType)
+            .ThenBy(m => m.Id)
+            .ToListAsync(ct);
+    }
 
     private static readonly System.Linq.Expressions.Expression<Func<Visit, VisitDto>> VisitProjection = v => new VisitDto
     {

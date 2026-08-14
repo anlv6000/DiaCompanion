@@ -22,6 +22,7 @@ public class VisitDto
     public DateTime? ClosedAt { get; set; }
     public int ImageCount { get; set; }
     public int PendingReviewCount { get; set; }
+    public VisitHealthMetricsDto? HealthMetrics { get; set; }
 
     public string RowVersion { get; set; } = "";
 }

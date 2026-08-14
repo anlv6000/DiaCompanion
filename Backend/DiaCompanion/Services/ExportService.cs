@@ -69,6 +69,12 @@ public class ExportService : BaseService, IExportService
             urlImgBeforeMEDICAL = r.AiDiagnosis.FundusImage.FilePath
         }).ToList();
 
+        var metricRows = await _repository.GetVisitHealthMetricsForExportAsync(visitId);
+        var glucoseMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.Glucose);
+        var hba1cMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.HbA1c);
+        var systolicMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
+        var diastolicMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
+
         var prescriptionRows = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
         var prescriptions = prescriptionRows.Select(p => new
         {
@@ -136,6 +142,35 @@ public class ExportService : BaseService, IExportService
                 lesions = new { f.CountMA, f.CountHE, f.CountEX, f.CountSE },
                 fractal = f.FractalDimension
             }),
+            healthMetrics = new
+            {
+                glucose = glucoseMetric is null ? null : new
+                {
+                    glucoseMetric.Value,
+                    glucoseMetric.Unit,
+                    Context = (byte?)glucoseMetric.Context,
+                    glucoseMetric.IsAbnormal,
+                    glucoseMetric.RecordedAtUtc,
+                    glucoseMetric.Note
+                },
+                hba1c = hba1cMetric is null ? null : new
+                {
+                    hba1cMetric.Value,
+                    hba1cMetric.Unit,
+                    hba1cMetric.IsAbnormal,
+                    hba1cMetric.RecordedAtUtc,
+                    hba1cMetric.Note
+                },
+                bloodPressure = systolicMetric is null && diastolicMetric is null ? null : new
+                {
+                    systolic = systolicMetric?.Value,
+                    diastolic = diastolicMetric?.Value,
+                    unit = "mmHg",
+                    isAbnormal = systolicMetric?.IsAbnormal == true || diastolicMetric?.IsAbnormal == true,
+                    recordedAtUtc = systolicMetric?.RecordedAtUtc ?? diastolicMetric?.RecordedAtUtc,
+                    note = systolicMetric?.Note ?? diastolicMetric?.Note
+                }
+            },
             prescriptions,
             disclaimer = "Kết quả AI mang tính hỗ trợ quyết định. Phân độ cuối cùng do bác sĩ xác lập.",
             generatedAt = _clock.LocalNow
@@ -165,6 +200,12 @@ public class ExportService : BaseService, IExportService
             Model = ModelSetLabel(r.AiDiagnosis),
             ConfirmedBy = r.Doctor!.FullName
         }).ToList();
+
+        var metricRows = await _repository.GetVisitHealthMetricsForExportAsync(visitId);
+        var glucoseMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.Glucose);
+        var hba1cMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.HbA1c);
+        var systolicMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
+        var diastolicMetric = metricRows.FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
 
         var prescriptionRows = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
         var prescriptions = prescriptionRows.SelectMany(p => p.Items.Where(i => i.IsActive)
@@ -218,6 +259,18 @@ public class ExportService : BaseService, IExportService
                     lines.Add($"  Override reason: {finding.Reason}");
             }
         }
+
+        lines.Add("");
+        lines.Add("HEALTH METRICS");
+        lines.Add(glucoseMetric is null
+            ? "Glucose: N/A"
+            : $"Glucose: {glucoseMetric.Value:0.##} {glucoseMetric.Unit} ({glucoseMetric.Context?.ToString() ?? "N/A"})");
+        lines.Add(hba1cMetric is null
+            ? "HbA1c: N/A"
+            : $"HbA1c: {hba1cMetric.Value:0.##} {hba1cMetric.Unit}");
+        lines.Add(systolicMetric is null || diastolicMetric is null
+            ? "Blood pressure: N/A"
+            : $"Blood pressure: {systolicMetric.Value:0}/{diastolicMetric.Value:0} mmHg");
 
         lines.Add("");
         lines.Add("PRESCRIPTION");

@@ -57,7 +57,7 @@ export function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard thống kê"
-        subtitle="Số liệu lấy từ backend; một lượt AI chỉ chạy khi đủ DR + Lesion + Fractal đang active."
+        subtitle="Thống kê toàn hệ thống; một lượt AI chỉ chạy khi đủ mô hình DR, Lesion và Fractal đang hoạt động."
       />
 
       <Panel>
@@ -123,7 +123,7 @@ export function DashboardPage() {
                   empty={!impacts.data?.length}
                   emptyText={
                     isAdmin
-                      ? "Backend chưa có đủ ca để ước tính."
+                      ? "Chưa có đủ ca để ước tính."
                       : "Chỉ Admin được truy vấn ảnh hưởng ngưỡng."
                   }
                 >
@@ -139,7 +139,7 @@ export function DashboardPage() {
                   />
                   {isAdmin && (
                     <div className="faint" style={{ marginTop: 6 }}>
-                      Biểu đồ này dùng dữ liệu lịch sử toàn hệ thống từ endpoint threshold-impact;
+                      Biểu đồ này sử dụng dữ liệu lịch sử toàn hệ thống để ước tính ảnh hưởng của ngưỡng;
                       không áp dụng bộ lọc ngày/model phía trên.
                     </div>
                   )}
@@ -164,7 +164,7 @@ export function DashboardPage() {
               </div>
               {!active.DR || !active.Lesion || !active.Fractal ? (
                 <div className="state error" style={{ marginTop: 10 }}>
-                  Chưa đủ 3 model active nên backend sẽ từ chối chạy AI.
+                  Chưa đủ 3 mô hình đang hoạt động nên hệ thống chưa thể chạy phân tích AI.
                 </div>
               ) : (
                 <div className="state ok" style={{ marginTop: 10 }}>
@@ -554,8 +554,8 @@ export function ModelsPage() {
       </div>
       <div className={`state ${ready ? "ok" : "error"}`} style={{ marginBottom: 12 }}>
         {ready
-          ? "Đủ 3/3 model active. Backend có thể chạy pipeline AI."
-          : "Thiếu model active. Backend sẽ trả lỗi khi bác sĩ chạy AI cho đến khi đủ DR + Lesion + Fractal."}
+          ? "Đủ 3/3 mô hình đang hoạt động. Hệ thống sẵn sàng chạy phân tích AI."
+          : "Thiếu mô hình đang hoạt động. Cần đủ DR, Lesion và Fractal trước khi bác sĩ chạy phân tích AI."}
       </div>
 
       <Panel>
@@ -777,7 +777,7 @@ function ModelEditor({
         ))}
       </div>
       <div className="faint" style={{ marginBottom: 8 }}>
-        Gợi ý: DR thường theo QWK; Lesion/Fractal thường theo Dice/IoU. Backend chỉ yêu cầu có ít nhất một chỉ số.
+        Gợi ý: DR thường đánh giá bằng QWK; Lesion/Fractal thường dùng Dice/IoU. Cần có ít nhất một chỉ số đánh giá.
       </div>
       <Field labelText="Ghi chú">
         <textarea value={form.note || ""} onChange={(e) => p("note", e.target.value)} />

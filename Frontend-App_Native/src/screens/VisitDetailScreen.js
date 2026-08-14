@@ -14,7 +14,7 @@ import {
 import { colors } from "../theme/colors";
 import { font, spacing } from "../theme/typography";
 import { fmtDate } from "../lib/format";
-import { visitStatuses, referralTypes } from "../lib/enums";
+import { visitStatuses, referralTypes, metricContexts } from "../lib/enums";
 
 /**
  * Chi tiết một lượt khám (GET /api/visits/me/{id}).
@@ -67,6 +67,8 @@ export default function VisitDetailScreen({ route, navigation }) {
                 <InfoRow label="Đóng lúc" value={fmtDate(v.closedAt, true)} />
               )}
             </Card>
+
+            <VisitHealthMetrics healthMetrics={v.healthMetrics} />
 
             {closed ? (
               <>
@@ -124,6 +126,51 @@ export default function VisitDetailScreen({ route, navigation }) {
   );
 }
 
+
+function VisitHealthMetrics({ healthMetrics }) {
+  if (!healthMetrics) return null;
+  const glucose = healthMetrics.glucose;
+  const hba1c = healthMetrics.hbA1c;
+  const bp = healthMetrics.bloodPressure;
+  if (!glucose && !hba1c && !bp) return null;
+
+  return (
+    <>
+      <SectionTitle>Chỉ số tại lượt khám</SectionTitle>
+      <Card style={styles.card}>
+        {glucose && (
+          <InfoRow
+            label="Đường huyết"
+            value={`${glucose.value} ${glucose.unit}${glucose.context ? ` · ${metricContexts[glucose.context] || ""}` : ""}`}
+            valueColor={glucose.isAbnormal ? colors.alert : undefined}
+          />
+        )}
+        {hba1c && (
+          <InfoRow
+            label="HbA1c"
+            value={`${hba1c.value} ${hba1c.unit}`}
+            valueColor={hba1c.isAbnormal ? colors.alert : undefined}
+          />
+        )}
+        {bp && (
+          <InfoRow
+            label="Huyết áp"
+            value={`${bp.systolicValue ?? "—"}/${bp.diastolicValue ?? "—"} ${bp.unit}`}
+            valueColor={bp.isAbnormal ? colors.alert : undefined}
+          />
+        )}
+        {(glucose?.note || hba1c?.note || bp?.note) && (
+          <View style={styles.metricNotes}>
+            {glucose?.note ? <Text style={styles.metricNote}>Đường huyết: {glucose.note}</Text> : null}
+            {hba1c?.note ? <Text style={styles.metricNote}>HbA1c: {hba1c.note}</Text> : null}
+            {bp?.note ? <Text style={styles.metricNote}>Huyết áp: {bp.note}</Text> : null}
+          </View>
+        )}
+      </Card>
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   card: { padding: spacing.md, marginBottom: spacing.sm },
   head: {
@@ -133,4 +180,6 @@ const styles = StyleSheet.create({
   date: { ...font.h2, color: colors.ink },
   conclusion: { ...font.body, color: colors.ink, lineHeight: 22 },
   pending: { ...font.body, color: colors.muted, lineHeight: 22 },
+  metricNotes: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.hairline },
+  metricNote: { ...font.small, color: colors.muted, marginTop: 4 },
 });

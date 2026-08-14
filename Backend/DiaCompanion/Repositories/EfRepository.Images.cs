@@ -7,7 +7,7 @@ public sealed partial class EfRepository
 {
     public async Task<IReadOnlyList<FundusImage>> GetFundusImagesAsync(int? patientId, int? visitId, CancellationToken ct = default)
     {
-        var query = _db.FundusImages.AsNoTracking().AsQueryable();
+        var query = _db.FundusImages.AsNoTracking().AsQueryable().Where(f => (f.VisitId != null ));
         if (patientId is int pid) query = query.Where(f => f.PatientId == pid);
         if (visitId is int vid) query = query.Where(f => f.VisitId == vid);
         return await query.OrderBy(f => f.Eye).ThenByDescending(f => f.CreatedAt).ToListAsync(ct);

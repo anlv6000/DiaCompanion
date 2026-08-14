@@ -32,6 +32,14 @@ public sealed partial class EfRepository
             .OrderBy(p => p.IssuedAt)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<HealthMetric>> GetVisitHealthMetricsForExportAsync(
+        int visitId, CancellationToken ct = default) =>
+        await _db.HealthMetrics.AsNoTracking()
+            .Where(m => m.VisitId == visitId)
+            .OrderBy(m => m.MetricType)
+            .ThenBy(m => m.RecordedAtUtc)
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<DiagnosisReview>> GetDiagnosisReviewsForExportAsync(
         int? modelVersionId,
         DateTime? fromUtc,
