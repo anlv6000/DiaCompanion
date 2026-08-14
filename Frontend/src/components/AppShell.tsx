@@ -182,6 +182,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         </nav>
         <div className="nav-spacer" />
         <div className="side-footer">
+          {hasAnyRole(user, ["Doctor", "Receptionist"]) && (
+            <Link to="/profile" className={`navlink ${pathname.startsWith("/profile") ? "on" : ""}`}>
+              <Icon name="users" />
+              Hồ sơ cá nhân
+            </Link>
+          )}
           <Link to="/change-password" className="navlink">
             <Icon name="lock" />
             Đổi mật khẩu
@@ -213,15 +219,27 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                 <span className="notification-dot" />
               )}
             </button>
-            <div className="user-menu">
-              <span className="avatar">{initials(user?.fullName)}</span>
-              <span>
-                {user?.fullName}
-                <small style={{ display: "block" }}>
-                  {rolesLabel(user).toUpperCase()}
-                </small>
-              </span>
-            </div>
+            {hasAnyRole(user, ["Doctor", "Receptionist"]) ? (
+              <Link to="/profile" className="user-menu" title="Mở hồ sơ cá nhân">
+                <span className="avatar">{initials(user?.fullName)}</span>
+                <span>
+                  {user?.fullName}
+                  <small style={{ display: "block" }}>
+                    {rolesLabel(user).toUpperCase()}
+                  </small>
+                </span>
+              </Link>
+            ) : (
+              <div className="user-menu">
+                <span className="avatar">{initials(user?.fullName)}</span>
+                <span>
+                  {user?.fullName}
+                  <small style={{ display: "block" }}>
+                    {rolesLabel(user).toUpperCase()}
+                  </small>
+                </span>
+              </div>
+            )}
           </div>
         </header>
         <div className="content">{children}</div>

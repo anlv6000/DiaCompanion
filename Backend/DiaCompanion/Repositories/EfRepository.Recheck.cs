@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Repositories;
@@ -17,6 +17,7 @@ public sealed partial class EfRepository
                 v.ClosedAt != null)
             .Select(v => new
             {
+<<<<<<< HEAD
                 v.Id,
                 v.MedicalRecord.PatientId,
                 v.VisitDate,
@@ -42,6 +43,15 @@ public sealed partial class EfRepository
                 .First())
             // Lượt khám mới nhất phải có chỉ định tái tầm soát
             .Where(v => v.RecheckMonths.HasValue)
+=======
+                v.Id, v.MedicalRecord.PatientId, ClosedAt = v.ClosedAt!.Value, RecheckMonths = v.RecheckMonths!.Value,
+                v.Referral, v.MedicalRecord.Patient!.Code, v.MedicalRecord.Patient.FullName, v.MedicalRecord.Patient.Phone, v.VisitDate
+            }).ToListAsync(ct);
+        if (allCompleted.Count == 0) return Array.Empty<RecheckCandidate>();
+
+        var lastVisits = allCompleted.GroupBy(v => v.PatientId)
+            .Select(g => g.OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id).First())
+>>>>>>> b8892d5369b93c901ca80475281b2a8e31d1c436
             .ToList();
 
         if (lastVisits.Count == 0)

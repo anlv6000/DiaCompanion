@@ -116,7 +116,7 @@ export default function MedicationScreen() {
       toast.push(
         status === 1
           ? "Đã xác nhận uống thuốc."
-          : status === 3
+          : status === 4
             ? "Đã ghi nhận bỏ qua liều."
             : "Đã hoàn tác về chưa uống.",
         "success",
@@ -266,7 +266,8 @@ export default function MedicationScreen() {
                   {m.status === 0 && (
                     <TouchableOpacity
                       style={styles.skipButton}
-                      onPress={() => setMedicationStatus(m, 3)}
+                      onPress={() => setMedicationStatus(m, 4)}
+
                     >
                       <Text style={styles.skipButtonText}>Bỏ qua liều</Text>
                     </TouchableOpacity>

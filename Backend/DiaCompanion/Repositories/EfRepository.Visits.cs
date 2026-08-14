@@ -19,8 +19,30 @@ public sealed partial class EfRepository
         if (toExclusiveUtc is DateTime to) query = query.Where(v => v.VisitDate < to);
 
         var total = await query.CountAsync(ct);
-        var items = await query.OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id)
-            .Skip(page.Skip).Take(page.PageSize).Select(VisitProjection).ToListAsync(ct);
+
+        var items = await query
+        .OrderBy(v =>
+            v.Status == VisitStatus.InProgress ? 0 : 1)
+        .ThenBy(v =>
+            v.Status == VisitStatus.InProgress
+                ? (DateTime?)v.VisitDate
+                : null)
+        .ThenByDescending(v =>
+            v.Status == VisitStatus.Completed
+                ? (DateTime?)v.VisitDate
+                : null)
+        .ThenBy(v =>
+            v.Status == VisitStatus.InProgress
+                ? (int?)v.Id
+                : null)
+        .ThenByDescending(v =>
+            v.Status == VisitStatus.Completed
+                ? (int?)v.Id
+                : null)
+        .Skip(page.Skip)
+        .Take(page.PageSize)
+        .Select(VisitProjection)
+        .ToListAsync(ct);
         return new VisitPage(items, total);
     }
 
