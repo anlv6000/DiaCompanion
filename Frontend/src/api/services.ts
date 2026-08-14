@@ -147,6 +147,10 @@ export const visitsApi = {
   assignedToMe: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.VisitDto>>("/api/visits/assigned-to-me" + query(p)),
   get: (id: number) => http.get<T.VisitDto>(`/api/visits/${id}`),
+  healthMetrics: (id: number) =>
+    http.get<T.VisitHealthMetricsDto>(`/api/visits/${id}/health-metrics`),
+  saveHealthMetrics: (id: number, b: T.SaveVisitHealthMetricsRequest) =>
+    http.put<T.VisitHealthMetricsDto>(`/api/visits/${id}/health-metrics`, b),
   create: (b: T.CreateVisitRequest) => http.post<T.VisitDto>("/api/visits", b),
   close: (id: number, b: T.CloseVisitRequest) =>
     http.put<T.VisitDto>(`/api/visits/${id}/close`, b),

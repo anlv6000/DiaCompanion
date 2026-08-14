@@ -69,6 +69,24 @@ public class VisitsController : BaseApiController
     }
 
 
+    /// <summary>Lấy các chỉ số sức khỏe được bác sĩ ghi trong lượt khám.</summary>
+    [HttpGet("{id:int}/health-metrics")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<VisitHealthMetricsDto>> HealthMetrics(int id)
+    {
+        return await _service.GetHealthMetrics(id);
+    }
+
+    /// <summary>Ghi/cập nhật toàn bộ form chỉ số sức khỏe của lượt khám đang mở.</summary>
+    [HttpPut("{id:int}/health-metrics")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<VisitHealthMetricsDto>> SaveHealthMetrics(
+        int id, SaveVisitHealthMetricsRequest req)
+    {
+        return await _service.SaveHealthMetrics(id, req);
+    }
+
+
     /// <summary>
     /// UC-20 — nhập kết luận và đóng lượt khám.
     /// BR-12: bắt buộc có kết luận. BR-19: chu kỳ tái khám suy từ mức DR đã xác nhận.

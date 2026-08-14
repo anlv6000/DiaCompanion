@@ -59,14 +59,14 @@ public class MonitoringService : BaseService, IMonitoringService
 
         // Ghép cặp huyết áp ở tầng nghiệp vụ; Repository chỉ chịu trách nhiệm truy vấn dữ liệu.
         var bpByTime = page.BloodPressureRows
-            .GroupBy(m => m.RecordedAtUtc)
+            .GroupBy(m => (m.VisitId, m.RecordedAtUtc))
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var items = rows.Select(m =>
         {
             HealthMetric? pair = null;
             if (m.MetricType is MetricType.SystolicBp or MetricType.DiastolicBp
-                && bpByTime.TryGetValue(m.RecordedAtUtc, out var sameTime))
+                && bpByTime.TryGetValue((m.VisitId, m.RecordedAtUtc), out var sameTime))
             {
                 var pairType = m.MetricType == MetricType.SystolicBp
                     ? MetricType.DiastolicBp
@@ -84,6 +84,7 @@ public class MonitoringService : BaseService, IMonitoringService
             return new HealthMetricDto
             {
                 Id = m.Id,
+                VisitId = m.VisitId,
                 MetricType = (byte)m.MetricType,
                 Value = m.Value,
                 Unit = m.Unit,
@@ -222,6 +223,7 @@ public class MonitoringService : BaseService, IMonitoringService
             return Ok(new HealthMetricDto
             {
                 Id = systolicMetric.Id,
+                VisitId = systolicMetric.VisitId,
                 MetricType = (byte)systolicMetric.MetricType,
                 Value = systolicMetric.Value,
                 Unit = systolicMetric.Unit,
@@ -275,6 +277,7 @@ public class MonitoringService : BaseService, IMonitoringService
         return Ok(new HealthMetricDto
         {
             Id = metric.Id,
+            VisitId = metric.VisitId,
             MetricType = (byte)metric.MetricType,
             Value = metric.Value,
             Unit = metric.Unit,
@@ -292,6 +295,9 @@ public class MonitoringService : BaseService, IMonitoringService
         var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
+        if (m.VisitId is not null)
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Chỉ số này được bác sĩ ghi trong lượt khám nên bệnh nhân không được sửa.");
         _repository.ApplyOriginalRowVersion(m, req.RowVersion);
         var oldMetric = new
         {
@@ -408,6 +414,7 @@ public class MonitoringService : BaseService, IMonitoringService
             return Ok(new HealthMetricDto
             {
                 Id = systolicMetric.Id,
+                VisitId = systolicMetric.VisitId,
                 MetricType = (byte)systolicMetric.MetricType,
                 Value = systolicMetric.Value,
                 Unit = systolicMetric.Unit,
@@ -461,6 +468,7 @@ public class MonitoringService : BaseService, IMonitoringService
         return Ok(new HealthMetricDto
         {
             Id = m.Id,
+            VisitId = m.VisitId,
             MetricType = (byte)m.MetricType,
             Value = m.Value,
             Unit = m.Unit,
@@ -482,6 +490,9 @@ public class MonitoringService : BaseService, IMonitoringService
         var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
+        if (m.VisitId is not null)
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Chỉ số này thuộc hồ sơ lượt khám nên bệnh nhân không được xóa.");
         _repository.ApplyOriginalRowVersion(m, req.RowVersion);
 
         var deletedAt = _clock.UtcNow;
@@ -513,7 +524,7 @@ public class MonitoringService : BaseService, IMonitoringService
     private async Task<HealthMetric> FindBloodPressurePairAsync(HealthMetric metric, MetricType pairType)
     {
         return await _repository.GetBloodPressurePairForUpdateAsync(
-                   metric.PatientId, metric.RecordedAtUtc, pairType)
+                   metric.PatientId, metric.VisitId, metric.RecordedAtUtc, pairType)
                ?? throw AppException.BadRequest(Msg.LoadFailed,
                    "Không tìm thấy đủ cặp huyết áp tâm thu và tâm trương.");
     }
@@ -640,6 +651,7 @@ public class MonitoringService : BaseService, IMonitoringService
             : new MetricLatestDto
             {
                 Id = m.Id,
+                VisitId = m.VisitId,
                 MetricType = (byte)m.MetricType,
                 Value = m.Value,
                 Unit = m.Unit,
@@ -872,6 +884,7 @@ public class MonitoringService : BaseService, IMonitoringService
     private static HealthMetricDto ToMetricDto(HealthMetric metric) => new()
     {
         Id = metric.Id,
+        VisitId = metric.VisitId,
         MetricType = (byte)metric.MetricType,
         Value = metric.Value,
         Unit = metric.Unit,

@@ -305,7 +305,16 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.PatientId, x.RecordedAtUtc }).IsClustered();
             e.HasIndex(x => new { x.PatientId, x.MetricType, x.RecordedLocalDate })
                 .HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.VisitId, x.RecordedAtUtc })
+                .HasDatabaseName("IX_HealthMetrics_VisitId_RecordedAtUtc")
+                .HasFilter("[VisitId] IS NOT NULL AND [IsDeleted] = 0");
+            e.HasIndex(x => new { x.VisitId, x.MetricType })
+                .IsUnique()
+                .HasDatabaseName("UX_HealthMetrics_VisitId_MetricType")
+                .HasFilter("[VisitId] IS NOT NULL AND [IsDeleted] = 0");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Visit).WithMany(v => v.HealthMetrics)
+                .HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.NoAction);
         });
 
         b.Entity<LifestyleLog>(e =>
