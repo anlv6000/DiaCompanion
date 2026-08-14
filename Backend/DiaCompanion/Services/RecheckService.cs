@@ -41,28 +41,75 @@ public class RecheckService : BaseService, IRecheckService
     }
 
     public async Task<ActionResult<PagedResult<RecheckDto>>> Due(
-        [FromQuery] bool overdueOnly = false,
-        [FromQuery] int withinDays = 30,
-        [FromQuery] PageQuery? page = null)
+    [FromQuery] bool overdueOnly = false,
+    [FromQuery] int withinDays = 30,
+    [FromQuery] PageQuery? page = null)
     {
         page ??= new PageQuery();
-        var today = _clock.LocalToday;
-        var candidates = await _repository.GetRecheckCandidatesAsync();
 
-        var computed = candidates.Select(c =>
-        {
-            var closedAtLocal = _clock.ToLocal(c.ClosedAt)!.Value;
-            var due = DateOnly.FromDateTime(closedAtLocal.AddMonths(c.RecheckMonths));
-            var pastDue = today.DayNumber - due.DayNumber;
-            return new { Candidate = c, ClosedAtLocal = closedAtLocal, Due = due, PastDue = pastDue };
-        })
-        .Where(x => !x.Candidate.LatestVisitDate.HasValue || x.Candidate.LatestVisitDate.Value <= x.Candidate.ClosedAt)
-        .Where(x => overdueOnly ? x.PastDue > 0 : x.PastDue >= -withinDays)
-        .OrderByDescending(x => x.PastDue)
-        .ToList();
+        var today = _clock.LocalToday;
+
+        var candidates =
+            await _repository.GetRecheckCandidatesAsync();
+
+        var computed = candidates
+            .Select(c =>
+            {
+                // Chuyển ClosedAt sang giờ địa phương
+                var closedAtLocal =
+                    _clock.ToLocal(c.ClosedAt)!.Value;
+
+                // Ngày phải tái tầm soát
+                var due = DateOnly.FromDateTime(
+                    closedAtLocal.AddMonths(c.RecheckMonths)
+                );
+
+                // > 0 : quá hạn
+                // = 0 : đến hạn hôm nay
+                // < 0 : chưa đến hạn
+                var pastDue =
+                    today.DayNumber - due.DayNumber;
+
+                return new
+                {
+                    Candidate = c,
+                    ClosedAtLocal = closedAtLocal,
+                    Due = due,
+                    PastDue = pastDue
+                };
+            })
+
+            // overdueOnly = true:
+            // chỉ lấy bệnh nhân đã quá hạn
+            //
+            // overdueOnly = false:
+            // lấy bệnh nhân quá hạn hoặc sắp đến hạn
+            // trong withinDays ngày
+            .Where(x =>
+                overdueOnly
+                    ? x.PastDue > 0
+                    : x.PastDue >= -withinDays
+            )
+
+            // Quá hạn lâu nhất lên đầu
+            .OrderByDescending(x => x.PastDue)
+
+            .ToList();
 
         var total = computed.Count;
-        var items = computed.Skip(page.Skip).Take(page.PageSize).Select(x => Map(x.Candidate, x.ClosedAtLocal, x.Due, x.PastDue)).ToList();
+
+        var items = computed
+            .Skip(page.Skip)
+            .Take(page.PageSize)
+            .Select(x =>
+                Map(
+                    x.Candidate,
+                    x.ClosedAtLocal,
+                    x.Due,
+                    x.PastDue
+                ))
+            .ToList();
+
         return Ok(new PagedResult<RecheckDto>
         {
             Items = items,
@@ -75,13 +122,22 @@ public class RecheckService : BaseService, IRecheckService
     public async Task<IActionResult> OverdueCount()
     {
         var today = _clock.LocalToday;
-        var candidates = await _repository.GetRecheckCandidatesAsync();
+
+        var candidates =
+            await _repository.GetRecheckCandidatesAsync();
+
         var overdue = candidates.Count(c =>
         {
-            var closedAtLocal = _clock.ToLocal(c.ClosedAt)!.Value;
-            var due = DateOnly.FromDateTime(closedAtLocal.AddMonths(c.RecheckMonths));
-            return (!c.LatestVisitDate.HasValue || c.LatestVisitDate.Value <= c.ClosedAt) && due < today;
+            var closedAtLocal =
+                _clock.ToLocal(c.ClosedAt)!.Value;
+
+            var due = DateOnly.FromDateTime(
+                closedAtLocal.AddMonths(c.RecheckMonths)
+            );
+
+            return due < today;
         });
+
         return Ok(new { overdue });
     }
 
