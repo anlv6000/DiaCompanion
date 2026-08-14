@@ -90,7 +90,7 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
   const prescriptions = report?.prescriptions ?? [];
   const healthMetrics = report?.healthMetrics ?? {
     glucose: null,
-    hbA1c: null,
+    hba1c: null,
     bloodPressure: null,
   };
 
@@ -239,16 +239,16 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                     <MetricCard
                       title="HbA1c"
                       value={
-                        healthMetrics.hbA1c
-                          ? `${num(healthMetrics.hbA1c.value)} ${healthMetrics.hbA1c.unit}`
+                        healthMetrics.hba1c
+                          ? `${num(healthMetrics.hba1c.value)} ${healthMetrics.hba1c.unit}`
                           : "Chưa ghi nhận"
                       }
                       detail={
-                        healthMetrics.hbA1c
-                          ? fmtDate(healthMetrics.hbA1c.recordedAt, true)
+                        healthMetrics.hba1c
+                          ? fmtDate(healthMetrics.hba1c.recordedAt, true)
                           : `Không có chỉ số trong ngày khám ${fmtDate(report.visit.visitDate)}`
                       }
-                      abnormal={healthMetrics.hbA1c?.isAbnormal}
+                      abnormal={healthMetrics.hba1c?.isAbnormal}
                     />
                     <MetricCard
                       title="Blood Pressure"

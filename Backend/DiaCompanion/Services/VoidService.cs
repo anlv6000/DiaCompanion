@@ -317,6 +317,15 @@ public class VoidService : IVoidService
                 p,
                 $"Thu hồi theo lượt khám: {reason}");
         }
+
+        // Chỉ số được bác sĩ ghi trong visit là dữ liệu lâm sàng của visit.
+        // Khi visit bị thu hồi, soft-delete chúng để không còn xuất hiện trong monitoring/report.
+        var metrics = await _repository.GetVisitHealthMetricsAsync(v.Id, tracking: true);
+        foreach (var metric in metrics)
+        {
+            metric.IsDeleted = true;
+            metric.DeletedAt = DateTime.UtcNow;
+        }
     }
     public async Task<string> VoidImageAsync(
         int id,

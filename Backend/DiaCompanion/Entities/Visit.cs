@@ -28,6 +28,7 @@ public class Visit : IVoidable, IHasRowVersion
     public DateTime? VoidedAt { get; set; }
     public byte[] RowVer { get; set; } = Array.Empty<byte>();
     public ICollection<FundusImage> Images { get; set; } = new List<FundusImage>();
+    public ICollection<HealthMetric> HealthMetrics { get; set; } = new List<HealthMetric>();
 
     public int MedicalRecordId { get; set; }
 

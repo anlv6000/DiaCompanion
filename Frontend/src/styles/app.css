@@ -1340,6 +1340,45 @@ a {
   border-bottom-color: var(--primary);
 }
 
+
+/* Form chỉ số sức khỏe gắn trực tiếp với lượt khám */
+.visit-metric-form {
+  display: grid;
+  gap: 14px;
+}
+.visit-metric-group {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface);
+}
+.visit-metric-group h4 {
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.visit-metric-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.visit-metric-fields.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.visit-metric-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 13px;
+}
+@media (max-width: 900px) {
+  .visit-metric-fields,
+  .visit-metric-fields.two-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Danh sách thông báo (chuông) */
 .notif-list {
   display: flex;

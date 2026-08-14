@@ -197,6 +197,7 @@ export interface VisitDto {
   closedAt?: string | null;
   imageCount: number;
   pendingReviewCount: number;
+  healthMetrics?: VisitHealthMetricsDto | null;
   rowVersion: string;
 }
 export interface CreateVisitRequest {
@@ -414,6 +415,7 @@ export interface OnDutyResponse {
 }
 export interface HealthMetricDto {
   id: number;
+  visitId?: number | null;
   metricType: number;
   value: number;
   unit: string;
@@ -422,6 +424,33 @@ export interface HealthMetricDto {
   recordedLocalDate: string;
   note?: string | null;
   isAbnormal: boolean;
+  rowVersion: string;
+  pairMetricId?: number | null;
+  pairRowVersion?: string | null;
+  systolicValue?: number | null;
+  diastolicValue?: number | null;
+}
+export interface VisitHealthMetricsDto {
+  visitId: number;
+  glucose?: HealthMetricDto | null;
+  hbA1c?: HealthMetricDto | null;
+  bloodPressure?: HealthMetricDto | null;
+}
+export interface SaveVisitHealthMetricsRequest {
+  glucose?: number | null;
+  glucoseContext?: number | null;
+  glucoseNote?: string | null;
+  glucoseRowVersion?: string | null;
+
+  hbA1c?: number | null;
+  hbA1cNote?: string | null;
+  hbA1cRowVersion?: string | null;
+
+  systolicBp?: number | null;
+  diastolicBp?: number | null;
+  bloodPressureNote?: string | null;
+  systolicRowVersion?: string | null;
+  diastolicRowVersion?: string | null;
 }
 export interface CreateMetricRequest {
   metricType: number;
@@ -472,7 +501,7 @@ export interface MetricSummary {
   to: string;
   totalAbnormalCount: number;
   glucose: MetricTrend;
-  hba1c: MetricTrend;
+  hbA1c: MetricTrend;
   bloodPressure: BloodPressureTrend;
 }
 export interface LifestyleLogDto {
@@ -727,7 +756,7 @@ export interface VisitReportBloodPressure {
 export interface VisitReportHealthMetrics {
   date: string;
   glucose?: VisitReportGlucose | null;
-  hbA1c?: VisitReportMetricValue | null;
+  hba1c?: VisitReportMetricValue | null;
   bloodPressure?: VisitReportBloodPressure | null;
 }
 export interface VisitReportPrescription {

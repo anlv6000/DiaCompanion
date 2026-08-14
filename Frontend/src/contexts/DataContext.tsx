@@ -121,6 +121,9 @@ const buildVisits = () => ({
   list: (p: Record<string, unknown>) => visitsApi.list(p),
   assignedToMe: (p: Record<string, unknown>) => visitsApi.assignedToMe(p),
   get: (id: number) => visitsApi.get(id),
+  healthMetrics: (id: number) => visitsApi.healthMetrics(id),
+  saveHealthMetrics: (id: number, b: T.SaveVisitHealthMetricsRequest) =>
+    visitsApi.saveHealthMetrics(id, b),
   create: (b: T.CreateVisitRequest) => visitsApi.create(b),
   close: (id: number, b: T.CloseVisitRequest) => visitsApi.close(id, b),
   void: (id: number, reason: string, rowVersion: string) =>

@@ -21,4 +21,5 @@ public partial interface IRepository
     Task<bool> VisitHasClinicalDataAsync(int visitId, CancellationToken ct = default);
     Task<VisitPage> GetCompletedVisitsForPatientAsync(int patientId, PageQuery page, CancellationToken ct = default);
     Task<VisitDto?> GetCompletedVisitForPatientAsync(int patientId, int visitId, CancellationToken ct = default);
+    Task<IReadOnlyList<HealthMetric>> GetVisitHealthMetricsAsync(int visitId, bool tracking = false, CancellationToken ct = default);
 }
