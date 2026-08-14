@@ -1,38 +1,46 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Entities;
+using System.ComponentModel;
 
 namespace DiaCompanion.Api.Repositories;
 
 public sealed partial class EfRepository
 {
     public async Task<IReadOnlyList<OnDutyDoctorRow>> GetOnDutyDoctorsAsync(
-        byte dayOfWeek, byte? shift, DateTime dayStartUtc, DateTime dayEndUtc, CancellationToken ct = default)
+        byte dayOfWeek, byte shift, DateTime startUtc, DateTime endUtc, CancellationToken ct = default)
     {
+        // Lấy tất cả ca trực đang hoạt động và tương ứng với ca trực thực tế
         var shifts = _db.DoctorShifts.AsNoTracking()
-            .Where(s => s.IsActive && s.DayOfWeek == dayOfWeek);
-
-        if (shift is 1 or 2) shifts = shifts.Where(s => (byte)s.Shift == shift);
+            .Where(s => s.IsActive
+                        && s.DayOfWeek == dayOfWeek
+                        && (byte)s.Shift == shift);
 
         var rows = await shifts
-            .Join(
-                _db.Users.AsNoTracking().Where(u =>
-                    u.UserRoles.Any(ur => ur.IsActive && ur.Role.IsActive && ur.Role.Name == Roles.Doctor)),
-                s => s.DoctorId,
-                u => u.Id,
-                (s, u) => new { s.Shift, u.Id, u.FullName, u.LicenseNo })
-            .ToListAsync(ct);
-
+            .Where(s =>
+                    s.Doctor != null &&
+                    s.Doctor.UserRoles.Any(ur =>
+                        ur.IsActive &&
+                        ur.Role.IsActive &&
+                        ur.Role.Name == Roles.Doctor))
+            .Select(s => new
+            {
+                Shift = (byte)s.Shift,
+                DoctorId = s.DoctorId,
+                DoctorName = s.Doctor!.FullName,
+                LicenseNo = s.Doctor.LicenseNo 
+            }).ToListAsync();
+        // Với mỗi bác sĩ lấy ra số lượt khám đang mở
         var counts = await _db.Visits.AsNoTracking()
             .Where(v => v.Status == VisitStatus.InProgress && v.DoctorId != null
-                        && v.VisitDate >= dayStartUtc && v.VisitDate < dayEndUtc)
+                        && v.VisitDate >= startUtc && v.VisitDate < endUtc)
             .GroupBy(v => v.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.DoctorId, x => x.Count, ct);
 
         return rows.Select(r => new OnDutyDoctorRow(
-            (byte)r.Shift, r.Id, r.FullName, r.LicenseNo,
-            counts.TryGetValue(r.Id, out var count) ? count : 0)).ToList();
+            (byte)r.Shift, r.DoctorId, r.DoctorName, r.LicenseNo,
+            counts.TryGetValue(r.DoctorId, out var count) ? count : 0)).ToList();
     }
 
     public async Task<IReadOnlyList<DoctorShiftRow>> GetDoctorShiftsAsync(int? doctorId, CancellationToken ct = default)
