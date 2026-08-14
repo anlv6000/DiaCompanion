@@ -252,37 +252,30 @@ public sealed partial class EfRepository
         CancellationToken ct = default)
     {
         var normalized = NormalizeManagedStaffRole(roleName)
-            ?? throw new ArgumentException("Role nhân viên không hợp lệ.", nameof(roleName));
+            ?? throw new ArgumentException(
+                "Role nhân viên không hợp lệ.",
+                nameof(roleName));
 
-        var targetRole = await _db.Roles.FirstOrDefaultAsync(
-            r => r.Name == normalized && r.IsActive, ct);
+        var targetRole = await _db.Roles
+            .FirstOrDefaultAsync(
+                r => r.Name == normalized && r.IsActive,
+                ct);
 
         if (targetRole is null)
+        {
             throw new InvalidOperationException(
                 $"Role '{normalized}' không tồn tại hoặc đã bị vô hiệu hóa.");
+        }
 
-        // Chỉ đồng bộ Doctor/Receptionist; Patient và Admin tuyệt đối không bị đụng.
         var existing = await _db.UserRoles
             .Where(ur =>
                 ur.UserId == user.Id &&
-                (ur.Role.Name == Roles.Doctor || ur.Role.Name == Roles.Receptionist))
+                (ur.Role.Name == Roles.Doctor ||
+                 ur.Role.Name == Roles.Receptionist))
             .ToListAsync(ct);
 
-        foreach (var assignment in existing)
-        {
-            var shouldBeActive = assignment.RoleId == targetRole.Id;
-            if (assignment.IsActive == shouldBeActive)
-                continue;
-
-            assignment.IsActive = shouldBeActive;
-            if (shouldBeActive)
-            {
-                assignment.AssignedAt = DateTime.UtcNow;
-                assignment.AssignedBy = assignedBy;
-            }
-        }
-
-        if (existing.All(x => x.RoleId != targetRole.Id))
+        // Chưa có staff role
+        if (existing.Count == 0)
         {
             _db.UserRoles.Add(new UserRole
             {
@@ -292,7 +285,42 @@ public sealed partial class EfRepository
                 AssignedAt = DateTime.UtcNow,
                 IsActive = true
             });
+
+            return;
         }
+
+        // Đã đúng role rồi
+        var currentTarget =
+            existing.FirstOrDefault(x => x.RoleId == targetRole.Id);
+
+        if (currentTarget is not null)
+        {
+            currentTarget.IsActive = true;
+            currentTarget.AssignedBy = assignedBy;
+            currentTarget.AssignedAt = DateTime.UtcNow;
+
+            // Dọn role staff thừa từ dữ liệu cũ
+            foreach (var duplicate in existing.Where(x => x != currentTarget))
+            {
+                _db.UserRoles.Remove(duplicate);
+            }
+
+            return;
+        }
+
+        // Đổi role:
+        // Vì RoleId thuộc PK nên KHÔNG assignment.RoleId = ...
+        // Xóa assignment cũ rồi thêm assignment mới.
+        _db.UserRoles.RemoveRange(existing);
+
+        _db.UserRoles.Add(new UserRole
+        {
+            UserId = user.Id,
+            RoleId = targetRole.Id,
+            AssignedBy = assignedBy,
+            AssignedAt = DateTime.UtcNow,
+            IsActive = true
+        });
     }
 
     // ============================================================
