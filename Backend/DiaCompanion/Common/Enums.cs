@@ -94,5 +94,9 @@ public static class ConfigKeys
     public const string GlucoseFastingMax = "metric.glucose_fasting_max";
     public const string GlucosePostMealMax = "metric.glucose_postmeal_max";
     public const string GlucoseMin = "metric.glucose_min";
+    public const string ShiftMorningStart = "clinic.shift_morning_start";
+    public const string ShiftAfternoonStart = "clinic.shift_afternoon_start";
+    public const string ShiftNightStart = "clinic.shift_night_start";
+
     public static string RecheckMonths(byte grade) => $"recheck.months_grade_{grade}";
 }

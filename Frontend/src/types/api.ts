@@ -383,7 +383,7 @@ export interface DoctorShiftDto {
   licenseNo?: string | null;
   dayOfWeek: number; // 0=CN … 6=T7
   dayLabel: string;
-  shift: number; // 1=Sáng, 2=Chiều
+  shift: number; // 1=Sáng, 2=Chiều, 3=Đêm
   shiftLabel: string;
   isActive: boolean;
   rowVersion: string;
