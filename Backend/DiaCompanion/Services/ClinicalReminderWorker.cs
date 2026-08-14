@@ -119,6 +119,78 @@ public sealed class ClinicalReminderWorker : BackgroundService
             await repository.CommitAsync(ct);
     }
 
+    //private static async Task ProcessRecheckRemindersAsync(
+    //    IRepository repository,
+    //    INotificationService notify,
+    //    IClinicClock clock,
+    //    CancellationToken ct)
+    //{
+    //    var today = clock.LocalToday;
+    //    var latestVisits = await repository.GetRecheckReminderCandidatesAsync(ct);
+    //    if (latestVisits.Count == 0)
+    //        return;
+
+    //    var added = 0;
+
+    //    foreach (var visit in latestVisits)
+    //    {
+    //        ct.ThrowIfCancellationRequested();
+
+    //        // Có lượt khám có ý nghĩa mới hơn lần dùng làm mốc recheck => đã quay lại.
+    //        if (visit.LatestVisitDate is DateTime latestVisitDate && latestVisitDate > visit.ClosedAt)
+    //            continue;
+
+    //        var closedLocal = clock.ToLocal(visit.ClosedAt) ?? visit.ClosedAt;
+    //        var dueDate = DateOnly.FromDateTime(closedLocal.AddMonths(visit.RecheckMonths));
+    //        var daysUntilDue = dueDate.DayNumber - today.DayNumber;
+    //        var daysPastDue = -daysUntilDue;
+
+    //        // GIỮ NGUYÊN các mốc cũ 30/7/1 ngày và đúng ngày.
+    //        // Bổ sung: ngày đầu tiên quá hạn và sau đó mỗi 7 ngày nếu vẫn chưa quay lại.
+    //        var shouldSend = daysUntilDue is 30 or 7 or 1 or 0
+    //                         || daysPastDue == 1;
+    //        if (!shouldSend)
+    //            continue;
+
+
+    //        // Giữ nguyên format title cũ để NotificationExistsAsync nhận ra
+    //        // các thông báo 30/7/1/0 ngày đã phát hành trước khi nâng cấp code.
+    //        var title = daysUntilDue >= 0
+    //            ? $"Nhắc tái tầm soát {dueDate:dd/MM/yyyy}"
+    //            : $"Tái tầm soát quá hạn {daysPastDue} ngày";
+
+    //        var alreadySent = await repository.NotificationExistsAsync(
+    //            visit.UserId,
+    //            NotificationType.Recheck,
+    //            title,
+    //            nameof(Visit),
+    //            visit.VisitId,
+    //            ct);
+    //        if (alreadySent)
+    //            continue;
+
+    //        var message = daysUntilDue switch
+    //        {
+    //            > 1 => $"Ngày tái tầm soát dự kiến của bạn là {dueDate:dd/MM/yyyy} (còn {daysUntilDue} ngày).",
+    //            1 => $"Ngày mai ({dueDate:dd/MM/yyyy}) là ngày tái tầm soát dự kiến của bạn.",
+    //            0 => $"Hôm nay ({dueDate:dd/MM/yyyy}) là ngày tái tầm soát dự kiến của bạn.",
+    //            _ => $"Bạn đã quá ngày tái tầm soát dự kiến {daysPastDue} ngày. Vui lòng liên hệ cơ sở y tế để tái khám."
+    //        };
+
+    //        notify.Push(
+    //            visit.UserId,
+    //            NotificationType.Recheck,
+    //            title,
+    //            message,
+    //            nameof(Visit),
+    //            visit.VisitId);
+    //        added++;
+    //    }
+
+    //    if (added > 0)
+    //        await repository.CommitAsync(ct);
+    //}
+
     private static async Task ProcessRecheckRemindersAsync(
         IRepository repository,
         INotificationService notify,
@@ -130,64 +202,108 @@ public sealed class ClinicalReminderWorker : BackgroundService
         if (latestVisits.Count == 0)
             return;
 
-        var added = 0;
-
         foreach (var visit in latestVisits)
         {
-            ct.ThrowIfCancellationRequested();
-
-            // Có lượt khám có ý nghĩa mới hơn lần dùng làm mốc recheck => đã quay lại.
+            // Có lượt khám mới sau lần đóng này nghĩa là bệnh nhân đã quay lại.
             if (visit.LatestVisitDate is DateTime latestVisitDate && latestVisitDate > visit.ClosedAt)
                 continue;
 
             var closedLocal = clock.ToLocal(visit.ClosedAt) ?? visit.ClosedAt;
-            var dueDate = DateOnly.FromDateTime(closedLocal.AddMonths(visit.RecheckMonths));
+
+            var dueDate = DateOnly.FromDateTime(
+                closedLocal.AddMonths(visit.RecheckMonths)
+            );
+
             var daysUntilDue = dueDate.DayNumber - today.DayNumber;
             var daysPastDue = -daysUntilDue;
 
-            // GIỮ NGUYÊN các mốc cũ 30/7/1 ngày và đúng ngày.
-            // Bổ sung: ngày đầu tiên quá hạn và sau đó mỗi 7 ngày nếu vẫn chưa quay lại.
-            var shouldSend = daysUntilDue is 30 or 7 or 1 or 0
-                             || daysPastDue == 1;
+
+            // ==============================
+            // ĐÃ QUÁ HẠN
+            // ==============================
+            if (daysPastDue > 0)
+            {
+                const string title = "Tái tầm soát đã quá hạn";
+
+                var alreadySent = await repository.NotificationExistsAsync(
+                    visit.UserId,
+                    NotificationType.Recheck,
+                    title,
+                    nameof(Visit),
+                    visit.VisitId,
+                    ct
+                );
+
+                if (!alreadySent)
+                {
+                    notify.Push(
+                        visit.UserId,
+                        NotificationType.Recheck,
+                        title,
+                        $"Bạn đã quá ngày tái tầm soát dự kiến " +
+                        $"{daysPastDue} ngày (hạn {dueDate:dd/MM/yyyy}). " +
+                        $"Vui lòng liên hệ cơ sở y tế.",
+                        nameof(Visit),
+                        visit.VisitId
+                    );
+                }
+
+                continue;
+            }
+
+
+            // ==============================
+            // CHƯA QUÁ HẠN
+            // ==============================
+            var shouldSend =
+                daysUntilDue is 30 or 7 or 1 or 0;
+
             if (!shouldSend)
                 continue;
 
+            var reminderTitle =
+                $"Nhắc tái tầm soát {dueDate:dd/MM/yyyy}";
 
-            // Giữ nguyên format title cũ để NotificationExistsAsync nhận ra
-            // các thông báo 30/7/1/0 ngày đã phát hành trước khi nâng cấp code.
-            var title = daysUntilDue >= 0
-                ? $"Nhắc tái tầm soát {dueDate:dd/MM/yyyy}"
-                : $"Tái tầm soát quá hạn {daysPastDue} ngày";
+            var reminderAlreadySent =
+                await repository.NotificationExistsAsync(
+                    visit.UserId,
+                    NotificationType.Recheck,
+                    reminderTitle,
+                    nameof(Visit),
+                    visit.VisitId,
+                    ct
+                );
 
-            var alreadySent = await repository.NotificationExistsAsync(
-                visit.UserId,
-                NotificationType.Recheck,
-                title,
-                nameof(Visit),
-                visit.VisitId,
-                ct);
-            if (alreadySent)
+            if (reminderAlreadySent)
                 continue;
 
             var message = daysUntilDue switch
             {
-                > 1 => $"Ngày tái tầm soát dự kiến của bạn là {dueDate:dd/MM/yyyy} (còn {daysUntilDue} ngày).",
-                1 => $"Ngày mai ({dueDate:dd/MM/yyyy}) là ngày tái tầm soát dự kiến của bạn.",
-                0 => $"Hôm nay ({dueDate:dd/MM/yyyy}) là ngày tái tầm soát dự kiến của bạn.",
-                _ => $"Bạn đã quá ngày tái tầm soát dự kiến {daysPastDue} ngày. Vui lòng liên hệ cơ sở y tế để tái khám."
+                > 1 =>
+                    $"Ngày tái tầm soát dự kiến của bạn là " +
+                    $"{dueDate:dd/MM/yyyy} (còn {daysUntilDue} ngày).",
+
+                1 =>
+                    $"Ngày mai ({dueDate:dd/MM/yyyy}) " +
+                    $"là ngày tái tầm soát dự kiến của bạn.",
+
+                0 =>
+                    $"Hôm nay ({dueDate:dd/MM/yyyy}) " +
+                    $"là ngày tái tầm soát dự kiến của bạn.",
+
+                _ => ""
             };
 
             notify.Push(
                 visit.UserId,
                 NotificationType.Recheck,
-                title,
+                reminderTitle,
                 message,
                 nameof(Visit),
-                visit.VisitId);
-            added++;
+                visit.VisitId
+            );
         }
 
-        if (added > 0)
-            await repository.CommitAsync(ct);
+        await repository.CommitAsync(ct);
     }
 }

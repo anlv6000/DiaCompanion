@@ -5,12 +5,45 @@ namespace DiaCompanion.Api.Repositories;
 
 public sealed partial class EfRepository
 {
-    public async Task<IReadOnlyList<RecheckCandidate>> GetRecheckCandidatesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<RecheckCandidate>> GetRecheckCandidatesAsync(
+    CancellationToken ct = default)
     {
-        var allCompleted = await _db.Visits.AsNoTracking()
-            .Where(v => !v.IsVoided && v.Status == VisitStatus.Completed && v.ClosedAt != null && v.RecheckMonths != null)
+        // 1. Lấy tất cả lượt khám đã hoàn thành, chưa void
+        var allCompleted = await _db.Visits
+            .AsNoTracking()
+            .Where(v =>
+                !v.IsVoided &&
+                v.Status == VisitStatus.Completed &&
+                v.ClosedAt != null)
             .Select(v => new
             {
+<<<<<<< HEAD
+                v.Id,
+                v.MedicalRecord.PatientId,
+                v.VisitDate,
+                ClosedAt = v.ClosedAt!.Value,
+                v.RecheckMonths,
+                v.Referral,
+
+                v.MedicalRecord.Patient!.Code,
+                v.MedicalRecord.Patient.FullName,
+                v.MedicalRecord.Patient.Phone
+            })
+            .ToListAsync(ct);
+
+        if (allCompleted.Count == 0)
+            return Array.Empty<RecheckCandidate>();
+
+        // 2. Mỗi bệnh nhân chỉ lấy lượt khám Completed mới nhất
+        var lastVisits = allCompleted
+            .GroupBy(v => v.PatientId)
+            .Select(g => g
+                .OrderByDescending(v => v.ClosedAt)
+                .ThenByDescending(v => v.Id)
+                .First())
+            // Lượt khám mới nhất phải có chỉ định tái tầm soát
+            .Where(v => v.RecheckMonths.HasValue)
+=======
                 v.Id, v.MedicalRecord.PatientId, ClosedAt = v.ClosedAt!.Value, RecheckMonths = v.RecheckMonths!.Value,
                 v.Referral, v.MedicalRecord.Patient!.Code, v.MedicalRecord.Patient.FullName, v.MedicalRecord.Patient.Phone, v.VisitDate
             }).ToListAsync(ct);
@@ -18,34 +51,61 @@ public sealed partial class EfRepository
 
         var lastVisits = allCompleted.GroupBy(v => v.PatientId)
             .Select(g => g.OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id).First())
+>>>>>>> b8892d5369b93c901ca80475281b2a8e31d1c436
             .ToList();
-        var patientIds = lastVisits.Select(v => v.PatientId).ToArray();
-        var visitIds = lastVisits.Select(v => v.Id).ToArray();
 
-        var latestDates = await _db.Visits.AsNoTracking()
-            .Where(v => !v.IsVoided
-                        && patientIds.Contains(v.MedicalRecord.PatientId)
-                        && (v.RecheckMonths != null
-                            || v.Images.Any(i => !i.IsVoided)
-                            || _db.Prescriptions.Any(p => p.VisitId == v.Id && !p.IsVoided)))
-            .GroupBy(v => v.MedicalRecord.PatientId)
-            .Select(g => new { PatientId = g.Key, Latest = g.Max(v => v.VisitDate) })
-            .ToDictionaryAsync(x => x.PatientId, x => x.Latest, ct);
-        var grades = visitIds.Length == 0
-            ? new Dictionary<int, byte>()
-            : await _db.DiagnosisReviews.AsNoTracking()
-                .Where(r => !r.IsVoided && r.AiDiagnosis != null && r.AiDiagnosis.FundusImage != null &&
-                            r.AiDiagnosis.FundusImage.VisitId.HasValue && visitIds.Contains(r.AiDiagnosis.FundusImage.VisitId.Value))
-                .GroupBy(r => r.AiDiagnosis!.FundusImage!.VisitId!.Value)
-                .Select(g => new { VisitId = g.Key, Grade = (byte)g.Max(x => (byte)x.FinalGrade) })
-                .ToDictionaryAsync(x => x.VisitId, x => x.Grade, ct);
+        if (lastVisits.Count == 0)
+            return Array.Empty<RecheckCandidate>();
 
-        return lastVisits.Select(v => new RecheckCandidate(
-            v.PatientId, v.Code, v.FullName, v.Phone, v.Id, v.ClosedAt, v.RecheckMonths, v.Referral,
-            latestDates.GetValueOrDefault(v.PatientId),
-            grades.TryGetValue(v.Id, out var grade) ? grade : null)).ToList();
+        // 3. Lấy các VisitId cần tìm grade
+        var visitIds = lastVisits
+            .Select(v => v.Id)
+            .ToArray();
+
+        // 4. Với mỗi Visit lấy FinalGrade lớn nhất
+        var grades = await _db.DiagnosisReviews
+            .AsNoTracking()
+            .Where(r =>
+                !r.IsVoided &&
+                r.AiDiagnosis != null &&
+                r.AiDiagnosis.FundusImage != null &&
+                r.AiDiagnosis.FundusImage.VisitId.HasValue &&
+                visitIds.Contains(
+                    r.AiDiagnosis.FundusImage.VisitId.Value))
+            .GroupBy(r =>
+                r.AiDiagnosis!.FundusImage!.VisitId!.Value)
+            .Select(g => new
+            {
+                VisitId = g.Key,
+                Grade = (byte)g.Max(x => (byte)x.FinalGrade)
+            })
+            .ToDictionaryAsync(
+                x => x.VisitId,
+                x => x.Grade,
+                ct);
+
+        // 5. Tạo candidate
+        return lastVisits
+            .Select(v => new RecheckCandidate(
+                v.PatientId,
+                v.Code,
+                v.FullName,
+                v.Phone,
+                v.Id,
+                v.ClosedAt,
+                v.RecheckMonths!.Value,
+                v.Referral,
+
+                // Nếu record hiện tại vẫn bắt buộc field LatestVisitDate
+                // thì truyền VisitDate của chính lượt khám mới nhất.
+                v.VisitDate,
+
+                grades.TryGetValue(v.Id, out var grade)
+                    ? grade
+                    : null
+            ))
+            .ToList();
     }
-
     public async Task<RecheckCandidate?> GetRecheckCandidateAsync(int patientId, CancellationToken ct = default)
     {
         var visit = await _db.Visits.AsNoTracking()
