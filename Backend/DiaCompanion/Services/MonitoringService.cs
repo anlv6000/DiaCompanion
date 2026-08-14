@@ -774,6 +774,12 @@ public class MonitoringService : BaseService, IMonitoringService
         var today = _clock.LocalToday;
 
         var rows = await _repository.GetMedicationLogsForDateAsync(pid, today);
+        var items = rows.Select(MapMedication).ToList();
+        foreach (var i in items)
+        {
+            i.ScheduledAt = _clock.ToLocal(i.ScheduledAt)!.Value;
+        }
+        
         return Ok(rows.Select(MapMedication).ToList());
     }
 
@@ -797,7 +803,7 @@ public class MonitoringService : BaseService, IMonitoringService
         _repository.ApplyOriginalRowVersion(log, req.RowVersion);
         var oldStatus = log.Status;
         log.Status = req.Status;
-        log.TakenAt = req.Status == MedicationStatus.Taken ? _clock.UtcNow : null;
+        log.TakenAt = req.Status == MedicationStatus.Taken ? _clock.ToLocal(_clock.UtcNow) : null;
         await _audit.LogAsync(
             AuditAction.MedicationConfirm,
             nameof(MedicationLog),

@@ -31,7 +31,7 @@ public class VisitsService : BaseService, IVisitsService
         DateTime? fromUtc = from is DateOnly f ? _clock.ToUtc(f.ToDateTime(TimeOnly.MinValue)) : null;
         DateTime? toExclusiveUtc = to is DateOnly t ? _clock.ToUtc(t.AddDays(1).ToDateTime(TimeOnly.MinValue)) : null;
         var data = await _repository.GetVisitPageAsync(patientId, doctorId, status, fromUtc, toExclusiveUtc, page);
-        return Ok(new PagedResult<VisitDto>
+        return Ok(new PagedResult<VisitDto> 
         {
             Items = data.Items.Select(ToLocalVisitDto).ToList(),
             Page = page.Page,

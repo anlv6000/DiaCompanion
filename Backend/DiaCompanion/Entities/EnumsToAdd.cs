@@ -4,5 +4,6 @@ namespace DiaCompanion.Api.Common;
 public enum ShiftType : byte
 {
     Morning = 1,
-    Afternoon = 2
+    Afternoon = 2,
+    Night = 3
 }

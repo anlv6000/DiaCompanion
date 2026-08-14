@@ -15,7 +15,7 @@ public sealed partial class EfRepository
         PageQuery page,
         CancellationToken ct = default)
     {
-        var query = _db.Prescriptions.IgnoreQueryFilters().AsNoTracking()
+        var query = _db.Prescriptions.AsNoTracking()
             .Where(p => p.PatientId == patientId);
 
         if (voided is bool isVoided) query = query.Where(p => p.IsVoided == isVoided);
