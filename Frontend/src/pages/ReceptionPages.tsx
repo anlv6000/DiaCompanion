@@ -27,7 +27,11 @@ import type {
 /* ======================================================================== */
 /*  TRANG 1 — Tạo lượt khám + chọn bác sĩ đang trực                         */
 /* ======================================================================== */
-
+const SHIFT_LABELS: Record<number, string> = {
+  1: "Sáng",
+  2: "Chiều",
+  3: "Đêm",
+};
 export function ReceptionNewVisitPage() {
   const data = useData();
   const toast = useToast();
@@ -138,7 +142,7 @@ export function ReceptionNewVisitPage() {
               <p className="hint">
                 {onDuty.data.dayLabel}
                 {onDuty.data.currentShift
-                  ? ` · Ca hiện tại: ${onDuty.data.currentShift === 1 ? "Sáng" : "Chiều"}`
+                  ? ` · Ca hiện tại: ${SHIFT_LABELS[onDuty.data.currentShift] ?? "Không xác định"}`
                   : ""}
               </p>
               <div className="duty-grid">
@@ -362,6 +366,7 @@ function AddShiftModal({
           <select value={String(shift)} onChange={(e) => setShift(Number(e.target.value))}>
             <option value="1">Ca sáng</option>
             <option value="2">Ca chiều</option>
+            <option value="3">Ca đêm</option>
           </select>
         </Field>
 

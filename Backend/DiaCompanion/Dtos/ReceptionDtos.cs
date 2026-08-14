@@ -71,7 +71,7 @@ public class OnDutyResponse
 {
     public DateOnly Date { get; set; }
     public string DayLabel { get; set; } = "";
-    /// <summary>Ca hiện tại suy theo giờ máy chủ: 1 = Sáng, 2 = Chiều (tham khảo).</summary>
+    /// <summary>Ca hiện tại suy theo giờ máy chủ: 1 = Sáng, 2 = Chiều, 3 = Tối (tham khảo).</summary>
     public byte? CurrentShift { get; set; }
     public List<OnDutyDoctorDto> Doctors { get; set; } = new();
 }

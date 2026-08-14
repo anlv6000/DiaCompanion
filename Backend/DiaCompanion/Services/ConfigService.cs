@@ -9,6 +9,7 @@ public interface IConfigService
     Task<decimal> GetDecimalAsync(string key, decimal fallback);
     Task<int> GetIntAsync(string key, int fallback);
     Task<byte> GetRecheckMonthsAsync(DrGrade grade);
+    Task<TimeOnly> GetTimeAsync(string key, TimeOnly fallback);
 }
 
 public class ConfigService : IConfigService
@@ -48,5 +49,24 @@ public class ConfigService : IConfigService
             _ => 12
         };
         return (byte)await GetIntAsync(ConfigKeys.RecheckMonths((byte)grade), fallback);
+    }
+    public async Task<TimeOnly> GetTimeAsync(
+    string key,
+    TimeOnly fallback)
+    {
+        var value = await GetAsync(key);
+
+        var isValid = TimeOnly.TryParseExact(
+            value,
+            "HH:mm",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsedTime);
+
+        var result = isValid
+            ? parsedTime
+            : fallback;
+
+        return result;
     }
 }

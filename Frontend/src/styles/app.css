@@ -1210,13 +1210,26 @@ a {
 /* Lưới thẻ bác sĩ đang trực */
 .duty-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
+
 .duty-card {
+  height: auto;
+  min-height: 96px;
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+
+  white-space: normal;
   text-align: left;
   padding: 14px 16px;
+
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 12px;
@@ -1231,14 +1244,24 @@ a {
   box-shadow: 0 0 0 2px var(--primary) inset;
 }
 .duty-name {
+  width: 100%;
+  min-width: 0;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
+
 .duty-meta {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 2px;
   font-size: 13px;
   color: var(--muted);
-  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.duty-card .badge {
+  white-space: nowrap;
 }
 
 /* Bộ chọn thứ trong tuần khi thêm ca trực */

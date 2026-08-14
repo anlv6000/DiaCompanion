@@ -3,6 +3,7 @@ using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
+using System.Threading.Tasks;
 
 namespace DiaCompanion.Api.Services;
 
@@ -11,30 +12,38 @@ public class ReceptionService : BaseService, IReceptionService
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
     private readonly IClinicClock _clock;
+    private readonly IConfigService _cfg;
 
-    public ReceptionService(IRepository repository, ICurrentUser me, IClinicClock clock)
-    { _repository = repository; _me = me; _clock = clock; }
+    private static readonly TimeOnly MorningStart = new(7, 0);
+    private static readonly TimeOnly AfternoonStart = new(14, 0);
+    private static readonly TimeOnly NightStart = new(18, 0);
+    public ReceptionService(IRepository repository, ICurrentUser me, IClinicClock clock, IConfigService cfg)
+    { _repository = repository; _me = me; _clock = clock; _cfg = cfg; }
 
     public async Task<ActionResult<OnDutyResponse>> OnDuty(DateOnly? date, byte? shift)
     {
-        var day = date ?? _clock.LocalToday;
-        var dow = (byte)day.DayOfWeek;
-        var start = _clock.ToUtc(day.ToDateTime(TimeOnly.MinValue));
-        var end = _clock.ToUtc(day.AddDays(1).ToDateTime(TimeOnly.MinValue));
-        var rows = await _repository.GetOnDutyDoctorsAsync(dow, shift, start, end);
+        // Lấy giờ ca trực trong config
+        var configShiftTime = await GetShiftTimesAsync();
+        // Lấy ca trực theo giờ ca trực trong config
+        var currentShift = ResolveCurrentShift(configShiftTime);
+        // Lấy ngày thực tế cần để query
+        var currentDate = currentShift.ScheduleAt;
+        var dow = (byte)currentDate.DayOfWeek;
+        // Lấy giờ trực từ ngày thực tế, ca trực thực tế, theo giờ trực trong config
+        var shiftRange = ResolveShiftUtcRange(currentDate, currentShift.Shift, configShiftTime);
+        var rows = await _repository.GetOnDutyDoctorsAsync(dow, currentShift.Shift, shiftRange.StartUtc, shiftRange.EndUtc);
 
         var doctors = rows
             .GroupBy(r => new { r.DoctorId, r.DoctorName, r.LicenseNo, r.OpenVisitCount })
             .Select(g =>
             {
-                var shown = shift is 1 or 2 ? shift.Value : g.Min(x => x.Shift);
                 return new OnDutyDoctorDto
                 {
                     DoctorId = g.Key.DoctorId,
                     DoctorName = g.Key.DoctorName,
                     LicenseNo = g.Key.LicenseNo,
-                    Shift = shown,
-                    ShiftLabel = ShiftLabel(shown),
+                    Shift = currentShift.Shift,
+                    ShiftLabel = ShiftLabel(currentShift.Shift),
                     OpenVisitCount = g.Key.OpenVisitCount
                 };
             })
@@ -42,9 +51,9 @@ public class ReceptionService : BaseService, IReceptionService
 
         return Ok(new OnDutyResponse
         {
-            Date = day,
+            Date = currentDate,
             DayLabel = DayLabel(dow),
-            CurrentShift = CurrentShift(),
+            CurrentShift = currentShift.Shift,
             Doctors = doctors
         });
     }
@@ -147,9 +156,112 @@ public class ReceptionService : BaseService, IReceptionService
         IsActive = row.Shift.IsActive,
         RowVersion = row.Shift.ToRowVersion()
     };
+    // Lưu trữ ca hiện tại và Ngày dùng để tìm ca trực 
+    private sealed record ShiftContext (
+        byte Shift,
+        DateOnly ScheduleAt);
+    // Để lưu cả 3 giá trị vào 1 đối tượng
+    private sealed record ShiftTimes(
+    TimeOnly MorningStart,
+    TimeOnly AfternoonStart,
+    TimeOnly NightStart);
+    private byte? CurrentShift() => _clock.LocalNow.Hour < 12
+        ? (byte)1
+        : (byte)2;
+    private async Task<ShiftTimes> GetShiftTimesAsync()
+    {
+        var morningStart = await _cfg.GetTimeAsync(
+                ConfigKeys.ShiftMorningStart,
+                new TimeOnly(7, 0));
+        var afternoonStart = await _cfg.GetTimeAsync(
+                ConfigKeys.ShiftAfternoonStart,
+                new TimeOnly(14, 0));
+        var nightStart = await _cfg.GetTimeAsync(
+                ConfigKeys.ShiftNightStart,
+                new TimeOnly(18, 0));
+        return new ShiftTimes(
+                MorningStart: morningStart,
+                AfternoonStart: afternoonStart,
+                NightStart: nightStart);
+    }
+    private ShiftContext ResolveCurrentShift(ShiftTimes shiftTimeConfig)
+    {
+        var localNow = _clock.LocalNow;
+        var currentDate = DateOnly.FromDateTime(localNow);
+        var currentTime = TimeOnly.FromDateTime(localNow);
 
-    private byte? CurrentShift() => _clock.LocalNow.Hour < 12 ? (byte)1 : (byte)2;
-    private static string ShiftLabel(byte s) => s switch { 1 => "Ca sáng", 2 => "Ca chiều", _ => "—" };
+        // Ca sáng theo giờ đã config
+        if (currentTime >= shiftTimeConfig.MorningStart &&
+            currentTime < shiftTimeConfig.AfternoonStart)
+        {
+            return new ShiftContext(
+                Shift: 1,
+                ScheduleAt: currentDate);
+        }
+
+        // Ca chiều theo giờ đã config
+        if (currentTime >= shiftTimeConfig.AfternoonStart &&
+            currentTime < shiftTimeConfig.NightStart)
+        {
+            return new ShiftContext(
+                Shift: 2,
+                ScheduleAt: currentDate);
+        }
+
+        // Ca đêm theo giờ đã config
+        if (currentTime >= shiftTimeConfig.NightStart)
+        {
+            return new ShiftContext(
+                Shift: 3,
+                ScheduleAt: currentDate);
+        }
+
+        // Ca đêm: 00:00–06:59, lấy lịch hôm trước
+        return new ShiftContext(
+            Shift: 3,
+            ScheduleAt: currentDate.AddDays(-1));
+    }
+    private (DateTime StartUtc, DateTime EndUtc) ResolveShiftUtcRange(DateOnly scheduleDate, byte shift, ShiftTimes shiftTimeConfig)
+    {
+        // Hai biến lưu thời điểm bắt đầu và kết thúc ca khám theo giờ điạ phương 
+        DateTime startLocal;
+        DateTime endLocal;
+        switch (shift)
+        {
+            case 1:
+                // Ca sáng
+                startLocal = scheduleDate.ToDateTime(shiftTimeConfig.MorningStart); // Ghép DateOnly và thời gian thành 1 ngày DateTime
+                endLocal = scheduleDate.ToDateTime(shiftTimeConfig.AfternoonStart);
+                break;
+            case 2:
+                startLocal = scheduleDate.ToDateTime(shiftTimeConfig.AfternoonStart);
+                endLocal = scheduleDate.ToDateTime(shiftTimeConfig.NightStart);
+                break;
+            case 3:
+                // Ca đêm bắt đầu lúc 18:00 của ngày lịch trực.
+                startLocal = scheduleDate.ToDateTime(shiftTimeConfig.NightStart);
+
+                // Ca đêm kết thúc lúc 07:00 của ngày hôm sau,
+                // nên phải cộng thêm một ngày trước khi ghép với MorningStart.
+                endLocal = scheduleDate
+                    .AddDays(1)
+                    .ToDateTime(shiftTimeConfig.MorningStart);
+                break;
+            default:
+                // Ngăn không cho các giá trị ngoài 1, 2, 3
+                // được sử dụng để tính khoảng thời gian ca trực.
+                throw AppException.BadRequest(
+                    Msg.InvalidData,
+                    "Ca trực không hợp lệ.");
+        }
+        var startUtc = _clock.ToUtc(startLocal);
+        var endUtc = _clock.ToUtc(endLocal);
+        return (
+            StartUtc: startUtc,
+            EndUtc: endUtc);
+    }
+    
+    private static string ShiftLabel(byte s) => s switch { 1 => "Ca sáng", 2 => "Ca chiều", 3 => "Ca đêm", _ => "—" };
     private static string DayLabel(byte dow) => dow switch
     {
         0 => "Chủ nhật", 1 => "Thứ 2", 2 => "Thứ 3", 3 => "Thứ 4",
