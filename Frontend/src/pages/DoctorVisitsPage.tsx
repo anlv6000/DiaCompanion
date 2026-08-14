@@ -35,6 +35,7 @@ import type {
   VisitDto,
   FundusImageDto,
   PatientDetailDto,
+  PrescriptionDto,
   PrescriptionItemDto,
 } from "@/types/api";
 
@@ -674,6 +675,7 @@ function PrescriptionPanel({
   closed: boolean;
 }) {
   const data = useData();
+  const { user } = useAuth();
   const toast = useToast();
   const prescriptions = useAsync(
     () => data.prescriptions.list({ patientId: visit.patientId, page: 1, pageSize: 100 }),
@@ -690,6 +692,20 @@ function PrescriptionPanel({
     },
   ]);
   const [busy, setBusy] = useState(false);
+  const [editor, setEditor] = useState<PrescriptionDto | null>(null);
+  const [voiding, setVoiding] = useState<PrescriptionDto | null>(null);
+
+  const voidRx = async (reason: string) => {
+    if (!voiding) return;
+    try {
+      await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
+      toast.push("Đã void đơn thuốc.", "success");
+      setVoiding(null);
+      prescriptions.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
+  };
 
   const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) => {
     setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -821,7 +837,7 @@ function PrescriptionPanel({
           emptyText="Lượt khám này chưa có đơn thuốc."
         >
           {prescriptions.data && (
-            <DataTable headers={["Ngày kê", "Bác sĩ", "Thuốc", "Ghi chú"]}>
+            <DataTable headers={["Ngày kê", "Bác sĩ", "Thuốc", "Ghi chú", "Thao tác"]}>
               {prescriptions.data.items
                 .filter((p) => p.visitId === visit.id)
                 .map((p) => (
@@ -837,13 +853,150 @@ function PrescriptionPanel({
                       .join("; ")}
                   </td>
                   <td className="wrap-text">{p.note || "—"}</td>
+                  <td>
+                    <div className="actions">
+                      {!closed && can.prescribe(user) && (
+                        <Button onClick={() => setEditor(p)}>Sửa</Button>
+                      )}
+                      {!closed && can.voidPrescription(user) && (
+                        <Button kind="danger" onClick={() => setVoiding(p)}>
+                          Void
+                        </Button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </DataTable>
           )}
         </LoadState>
       </Panel>
+      {editor && (
+        <PrescriptionEditor
+          patientId={visit.patientId}
+          value={editor}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            prescriptions.reload();
+          }}
+        />
+      )}
+      {voiding && (
+        <ConfirmDialog
+          title="Void đơn thuốc"
+          message={`Thu hồi đơn #${voiding.id}. Nhật ký uống thuốc đã xác nhận vẫn được giữ lại.`}
+          requireReason
+          danger
+          onClose={() => setVoiding(null)}
+          onConfirm={voidRx}
+        />
+      )}
     </>
+  );
+}
+
+function PrescriptionEditor({
+  patientId,
+  value,
+  onClose,
+  onSaved,
+}: {
+  patientId: number;
+  value: PrescriptionDto;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const data = useData();
+  const toast = useToast();
+  const [note, setNote] = useState(value.note || "");
+  const [items, setItems] = useState<PrescriptionItemDto[]>(
+    value.items.map((x) => ({ ...x })),
+  );
+  const [busy, setBusy] = useState(false);
+
+  const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) =>
+    setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+
+  const save = async () => {
+    if (!items.length || items.some((x) => !x.drugName.trim() || !x.dose.trim())) {
+      toast.push("Tên thuốc và liều là bắt buộc.", "error");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await data.prescriptions.update(value.id, {
+        patientId,
+        visitId: value.visitId ?? null,
+        note: note || null,
+        items: items.map((x) => ({ ...x })),
+        rowVersion: value.rowVersion,
+      });
+      toast.push("Đã lưu đơn thuốc.", "success");
+      onSaved();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Sửa đơn #${value.id}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Hủy</Button>
+          <Button kind="primary" busy={busy} onClick={save}>
+            Lưu đơn
+          </Button>
+        </>
+      }
+    >
+      <DataTable headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}>
+        {items.map((x, i) => (
+          <tr key={i}>
+            <td><input value={x.drugName} onChange={(e) => patch(i, "drugName", e.target.value)} /></td>
+            <td><input value={x.dose} onChange={(e) => patch(i, "dose", e.target.value)} /></td>
+            <td>
+              <input type="number" min="1" max="6" value={x.timesPerDay}
+                onChange={(e) => patch(i, "timesPerDay", Number(e.target.value))} />
+            </td>
+            <td>
+              <input type="number" min="1" max="365" value={x.durationDays}
+                onChange={(e) => patch(i, "durationDays", Number(e.target.value))} />
+            </td>
+            <td>
+              <input value={x.instruction || ""}
+                onChange={(e) => patch(i, "instruction", e.target.value)} />
+            </td>
+            <td>
+              <Button kind="danger" disabled={items.length === 1}
+                onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))}>
+                ×
+              </Button>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
+      <Button
+        onClick={() => setItems((xs) => [...xs, {
+          drugName: "",
+          dose: "",
+          timesPerDay: 1,
+          durationDays: 30,
+          instruction: "",
+        }])}
+      >
+        <Icon name="plus" />
+        Thêm thuốc
+      </Button>
+      <Field labelText="Ghi chú">
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }
 

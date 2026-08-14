@@ -29,7 +29,7 @@ public class DoctorShift : IHasRowVersion
     /// </summary>
     public byte DayOfWeek { get; set; }
 
-    /// <summary>Ca Sáng hoặc Chiều.</summary>
+    /// <summary>Ca Sáng, Chiều hoặc Đêm </summary>
     public ShiftType Shift { get; set; }
 
     /// <summary>Tắt tạm khi bác sĩ nghỉ dài mà không muốn xoá lịch.</summary>
