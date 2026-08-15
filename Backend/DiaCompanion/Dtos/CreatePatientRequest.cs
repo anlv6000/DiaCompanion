@@ -22,7 +22,11 @@ public class CreatePatientRequest
     public bool CreateAccount { get; set; } = true;
 
 
-    // NULL = tạo User mới
-    // Có giá trị = dùng User đã tồn tại
+    // NULL:
+    //   nếu CreateAccount=true -> tạo User Patient mới.
+    //
+    // Có giá trị:
+    //   chỉ dùng để liên kết một User staff đang tồn tại
+    //   (Doctor/Receptionist) và kích hoạt thêm role Patient.
     public int? ExistingUserId { get; set; }
 }

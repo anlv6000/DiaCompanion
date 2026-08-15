@@ -9,6 +9,5 @@
         public IReadOnlyCollection<string> Roles { get; init; }
             = Array.Empty<string>();
 
-        public bool IsFormerPatient { get; init; }
     }
 }

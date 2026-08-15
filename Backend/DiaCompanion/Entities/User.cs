@@ -29,8 +29,9 @@ public class User : IHasRowVersion
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
-
-    public Patient? Patient { get; set; }
+    public bool IsVoided { get; set; }
+    public ICollection<Patient> Patients { get; set; }
+    = new List<Patient>();
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 
     public byte[] RowVer { get; set; } = Array.Empty<byte>();

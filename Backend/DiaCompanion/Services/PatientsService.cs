@@ -170,7 +170,13 @@ public class PatientsService : BaseService, IPatientsService
                 "Số điện thoại này đã được dùng cho một hồ sơ khác. " +
                 "Mỗi bệnh nhân cần một số riêng vì đây là định danh đăng nhập.");
         }
-
+        if (!req.CreateAccount &&
+            req.ExistingUserId.HasValue)
+        {
+            throw AppException.BadRequest(
+                Msg.InvalidData,
+                "Không được chọn tài khoản có sẵn khi không yêu cầu tạo/liên kết tài khoản.");
+        }
         // ------------------------------------------------------------
         // Nếu đang tạo User mới thì Phone cũng chưa được thuộc User khác.
         //
@@ -312,7 +318,17 @@ public class PatientsService : BaseService, IPatientsService
                 "Tài khoản được chọn không tồn tại.");
         }
 
+        var isLinkable =
+    await _repository.IsUserLinkableToPatientAsync(
+        existingUserId,
+        _me.RequireId());
 
+        if (!isLinkable)
+        {
+            throw AppException.Conflict(
+                Msg.InvalidData,
+                "Tài khoản này không đủ điều kiện để liên kết với hồ sơ bệnh nhân.");
+        }
         // ------------------------------------------------------------
         // 2. Một User chỉ được liên kết với một Patient active.
         // ------------------------------------------------------------

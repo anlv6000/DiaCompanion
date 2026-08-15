@@ -57,6 +57,7 @@ public class AppDbContext : DbContext
         b.Entity<SymptomReport>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<BlogPost>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<Feedback>().HasQueryFilter(x => !x.IsDeleted);
+        b.Entity<User>().HasQueryFilter(x => !x.IsVoided);
 
         /* --------------------------------------------------------- Users */
         b.Entity<User>(e =>
@@ -64,13 +65,22 @@ public class AppDbContext : DbContext
             e.Property(x => x.PublicId).HasDefaultValueSql("NEWID()");
             // Login identifier thuộc về User, không phụ thuộc trạng thái UserRoles.
             // Chỉ filter NULL để SQL Server vẫn cho nhiều User không có Phone/Email.
+            //e.HasIndex(x => x.Phone)
+            //    .IsUnique()
+            //    .HasFilter("[Phone] IS NOT NULL")
+            //    .HasDatabaseName("UX_Users_Phone");
+            //e.HasIndex(x => x.Email)
+            //    .IsUnique()
+            //    .HasFilter("[Email] IS NOT NULL")
+            //    .HasDatabaseName("UX_Users_Email");
             e.HasIndex(x => x.Phone)
                 .IsUnique()
-                .HasFilter("[Phone] IS NOT NULL")
+                .HasFilter("[Phone] IS NOT NULL AND [IsVoided] = 0")
                 .HasDatabaseName("UX_Users_Phone");
+
             e.HasIndex(x => x.Email)
                 .IsUnique()
-                .HasFilter("[Email] IS NOT NULL")
+                .HasFilter("[Email] IS NOT NULL AND [IsVoided] = 0")
                 .HasDatabaseName("UX_Users_Email");
             e.HasIndex(x => x.PublicId).IsUnique();
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
@@ -121,8 +131,10 @@ public class AppDbContext : DbContext
             e.Property(x => x.BaselineHbA1c).HasPrecision(4, 1);
             e.Property(x => x.RowVer).IsRowVersion().HasColumnName("RowVer");
 
-            e.HasOne(x => x.User).WithOne(u => u.Patient)
-                .HasForeignKey<Patient>(x => x.UserId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.User)
+                    .WithMany(u => u.Patients)
+                    .HasForeignKey(x => x.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
         });
 
         /* -------------------------------------------------------- Visits */

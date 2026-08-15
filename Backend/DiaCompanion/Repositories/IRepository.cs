@@ -33,7 +33,10 @@ public partial interface IRepository : IUnitOfWork
         int patientId,
         bool tracking = false,
         CancellationToken ct = default);
-
+    Task<bool> IsUserLinkableToPatientAsync(
+    int userId,
+    int excludedUserId,
+    CancellationToken ct = default);
 
     Task<AdminPatientPage> GetAdminPatientPageAsync(
     string? q,

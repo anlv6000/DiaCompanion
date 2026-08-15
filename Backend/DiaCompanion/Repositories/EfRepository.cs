@@ -120,26 +120,7 @@ public sealed partial class EfRepository : IRepository
         CancellationToken ct = default)
     {
         // 1. Bắt đầu từ Users; trạng thái khóa nằm ở UserRoles, không dùng Users.IsActive.
-        var query = _db.Users
-
-            // 2. Loại chính tài khoản đang đăng nhập.
-            // Ví dụ lễ tân UserId = 20 thì User 20 không xuất hiện
-            // trong danh sách để tự tạo Patient cho chính mình.
-            .Where(u => u.Id != excludedUserId)
-
-            // 3. Loại User đã có hồ sơ Patient đang hoạt động.
-            .Where(u =>
-                !_db.Patients.IgnoreQueryFilters().Any(p =>
-
-                    p.UserId == u.Id))
-
-            // 4. Admin không được dùng để tạo hồ sơ Patient qua luồng này.
-            .Where(u =>
-            !u.UserRoles.Any(ur =>
-                ur.Role.Name == Roles.Admin &&
-
-                ur.IsActive &&
-                ur.Role.IsActive));
+        var query = BuildLinkablePatientUsersQuery(excludedUserId);
 
 
         // 5. Search theo tên / email / phone.
@@ -210,7 +191,48 @@ public sealed partial class EfRepository : IRepository
             .ToList();
     }
 
+    private IQueryable<User> BuildLinkablePatientUsersQuery(
+    int excludedUserId)
+    {
+        return _db.Users
 
+            // Global User filter tự loại User.IsVoided = true.
+
+            // Không cho lễ tân đang thao tác tự chọn mình.
+            .Where(u => u.Id != excludedUserId)
+
+            // User không được đang liên kết Patient active.
+            //
+            // Không IgnoreQueryFilters:
+            // Patient đã void sẽ tự bị bỏ.
+            .Where(u =>
+                !_db.Patients.Any(p =>
+                    p.UserId == u.Id))
+
+            // Đây chỉ là luồng reuse tài khoản STAFF.
+            .Where(u =>
+                u.UserRoles.Any(ur =>
+                    (
+                        ur.Role.Name == Roles.Doctor ||
+                        ur.Role.Name == Roles.Receptionist
+                    )
+                    && ur.IsActive
+                    && ur.Role.IsActive))
+
+            // Patient role phải đang tắt.
+            .Where(u =>
+                !u.UserRoles.Any(ur =>
+                    ur.Role.Name == Roles.Patient &&
+                    ur.IsActive &&
+                    ur.Role.IsActive))
+
+            // Không cho Admin đi qua màn này.
+            .Where(u =>
+                !u.UserRoles.Any(ur =>
+                    ur.Role.Name == Roles.Admin &&
+                    ur.IsActive &&
+                    ur.Role.IsActive));
+    }
     public async Task<MedicalRecord?> GetActiveMedicalRecordByPatientIdAsync(
        int patientId,
        bool tracking = false,
@@ -289,4 +311,16 @@ public sealed partial class EfRepository : IRepository
             patient.User,
             patientRole);
     }
+
+    public Task<bool> IsUserLinkableToPatientAsync(
+    int userId,
+    int excludedUserId,
+    CancellationToken ct = default)
+    {
+        return BuildLinkablePatientUsersQuery(excludedUserId)
+            .AnyAsync(
+                u => u.Id == userId,
+                ct);
+    }
+
 }

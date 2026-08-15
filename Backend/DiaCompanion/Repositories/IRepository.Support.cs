@@ -12,4 +12,8 @@ public partial interface IRepository
 
     Task<IReadOnlyList<MedicationStatus>> GetMedicationStatusesAsync(
         int patientId, DateOnly from, DateOnly to, int? prescriptionId = null, CancellationToken ct = default);
+
+    Task InvalidateUnconsumedOtpCodesForPhoneAsync(
+    string phone,
+    CancellationToken ct = default);
 }

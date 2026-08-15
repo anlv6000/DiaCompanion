@@ -350,4 +350,18 @@ public sealed partial class EfRepository
             total);
     }
 
+
+    public Task<bool> UserHasNonPatientRoleAssignmentAsync(
+    int userId,
+    CancellationToken ct = default)
+    {
+        return _db.UserRoles
+            .AsNoTracking()
+            .AnyAsync(
+                ur =>
+                    ur.UserId == userId &&
+                    ur.Role.Name != Roles.Patient,
+                ct);
+    }
+
 }
