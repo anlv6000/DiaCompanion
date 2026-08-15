@@ -4,7 +4,10 @@ namespace DiaCompanion.Api.Dtos;
 
 public class UpdateStaffRequest
 {
-    [Required, MaxLength(200)] public string FullName { get; set; } = "";
+    [MaxLength(200, ErrorMessage = "Họ và tên không được vượt quá 200 ký tự.")]
+    public string FullName { get; set; } = "";
+
+    [MaxLength(50, ErrorMessage = "Chứng chỉ không được vượt quá 50 ký tự.")]
     public string? LicenseNo { get; set; }
 
     /// <summary>Role staff mới. Chỉ Doctor hoặc Receptionist.</summary>

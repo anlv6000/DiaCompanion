@@ -34,4 +34,23 @@ public sealed partial class EfRepository
             query = query.Where(m => m.PrescriptionItem!.PrescriptionId == pid);
         return await query.Select(m => m.Status).ToListAsync(ct);
     }
+
+
+    public async Task InvalidateUnconsumedOtpCodesForPhoneAsync(
+    string phone,
+    CancellationToken ct = default)
+    {
+        var rows = await _db.OtpCodes
+            .Where(o =>
+                o.Phone == phone &&
+                o.ConsumedAt == null)
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+
+        foreach (var row in rows)
+        {
+            row.ConsumedAt = now;
+        }
+    }
 }

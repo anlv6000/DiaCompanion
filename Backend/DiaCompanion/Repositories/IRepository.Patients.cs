@@ -37,7 +37,9 @@ public partial interface IRepository
     Task<bool> EnsureUserRoleActiveAsync(User user, string roleName, int? assignedBy, CancellationToken ct = default);
     Task<bool> SetUserRoleActiveAsync(int userId, string roleName, bool isActive, int? changedBy, CancellationToken ct = default);
 
-
+    Task<bool> UserHasNonPatientRoleAssignmentAsync(
+    int userId,
+    CancellationToken ct = default);
 
     public sealed record AdminPatientData(
     Patient Patient,

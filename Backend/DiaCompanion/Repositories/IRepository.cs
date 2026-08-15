@@ -23,17 +23,20 @@ public partial interface IRepository : IUnitOfWork
 
     Task<User?> GetUserByIdAsync(int userId, CancellationToken ct = default);
 
-    Task<bool> UserAlreadyLinkedToActivePatientAsync(int userId,CancellationToken ct = default);
+    Task<bool> UserAlreadyLinkedToActivePatientAsync(int userId, CancellationToken ct = default);
 
-    Task<bool> UserPhoneExistsExceptUserAsync(string phone,int exceptUserId,CancellationToken ct = default);
+    Task<bool> UserPhoneExistsExceptUserAsync(string phone, int exceptUserId, CancellationToken ct = default);
 
-     Task<IReadOnlyList<LinkableUserDto>> GetLinkableUsersForPatientAsync(string? keyword, int excludedUserId, CancellationToken ct = default);
-    Task<MedicalRecord?> GetActiveMedicalRecordByPatientIdAsync(int patientId,bool tracking = false,CancellationToken ct = default);
+    Task<IReadOnlyList<LinkableUserDto>> GetLinkableUsersForPatientAsync(string? keyword, int excludedUserId, CancellationToken ct = default);
+    Task<MedicalRecord?> GetActiveMedicalRecordByPatientIdAsync(int patientId, bool tracking = false, CancellationToken ct = default);
     Task<Patient?> GetPatientByIdAsync(
         int patientId,
         bool tracking = false,
         CancellationToken ct = default);
-
+    Task<bool> IsUserLinkableToPatientAsync(
+    int userId,
+    int excludedUserId,
+    CancellationToken ct = default);
 
     Task<AdminPatientPage> GetAdminPatientPageAsync(
     string? q,
@@ -45,4 +48,4 @@ public partial interface IRepository : IUnitOfWork
         int patientId,
         bool tracking,
         CancellationToken ct = default);
-}       
+}

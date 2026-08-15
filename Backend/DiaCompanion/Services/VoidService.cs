@@ -145,11 +145,64 @@ public class VoidService : IVoidService
         // Thu hồi riêng quyền Patient; các role khác của cùng User vẫn giữ nguyên.
         if (patient.UserId is int userId)
         {
-            await _repository.SetUserRoleActiveAsync(
-                userId,
-                Roles.Patient,
-                isActive: false,
-                changedBy: currentUserId);
+            // User active đang được Patient này sử dụng.
+            var user = await _repository.GetUserForUpdateAsync(userId)
+                ?? throw AppException.Conflict(
+                    Msg.InvalidData,
+                    "Không tìm thấy tài khoản đang liên kết với hồ sơ bệnh nhân.");
+
+            // Kiểm tra TRƯỚC xem User có từng mang role nào ngoài Patient không.
+            //
+            // Nếu có Doctor/Receptionist/Admin/... thì đây là tài khoản dùng chung,
+            // không được void toàn bộ User.
+            var hasNonPatientRole =
+                await _repository.UserHasNonPatientRoleAssignmentAsync(userId);
+
+            // Luôn tắt riêng Patient role khi hồ sơ Patient bị void.
+            var patientRoleDisabled =
+                await _repository.SetUserRoleActiveAsync(
+                    userId,
+                    Roles.Patient,
+                    isActive: false,
+                    changedBy: currentUserId);
+
+            if (!patientRoleDisabled)
+            {
+                throw AppException.Conflict(
+                    Msg.InvalidData,
+                    "Tài khoản liên kết không có vai trò Patient hợp lệ.");
+            }
+
+            // Nếu User CHỈ là Patient:
+            // void luôn User.
+            if (!hasNonPatientRole)
+            {
+                user.IsVoided = true;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                if (!string.IsNullOrWhiteSpace(user.Phone))
+                {
+                    await _repository
+                        .InvalidateUnconsumedOtpCodesForPhoneAsync(user.Phone);
+                }
+                await _audit.LogAsync(
+                    AuditAction.Void,
+                    nameof(User),
+                    user.Id,
+                    new
+                    {
+                        user.FullName,
+                        user.Phone,
+                        isVoided = false
+                    },
+                    new
+                    {
+                        user.FullName,
+                        user.Phone,
+                        isVoided = true
+                    },
+                    $"Thu hồi tài khoản theo hồ sơ bệnh nhân {patient.Code}");
+            }
         }
 
         await _audit.LogAsync(
