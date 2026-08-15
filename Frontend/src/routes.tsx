@@ -12,13 +12,14 @@ import { hasAnyRole } from "@/lib/roles";
 import { AppShell } from "@/components/AppShell";
 import type { Role } from "@/types/api";
 
-import { LoginPage, ChangePasswordPage } from "@/pages/AuthPages";
+import { LoginPage, ChangePasswordPage,  ForgotPasswordPage, } from "@/pages/AuthPages";
 import { TriagePage } from "@/pages/TriagePage";
 import { PatientsPage, PatientFormPage } from "@/pages/PatientsPage";
 import { PatientDetailPage } from "@/pages/PatientDetailPage";
 import { FundusPage } from "@/pages/FundusPage";
 import { RecheckPage } from "@/pages/RecheckPage";
 import { DoctorVisitsPage } from "@/pages/DoctorVisitsPage";
+import { ProfilePage } from "@/pages/ProfilePage";
 import {
   ReceptionNewVisitPage,
   ReceptionVisitsPage,
@@ -27,6 +28,7 @@ import {
 import { ProgressionPage } from "@/pages/ProgressionPage";
 import { VisitReportPage } from "@/pages/VisitReportPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { PatientAccountsPage } from "@/pages/PatientAccountsPage";
 import { BlogPage, FeedbackPage, SymptomsPage } from "@/pages/EngagementPages";
 import {
   DashboardPage,
@@ -107,7 +109,22 @@ export function AppRoutes() {
           )
         }
       />
-
+<Route
+  path="/forgot-password"
+  element={
+    user ? (
+      <Navigate
+        to={resolveLandingRoute(
+          user,
+          user.defaultRoute,
+        )}
+        replace
+      />
+    ) : (
+      <ForgotPasswordPage />
+    )
+  }
+/>
       {/* Đổi mật khẩu: chỉ cần đăng nhập (không gác vai trò), không bọc AppShell khi buộc đổi */}
       <Route
         path="/change-password"
@@ -213,6 +230,15 @@ export function AppRoutes() {
         }
       />
       <Route
+        path="/profile"
+        element={
+          <RequireAuth roles={["Doctor", "Receptionist"]}>
+            <ProfilePage />
+          </RequireAuth>
+        }
+      />
+
+      <Route
         path="/progression"
         element={
           <RequireAuth roles={["Doctor"]}>
@@ -273,7 +299,7 @@ export function AppRoutes() {
       <Route
         path="/feedback"
         element={
-          <RequireAuth roles={["Admin"]}>
+          <RequireAuth roles={["Doctor", "Admin"]}>
             <FeedbackPage />
           </RequireAuth>
         }
@@ -288,6 +314,14 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
+      <Route
+  path="/patient-accounts"
+  element={
+    <RequireAuth roles={["Admin"]}>
+      <PatientAccountsPage />
+    </RequireAuth>
+  }
+/>
       <Route
         path="/configs"
         element={

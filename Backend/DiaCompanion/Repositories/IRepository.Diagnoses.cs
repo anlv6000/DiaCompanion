@@ -9,7 +9,7 @@ public sealed record Hba1cProgressionRow(DateTime RecordedAtUtc, decimal Value);
 public partial interface IRepository
 {
     Task<bool> IsImageReviewedAsync(int imageId, CancellationToken ct = default);
-    Task<ModelVersion?> GetActiveModelVersionAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ModelVersion>> GetActiveModelVersionsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<AiDiagnosis>> GetDiagnosesForImageForUpdateAsync(int imageId, CancellationToken ct = default);
     Task<IReadOnlyList<int>> GetDiagnosisIdsByImageAsync(int imageId, CancellationToken ct = default);
     Task<AiDiagnosis?> GetDiagnosisWithImageAsync(int id, CancellationToken ct = default);

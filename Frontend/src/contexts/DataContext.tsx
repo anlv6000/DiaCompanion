@@ -34,7 +34,7 @@ import type * as T from "@/types/api";
  *  - Không page nào import trực tiếp @/api/services — luôn qua useData().
  *
  * DataContext bọc toàn bộ nhóm service thành "action" trả Promise, kèm vài
- * mẩu state dùng chung (doctors, dashboard, triageCount, activeModel) nạp sẵn.
+ * mẩu state dùng chung (doctors, dashboard, triageCount, activeModels) nạp sẵn.
  */
 
 interface DataValue {
@@ -42,11 +42,11 @@ interface DataValue {
   doctors: T.DoctorDto[] | null;
   dashboard: T.DashboardDto | null;
   triageCount: T.TriageCountDto | null;
-  activeModel: T.ModelVersionDto | null;
+  activeModels: T.ModelVersionDto[] | null;
   loadDoctors: () => Promise<T.DoctorDto[]>;
   loadDashboard: () => Promise<T.DashboardDto>;
   loadTriageCount: () => Promise<T.TriageCountDto>;
-  loadActiveModel: () => Promise<T.ModelVersionDto | null>;
+  loadActiveModels: () => Promise<T.ModelVersionDto[]>;
   // nhóm action theo nghiệp vụ
   auth: ReturnType<typeof buildAuth>;
   users: ReturnType<typeof buildUsers>;
@@ -90,11 +90,40 @@ const buildPatients = () => ({
   reissue: (id: number) => patientsApi.reissue(id),
   void: (id: number, reason: string, rowVersion: string) =>
     patientsApi.void(id, reason, rowVersion),
+
+   // ============================================================
+  // ADMIN PATIENT MANAGEMENT
+  // ============================================================
+
+  adminList: (
+    p: Record<string, unknown>,
+  ) =>
+    patientsApi.adminList(p),
+
+  adminUpdate: (
+    id: number,
+    b: T.AdminUpdatePatientRequest,
+  ) =>
+    patientsApi.adminUpdate(id, b),
+
+  adminSetActive: (
+    id: number,
+    value: boolean,
+    rowVersion: string,
+  ) =>
+    patientsApi.adminSetActive(
+      id,
+      value,
+      rowVersion,
+    ),
 });
 const buildVisits = () => ({
   list: (p: Record<string, unknown>) => visitsApi.list(p),
   assignedToMe: (p: Record<string, unknown>) => visitsApi.assignedToMe(p),
   get: (id: number) => visitsApi.get(id),
+  healthMetrics: (id: number) => visitsApi.healthMetrics(id),
+  saveHealthMetrics: (id: number, b: T.SaveVisitHealthMetricsRequest) =>
+    visitsApi.saveHealthMetrics(id, b),
   create: (b: T.CreateVisitRequest) => visitsApi.create(b),
   close: (id: number, b: T.CloseVisitRequest) => visitsApi.close(id, b),
   void: (id: number, reason: string, rowVersion: string) =>
@@ -195,7 +224,7 @@ const buildBlog = () => ({
     blogApi.delete(id, rowVersion),
 });
 const buildAdmin = () => ({
-  dashboard: () => adminApi.dashboard(),
+  dashboard: (p: Record<string, unknown> = {}) => adminApi.dashboard(p),
   configs: () => adminApi.configs(),
   updateConfig: (key: string, v: string, rowVersion: string) =>
     adminApi.updateConfig(key, v, rowVersion),
@@ -222,7 +251,7 @@ export function DataProvider({ children }: { children?: ReactNode }) {
   const [doctors, setDoctors] = useState<T.DoctorDto[] | null>(null);
   const [dashboard, setDashboard] = useState<T.DashboardDto | null>(null);
   const [triageCount, setTriageCount] = useState<T.TriageCountDto | null>(null);
-  const [activeModel, setActiveModel] = useState<T.ModelVersionDto | null>(
+  const [activeModels, setActiveModels] = useState<T.ModelVersionDto[] | null>(
     null,
   );
 
@@ -241,10 +270,10 @@ export function DataProvider({ children }: { children?: ReactNode }) {
     setTriageCount(c);
     return c;
   }, []);
-  const loadActiveModel = useCallback(async () => {
+  const loadActiveModels = useCallback(async () => {
     const list = await adminApi.models();
-    const active = list.find((m) => m.isActive) ?? null;
-    setActiveModel(active);
+    const active = list.filter((m) => m.isActive);
+    setActiveModels(active);
     return active;
   }, []);
 
@@ -253,11 +282,11 @@ export function DataProvider({ children }: { children?: ReactNode }) {
       doctors,
       dashboard,
       triageCount,
-      activeModel,
+      activeModels,
       loadDoctors,
       loadDashboard,
       loadTriageCount,
-      loadActiveModel,
+      loadActiveModels,
       auth: buildAuth(),
       users: buildUsers(),
       patients: buildPatients(),
@@ -278,11 +307,11 @@ export function DataProvider({ children }: { children?: ReactNode }) {
       doctors,
       dashboard,
       triageCount,
-      activeModel,
+      activeModels,
       loadDoctors,
       loadDashboard,
       loadTriageCount,
-      loadActiveModel,
+      loadActiveModels,
     ],
   );
 

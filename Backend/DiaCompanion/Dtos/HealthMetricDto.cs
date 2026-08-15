@@ -8,6 +8,7 @@ namespace DiaCompanion.Api.Dtos;
 public class HealthMetricDto
 {
     public int Id { get; set; }
+    public int? VisitId { get; set; }
     public byte MetricType { get; set; }
     public decimal Value { get; set; }
     public string Unit { get; set; } = "";
@@ -26,6 +27,7 @@ public class HealthMetricDto
 public class MetricLatestDto
 {
     public int Id { get; set; }
+    public int? VisitId { get; set; }
     public byte MetricType { get; set; }
     public decimal Value { get; set; }
     public string Unit { get; set; } = "";

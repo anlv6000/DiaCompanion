@@ -58,9 +58,10 @@ public sealed partial class EfRepository
         _db.HealthMetrics.FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<HealthMetric?> GetBloodPressurePairForUpdateAsync(
-        int patientId, DateTime recordedAtUtc, MetricType pairType, CancellationToken ct = default) =>
+        int patientId, int? visitId, DateTime recordedAtUtc, MetricType pairType, CancellationToken ct = default) =>
         _db.HealthMetrics.FirstOrDefaultAsync(x =>
             x.PatientId == patientId &&
+            x.VisitId == visitId &&
             x.RecordedAtUtc == recordedAtUtc &&
             x.MetricType == pairType, ct);
 

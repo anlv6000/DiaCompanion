@@ -12,10 +12,12 @@ public class VisitsController : BaseApiController
 {
     private readonly IVisitsService _service;
     private readonly CurrentUser _me;
-    public VisitsController(IVisitsService service, CurrentUser me)
+    private readonly IVisitMaintenanceService _maintenance;
+    public VisitsController(IVisitsService service, CurrentUser me, IVisitMaintenanceService maintenance)
     {
         _service = service;
         _me = me;
+        _maintenance = maintenance;
     }
 
 
@@ -28,9 +30,9 @@ public class VisitsController : BaseApiController
     public async Task<ActionResult<PagedResult<VisitDto>>> List(
         [FromQuery] int? patientId, [FromQuery] int? doctorId,
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] byte? status, [FromQuery] PageQuery page)
+        [FromQuery] byte? status, [FromQuery] PageQuery paging)
     {
-        return await _service.List(patientId, doctorId, from, to, status, page);
+        return await _service.List(patientId, doctorId, from, to, status, paging);
     }
 
 
@@ -42,10 +44,10 @@ public class VisitsController : BaseApiController
     [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<ActionResult<PagedResult<VisitDto>>> AssignedToMe(
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] byte? status, [FromQuery] PageQuery page)
+        [FromQuery] byte? status, [FromQuery] PageQuery paging)
     {
         var doctorId = _me.RequireId();
-        return await _service.List(null, doctorId, from, to, status, page);
+        return await _service.List(null, doctorId, from, to, status, paging);
     }
 
 
@@ -64,6 +66,24 @@ public class VisitsController : BaseApiController
     public async Task<ActionResult<VisitDto>> Create(CreateVisitRequest req)
     {
         return await _service.Create(req);
+    }
+
+
+    /// <summary>Lấy các chỉ số sức khỏe được bác sĩ ghi trong lượt khám.</summary>
+    [HttpGet("{id:int}/health-metrics")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<VisitHealthMetricsDto>> HealthMetrics(int id)
+    {
+        return await _service.GetHealthMetrics(id);
+    }
+
+    /// <summary>Ghi/cập nhật toàn bộ form chỉ số sức khỏe của lượt khám đang mở.</summary>
+    [HttpPut("{id:int}/health-metrics")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<VisitHealthMetricsDto>> SaveHealthMetrics(
+        int id, SaveVisitHealthMetricsRequest req)
+    {
+        return await _service.SaveHealthMetrics(id, req);
     }
 
 
@@ -87,16 +107,31 @@ public class VisitsController : BaseApiController
         return await _service.Void(id, req);
     }
 
-    [HttpGet("me")]
+
+    /// <summary>Admin chạy thủ công để test xử lý lượt khám cuối ngày.</summary>
+    [HttpPost("maintenance/process-open")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> ProcessOpenVisits([FromQuery] bool includeToday = true, CancellationToken ct = default)
+    {
+        var result = await _maintenance.ProcessAsync(includeToday, ct);
+        return Ok(new
+        {
+            checkedCount = result.Checked,
+            autoClosed = result.AutoClosed,
+            carriedForward = result.CarriedForward
+        });
+    }
+
+    [HttpGet("me")] 
     [Authorize(Roles = Roles.Patient)]
     public async Task<ActionResult<PagedResult<VisitDto>>> Mine(
-        [FromQuery] PageQuery page)
+        [FromQuery] PageQuery paging)
     {
         var userId = _me.RequireId();
 
         var result = await _service.GetMineAsync(
             userId,
-            page);
+            paging);
 
         return Ok(result);
     }

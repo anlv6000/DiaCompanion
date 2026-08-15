@@ -48,8 +48,21 @@ public class BlogService : BaseService, IBlogService
         var post = await _repository.GetBlogPostAsync(id, tracking: false)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
-        if (!post.IsPublished && !_me.IsInRole(Roles.Admin, Roles.Doctor))
-            throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+        if (!post.IsPublished)
+        {
+            if (_me.IsInRole(Roles.Admin))
+            {
+                // Admin được xem mọi bản nháp để quản trị hệ thống.
+            }
+            else if (_me.IsInRole(Roles.Doctor) && post.AuthorId == _me.RequireId())
+            {
+                // Doctor chỉ được xem bản nháp của chính mình.
+            }
+            else
+            {
+                throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
+            }
+        }
 
         return Ok(Map(post, includeBody: true));
     }
@@ -62,8 +75,14 @@ public class BlogService : BaseService, IBlogService
         int? authorId,
         PageQuery page)
     {
+        // Doctor chỉ được manage bài do chính mình tạo. authorId từ query không
+        // được phép mở rộng phạm vi; Admin mới được lọc theo tác giả bất kỳ.
+        var scopedAuthorId = _me.IsInRole(Roles.Admin)
+            ? authorId
+            : _me.RequireId();
+
         var data = await _repository.GetBlogPageAsync(
-            q, published, category, authorId, page, publishedView: false);
+            q, published, category, scopedAuthorId, page, publishedView: false);
         return Ok(new PagedResult<BlogPostDto>
         {
             Items = data.Items.Select(b => Map(b, includeBody: false)).ToList(),
@@ -107,6 +126,7 @@ public class BlogService : BaseService, IBlogService
         var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
+        EnsureCanManage(post);
         _repository.ApplyOriginalRowVersion(post, req.RowVersion);
         var before = new
         {
@@ -145,6 +165,7 @@ public class BlogService : BaseService, IBlogService
         var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
+        EnsureCanManage(post);
         _repository.ApplyOriginalRowVersion(post, req.RowVersion);
 
         if (post.IsPublished == value)
@@ -182,6 +203,7 @@ public class BlogService : BaseService, IBlogService
         var post = await _repository.GetBlogPostAsync(id, tracking: true)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bài viết.");
 
+        EnsureCanManage(post);
         _repository.ApplyOriginalRowVersion(post, rowVersion);
 
         if (post.IsPublished || post.PublishedAt != null)
@@ -216,6 +238,19 @@ public class BlogService : BaseService, IBlogService
         _repository.Remove(post);
         await _repository.CommitAsync();
         return Ok(new { message = "Đã xóa bài nháp." });
+    }
+
+    private void EnsureCanManage(BlogPost post)
+    {
+        if (_me.IsInRole(Roles.Admin))
+            return;
+
+        if (_me.IsInRole(Roles.Doctor) && post.AuthorId == _me.RequireId())
+            return;
+
+        throw AppException.Forbidden(
+            Msg.Forbidden,
+            "Bác sĩ chỉ được quản lý bài viết do chính mình tạo.");
     }
 
     private async Task<BlogPostDto> GetDtoAsync(int id)

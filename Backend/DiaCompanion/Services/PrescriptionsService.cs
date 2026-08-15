@@ -87,7 +87,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         var visit = await _repository.GetVisitForUpdateAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
         EnsureAssignedDoctor(visit, doctorId);
-        if (visit.PatientId != req.PatientId)
+        if (visit.MedicalRecord.PatientId != req.PatientId)
             throw AppException.BadRequest(Msg.InvalidData, "Bệnh nhân không thuộc lượt khám đã chọn.");
         if (visit.Status != VisitStatus.InProgress)
             throw AppException.BadRequest(Msg.ApptImmutable, "Không thể tạo đơn mới sau khi lượt khám đã hoàn tất.");
@@ -156,7 +156,11 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
             var visit = await _repository.GetVisitForUpdateAsync(visitId)
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám liên quan.");
             EnsureAssignedDoctor(visit, doctorId);
-            if (visit.PatientId != prescription.PatientId)
+            if (visit.Status != VisitStatus.InProgress)
+                throw AppException.Conflict(
+                    Msg.ApptImmutable,
+                    "Lượt khám đã đóng. Không thể sửa đơn thuốc của lượt khám này.");
+            if (visit.MedicalRecord.PatientId != prescription.PatientId)
                 throw AppException.Conflict(Msg.InvalidData, "Đơn thuốc không khớp bệnh nhân của lượt khám.");
 
             _repository.ApplyOriginalRowVersion(prescription, req.RowVersion);
@@ -285,7 +289,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         return Map(prescription, stats.GetValueOrDefault(id));
     }
 
-    private static PrescriptionDto Map(Prescription prescription, PrescriptionMedicationStats? stats)
+    private PrescriptionDto Map(Prescription prescription, PrescriptionMedicationStats? stats)
     {
         stats ??= new PrescriptionMedicationStats(0, 0, 0, 0);
         var due = stats.Taken + stats.Missed + stats.Skipped;
@@ -297,12 +301,12 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
             VisitId = prescription.VisitId,
             DoctorId = prescription.DoctorId,
             DoctorName = prescription.Doctor?.FullName ?? "",
-            IssuedAt = prescription.IssuedAt,
-            UpdatedAt = prescription.UpdatedAt,
+            IssuedAt = _clock.ToLocal(prescription.IssuedAt)!.Value,
+            UpdatedAt = _clock.ToLocal(prescription.UpdatedAt),
             Note = prescription.Note,
             IsVoided = prescription.IsVoided,
             VoidReason = prescription.VoidReason,
-            VoidedAt = prescription.VoidedAt,
+            VoidedAt = _clock.ToLocal(prescription.VoidedAt),
             ScheduledDoses = stats.Total,
             TakenDoses = stats.Taken,
             MissedDoses = stats.Missed,

@@ -20,9 +20,12 @@ public class UsersController : BaseApiController
     [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<PagedResult<StaffUserDto>>> List(
     [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
-    [FromQuery] PageQuery page)
+    [FromQuery] PageQuery paging)
     {
-        return await _service.List(q, role, isActive, page);
+        var testPage = paging.Page;       
+        var testSize = paging.PageSize;    
+        var testDesc = paging.Desc;
+        return await _service.List(q, role, isActive, paging);
     }
 
 
@@ -49,7 +52,7 @@ public class UsersController : BaseApiController
     [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Update(int id, UpdateStaffRequest req)
     {
-        return await _service.Update(id, req);
+        return await _service.Update(id, req);  
     }
 
 

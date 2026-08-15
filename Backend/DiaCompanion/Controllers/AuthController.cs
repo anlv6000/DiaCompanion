@@ -98,4 +98,22 @@ public class AuthController : BaseApiController
     {
         return await _service.Me();
     }
+
+
+    /// <summary>Hồ sơ cá nhân của Doctor/Receptionist đang đăng nhập.</summary>
+    [HttpGet("profile")]
+    [Authorize(Roles = Roles.DoctorOrReception)]
+    public async Task<ActionResult<StaffProfileDto>> Profile()
+    {
+        return await _service.GetProfile();
+    }
+
+
+    /// <summary>Doctor/Receptionist tự cập nhật thông tin hồ sơ được phép sửa.</summary>
+    [HttpPut("profile")]
+    [Authorize(Roles = Roles.DoctorOrReception)]
+    public async Task<ActionResult<StaffProfileDto>> UpdateProfile(UpdateStaffProfileRequest req)
+    {
+        return await _service.UpdateProfile(req);
+    }
 }

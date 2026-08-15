@@ -136,26 +136,35 @@ public class AppDbContext : DbContext
             e.Property(x => x.Referral)
                 .HasConversion<byte?>();
 
-            e.HasIndex(x => new
-            {
-                x.PatientId,
-                x.VisitDate
-            });
+            //e.HasIndex(x => new
+            //{
+            //    x.PatientId,
+            //    x.VisitDate
+            //});
 
             // Index mới theo MedicalRecord.
             e.HasIndex(x => x.MedicalRecordId)
                 .HasDatabaseName("IX_Visits_MedicalRecordId");
+
+
+            e.HasIndex(x => new
+            {
+                x.MedicalRecordId,
+                x.VisitDate
+            })
+   .HasDatabaseName("IX_MedicalVisits_MedicalRecordId_VisitDate");
+
 
             e.Property(x => x.RowVer)
                 .IsRowVersion()
                 .HasColumnName("RowVer");
 
 
-            // Patient -> Visits
-            e.HasOne(x => x.Patient)
-                .WithMany(p => p.Visits)
-                .HasForeignKey(x => x.PatientId)
-                .OnDelete(DeleteBehavior.NoAction);
+            //// Patient -> Visits
+            //e.HasOne(x => x.Patient)
+            //    .WithMany(p => p.Visits)
+            //    .HasForeignKey(x => x.PatientId)
+            //    .OnDelete(DeleteBehavior.NoAction);
 
 
             // MedicalRecord -> Visits
@@ -212,8 +221,13 @@ public class AppDbContext : DbContext
 
             e.HasOne(x => x.FundusImage).WithMany(f => f.Diagnoses)
                 .HasForeignKey(x => x.FundusImageId).OnDelete(DeleteBehavior.NoAction);
+            // ModelVersionId là DR model (giữ tên cũ để tương thích).
             e.HasOne(x => x.ModelVersion).WithMany()
                 .HasForeignKey(x => x.ModelVersionId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.LesionModelVersion).WithMany()
+                .HasForeignKey(x => x.LesionModelVersionId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.FractalModelVersion).WithMany()
+                .HasForeignKey(x => x.FractalModelVersionId).OnDelete(DeleteBehavior.NoAction);
         });
 
         /* ---------------------------------------------- DiagnosisReviews */
@@ -236,8 +250,10 @@ public class AppDbContext : DbContext
         b.Entity<ModelVersion>(e =>
         {
             e.HasIndex(x => x.Name).IsUnique();
-            // BR-15: tại mỗi thời điểm chỉ một phiên bản kích hoạt
-            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
+            e.Property(x => x.ModelType).HasConversion<byte>();
+            // Mỗi loại model (DR/Lesion/Fractal) có tối đa một version active.
+            e.HasIndex(x => x.ModelType).IsUnique().HasFilter("[IsActive] = 1")
+                .HasDatabaseName("UX_ModelVersions_ActivePerType");
             e.Property(x => x.Qwk).HasPrecision(5, 4);
             e.Property(x => x.Dice).HasPrecision(5, 4);
             e.Property(x => x.IoU).HasPrecision(5, 4);
@@ -289,7 +305,16 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.PatientId, x.RecordedAtUtc }).IsClustered();
             e.HasIndex(x => new { x.PatientId, x.MetricType, x.RecordedLocalDate })
                 .HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.VisitId, x.RecordedAtUtc })
+                .HasDatabaseName("IX_HealthMetrics_VisitId_RecordedAtUtc")
+                .HasFilter("[VisitId] IS NOT NULL AND [IsDeleted] = 0");
+            e.HasIndex(x => new { x.VisitId, x.MetricType })
+                .IsUnique()
+                .HasDatabaseName("UX_HealthMetrics_VisitId_MetricType")
+                .HasFilter("[VisitId] IS NOT NULL AND [IsDeleted] = 0");
             e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Visit).WithMany(v => v.HealthMetrics)
+                .HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.NoAction);
         });
 
         b.Entity<LifestyleLog>(e =>

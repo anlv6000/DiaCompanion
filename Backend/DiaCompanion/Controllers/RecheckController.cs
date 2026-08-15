@@ -20,7 +20,6 @@ namespace DiaCompanion.Api.Controllers;
 public class RecheckController : BaseApiController
 {
     private readonly IRecheckService _service;
-
     public RecheckController(IRecheckService service) => _service = service;
 
 
@@ -53,9 +52,9 @@ public class RecheckController : BaseApiController
     public async Task<ActionResult<PagedResult<RecheckDto>>> Due(
     [FromQuery] bool overdueOnly = false,
     [FromQuery] int withinDays = 30,
-    [FromQuery] PageQuery? page = null)
+    [FromQuery] PageQuery? paging = null)
     {
-        return await _service.Due(overdueOnly, withinDays, page);
+        return await _service.Due(overdueOnly, withinDays, paging);
     }
 
 

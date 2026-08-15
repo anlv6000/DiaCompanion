@@ -21,7 +21,7 @@ public class DoctorShiftDto
     /// <summary>Nhãn tiếng Việt sẵn cho client: "Thứ 2", "Chủ nhật"…</summary>
     public string DayLabel { get; set; } = "";
 
-    public byte Shift { get; set; }          // 1 = Sáng, 2 = Chiều
+    public byte Shift { get; set; }          // 1 = Sáng, 2 = Chiều, 3 = Đêm
     public string ShiftLabel { get; set; } = "";
     public bool IsActive { get; set; }
 
@@ -36,8 +36,8 @@ public class CreateDoctorShiftRequest
     /// <summary>0..6 theo System.DayOfWeek (0 = Chủ nhật).</summary>
     [Range(0, 6)] public byte DayOfWeek { get; set; }
 
-    /// <summary>1 = Sáng, 2 = Chiều.</summary>
-    [Range(1, 2)] public byte Shift { get; set; }
+    /// <summary>Ca Sáng, Chiều hoặc Tối.</summary>
+    [Range(1, 3)] public byte Shift { get; set; }
 }
 
 /// <summary>Tạo nhiều ca cùng lúc cho một bác sĩ (VD: Sáng T2, T4, T6).</summary>
@@ -46,7 +46,7 @@ public class CreateDoctorShiftsBatchRequest
     [Required] public int DoctorId { get; set; }
     /// <summary>Danh sách thứ trong tuần cần thêm (0..6).</summary>
     [Required, MinLength(1)] public List<byte> DaysOfWeek { get; set; } = new();
-    [Range(1, 2)] public byte Shift { get; set; }
+    [Range(1, 3)] public byte Shift { get; set; }
 }
 
 /* ===================== BÁC SĨ ĐANG TRỰC (để gán) ======================== */
@@ -71,7 +71,7 @@ public class OnDutyResponse
 {
     public DateOnly Date { get; set; }
     public string DayLabel { get; set; } = "";
-    /// <summary>Ca hiện tại suy theo giờ máy chủ: 1 = Sáng, 2 = Chiều (tham khảo).</summary>
+    /// <summary>Ca hiện tại suy theo giờ máy chủ: 1 = Sáng, 2 = Chiều, 3 = Tối (tham khảo).</summary>
     public byte? CurrentShift { get; set; }
     public List<OnDutyDoctorDto> Doctors { get; set; } = new();
 }

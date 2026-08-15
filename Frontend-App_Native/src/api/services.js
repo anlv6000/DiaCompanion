@@ -14,11 +14,15 @@ export const authApi = {
   forgotPassword: (phone) => http.post("/api/auth/forgot-password", { phone }),
   resetPassword: (phone, code, newPassword) =>
     http.post("/api/auth/reset-password", { phone, code, newPassword }),
+  // First login: chỉ gửi newPassword; backend dựa vào MustChangePassword
+  // để cho phép đổi mật khẩu tạm mà không yêu cầu currentPassword.
   changePassword: (currentPassword, newPassword) =>
     http.post("/api/auth/change-password", {
       ...(currentPassword ? { currentPassword } : {}),
       newPassword,
     }),
+  changeFirstPassword: (newPassword) =>
+    http.post("/api/auth/change-password", { newPassword }),
   logout: () => http.post("/api/auth/logout"),
   me: () => http.get("/api/auth/me"),
 };

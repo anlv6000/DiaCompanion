@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { GradeBars, LineChart } from "@/components/charts";
 import { fmtDate, num, pct, downloadText, toCsv } from "@/lib/format";
+import { modelTypes, modelTypeShortLabel } from "@/lib/enums";
 import { useToast } from "@/contexts/ToastContext";
 import type {
   SystemConfigDto,
@@ -31,15 +32,68 @@ import type {
 export function DashboardPage() {
   const data = useData();
   const { user } = useAuth();
-  const dash = useAsyncDashboard(data);
-  const impacts = useAsyncImpacts(data, hasRole(user, "Admin"));
+  const isAdmin = hasRole(user, "Admin");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [model, setModel] = useState("");
+  const dash = useAsync(
+    () =>
+      data.admin.dashboard({
+        from: from || undefined,
+        to: to || undefined,
+        modelVersionId: model ? Number(model) : undefined,
+      }),
+    [from, to, model],
+  );
+  const models = useAsync(
+    async () => (isAdmin ? data.admin.models() : [] as ModelVersionDto[]),
+    [isAdmin],
+  );
+  const impacts = useAsyncImpacts(data, isAdmin);
+  const active = parseActiveModelSet(dash.data?.activeModel);
+  const filteredPeriod = Boolean(from || to);
 
   return (
     <>
       <PageHeader
         title="Dashboard thống kê"
-        subtitle="Các chỉ số lấy trực tiếp từ backend và phiên bản model đang kích hoạt."
+        subtitle="Thống kê toàn hệ thống; một lượt AI chỉ chạy khi đủ mô hình DR, Lesion và Fractal đang hoạt động."
       />
+
+      <Panel>
+        <div className="toolbar">
+          <Field labelText="Từ ngày" className="inline">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </Field>
+          <Field labelText="Đến ngày" className="inline">
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+          {isAdmin && (
+            <Field labelText="Lọc theo model" className="inline">
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                <option value="">Tất cả model</option>
+                {models.data?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {modelTypeShortLabel(m.modelType)} · {m.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {(from || to || model) && (
+            <Button onClick={() => { setFrom(""); setTo(""); setModel(""); }}>
+              Xóa bộ lọc
+            </Button>
+          )}
+        </div>
+        {dash.data && (
+          <div className="faint">
+            Kỳ thống kê: <b>{dash.data.periodFrom}</b> → <b>{dash.data.periodTo}</b>
+            {dash.data.scope === "AssignedDoctor" ? " · phạm vi bác sĩ phụ trách" : " · toàn hệ thống"}
+          </div>
+        )}
+      </Panel>
+
       <LoadState
         loading={dash.loading}
         error={dash.error}
@@ -49,15 +103,17 @@ export function DashboardPage() {
         {dash.data && (
           <>
             <div className="stats">
-              <Stat k="Bệnh nhân" v={dash.data.totalPatients} />
-              <Stat k="Lượt khám tháng" v={dash.data.visitsThisMonth} />
+              <Stat k={filteredPeriod ? "Bệnh nhân trong kỳ" : "Bệnh nhân hệ thống"} v={dash.data.totalPatients} />
+              <Stat k="Lượt khám trong kỳ" v={dash.data.visitsThisMonth} />
               <Stat k="Chờ triage" v={dash.data.pendingTriage} />
               <Stat k="Defer chờ" v={dash.data.deferredPending} />
               <Stat k="Tỉ lệ defer" v={`${dash.data.deferralRate}%`} />
+              <Stat k="Chuyển chuyên khoa" v={`${dash.data.referralRate}%`} />
               <Stat k="Ghi đè" v={`${dash.data.overrideRate}%`} />
             </div>
+
             <div className="grid2" style={{ marginTop: 12 }}>
-              <Panel title="Phân bố mức DR">
+              <Panel title="Phân bố mức DR đã được bác sĩ xác nhận">
                 <GradeBars distribution={dash.data.gradeDistribution} />
               </Panel>
               <Panel title="Ngưỡng tin cậy → tỉ lệ defer ước tính">
@@ -66,12 +122,14 @@ export function DashboardPage() {
                   error={impacts.error}
                   empty={!impacts.data?.length}
                   emptyText={
-                    hasRole(user, "Admin")
-                      ? "Backend chưa có đủ ca để ước tính."
+                    isAdmin
+                      ? "Chưa có đủ ca để ước tính."
                       : "Chỉ Admin được truy vấn ảnh hưởng ngưỡng."
                   }
                 >
                   <LineChart
+                    xLabel="Ngưỡng confidence"
+                    yLabel="Tỉ lệ defer (%)"
                     series={[
                       {
                         name: "Tỉ lệ defer dự kiến",
@@ -79,13 +137,40 @@ export function DashboardPage() {
                       },
                     ]}
                   />
+                  {isAdmin && (
+                    <div className="faint" style={{ marginTop: 6 }}>
+                      Biểu đồ này sử dụng dữ liệu lịch sử toàn hệ thống để ước tính ảnh hưởng của ngưỡng;
+                      không áp dụng bộ lọc ngày/model phía trên.
+                    </div>
+                  )}
                 </LoadState>
               </Panel>
             </div>
-            <Panel title="Phiên bản model đang hoạt động">
-              <div className="credential">
-                <code>{dash.data.activeModel || "Chưa kích hoạt model"}</code>
+
+            <Panel title="Bộ 3 model đang hoạt động">
+              <div className="grid3 model-active-grid">
+                {(["DR", "Lesion", "Fractal"] as const).map((kind) => (
+                  <div className="model-active-card" key={kind}>
+                    <div className="split">
+                      <b>{kind}</b>
+                      <StatusBadge
+                        text={active[kind] ? "Active" : "Thiếu"}
+                        kind={active[kind] ? "ok" : "alert"}
+                      />
+                    </div>
+                    <code>{active[kind] || "Chưa kích hoạt"}</code>
+                  </div>
+                ))}
               </div>
+              {!active.DR || !active.Lesion || !active.Fractal ? (
+                <div className="state error" style={{ marginTop: 10 }}>
+                  Chưa đủ 3 mô hình đang hoạt động nên hệ thống chưa thể chạy phân tích AI.
+                </div>
+              ) : (
+                <div className="state ok" style={{ marginTop: 10 }}>
+                  Đủ 3/3 model. Luồng suy luận AI sẵn sàng.
+                </div>
+              )}
             </Panel>
           </>
         )}
@@ -94,9 +179,24 @@ export function DashboardPage() {
   );
 }
 
-function useAsyncDashboard(data: ReturnType<typeof useData>) {
-  return useAsync(() => data.admin.dashboard(), []);
+function parseActiveModelSet(value?: string | null) {
+  const result: Record<"DR" | "Lesion" | "Fractal", string> = {
+    DR: "",
+    Lesion: "",
+    Fractal: "",
+  };
+  if (!value) return result;
+  for (const part of value.split("|")) {
+    const [rawKey, ...rest] = part.split(":");
+    const key = rawKey.trim().toLowerCase();
+    const name = rest.join(":").trim();
+    if (key === "dr") result.DR = name;
+    else if (key === "lesion") result.Lesion = name;
+    else if (key === "fractal") result.Fractal = name;
+  }
+  return result;
 }
+
 function useAsyncImpacts(data: ReturnType<typeof useData>, isAdmin: boolean) {
   return useAsync(async () => {
     if (!isAdmin) return [] as { x: string; y: number }[];
@@ -104,7 +204,7 @@ function useAsyncImpacts(data: ReturnType<typeof useData>, isAdmin: boolean) {
     for (const proposed of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
       try {
         const x = await data.admin.impact("ai.confidence_threshold", proposed);
-        points.push({ x: String(proposed), y: x.projectedRate });
+        points.push({ x: proposed.toFixed(1), y: x.projectedRate });
       } catch {
         /* bỏ qua điểm lỗi */
       }
@@ -161,7 +261,7 @@ export function ConflictsPage() {
             <option value="">Tất cả phiên bản</option>
             {models.data?.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name}
+                {modelTypeShortLabel(m.modelType)} · {m.name}
               </option>
             ))}
           </select>
@@ -398,24 +498,35 @@ export function ModelsPage() {
     action: "activate" | "delete";
   } | null>(null);
 
+  const activeByType = new Map(
+    (list.data || []).filter((m) => m.isActive).map((m) => [m.modelType, m]),
+  );
+  const ready = modelTypes.every((t) => activeByType.has(t.value));
+
   const act = async () => {
     if (!confirm) return;
-    if (confirm.action === "activate")
-      await data.admin.activate(confirm.item.id, confirm.item.rowVersion);
-    else await data.admin.deleteModel(confirm.item.id, confirm.item.rowVersion);
-    toast.push(
-      confirm.action === "activate" ? "Đã kích hoạt model." : "Đã xóa model.",
-      "success",
-    );
-    setConfirm(null);
-    list.reload();
+    try {
+      if (confirm.action === "activate")
+        await data.admin.activate(confirm.item.id, confirm.item.rowVersion);
+      else await data.admin.deleteModel(confirm.item.id, confirm.item.rowVersion);
+      toast.push(
+        confirm.action === "activate"
+          ? `Đã kích hoạt ${modelTypeShortLabel(confirm.item.modelType)} model.`
+          : "Đã xóa model.",
+        "success",
+      );
+      setConfirm(null);
+      list.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
   };
 
   return (
     <>
       <PageHeader
         title="Phiên bản model"
-        subtitle="Chỉ một model được kích hoạt; model từng active không thể xóa."
+        subtitle="Mỗi loại DR, Lesion và Fractal có tối đa một phiên bản active; một lượt AI cần đủ cả 3 loại."
         actions={
           <Button kind="primary" onClick={() => setEditor(true)}>
             <Icon name="plus" />
@@ -423,6 +534,30 @@ export function ModelsPage() {
           </Button>
         }
       />
+
+      <div className="grid3 model-active-grid">
+        {modelTypes.map((t) => {
+          const active = activeByType.get(t.value);
+          return (
+            <div className="model-active-card" key={t.value}>
+              <div className="split">
+                <b>{t.label}</b>
+                <StatusBadge
+                  text={active ? "Đang dùng" : "Chưa active"}
+                  kind={active ? "ok" : "alert"}
+                />
+              </div>
+              <div className="mono wrap-text">{active?.name || "—"}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className={`state ${ready ? "ok" : "error"}`} style={{ marginBottom: 12 }}>
+        {ready
+          ? "Đủ 3/3 mô hình đang hoạt động. Hệ thống sẵn sàng chạy phân tích AI."
+          : "Thiếu mô hình đang hoạt động. Cần đủ DR, Lesion và Fractal trước khi bác sĩ chạy phân tích AI."}
+      </div>
+
       <Panel>
         <LoadState
           loading={list.loading}
@@ -432,13 +567,14 @@ export function ModelsPage() {
         >
           <DataTable
             headers={[
+              "Loại",
               "Tên",
               "Đường dẫn",
               "SHA-256",
               "QWK",
               "Dice",
               "IoU",
-              "Chẩn đoán",
+              "Lượt AI tham chiếu",
               "Trạng thái",
               "Kích hoạt lúc",
               "Thao tác",
@@ -446,6 +582,9 @@ export function ModelsPage() {
           >
             {list.data?.map((m) => (
               <tr key={m.id}>
+                <td>
+                  <StatusBadge text={m.modelTypeLabel || modelTypeShortLabel(m.modelType)} />
+                </td>
                 <td>
                   <b>{m.name}</b>
                 </td>
@@ -472,16 +611,13 @@ export function ModelsPage() {
                   <div className="actions">
                     <Button
                       disabled={m.isActive}
-                      onClick={() =>
-                        setConfirm({ item: m, action: "activate" })
-                      }
+                      onClick={() => setConfirm({ item: m, action: "activate" })}
                     >
-                      Kích hoạt
+                      {activeByType.has(m.modelType) && !m.isActive ? "Thay thế" : "Kích hoạt"}
                     </Button>
-                    {/* Không xóa được model đang dùng hoặc đã từng dùng (giữ toàn vẹn lịch sử suy luận). */}
                     <Button
                       kind="danger"
-                      disabled={m.wasActivated || m.isActive}
+                      disabled={m.wasActivated || m.isActive || m.diagnosisCount > 0}
                       onClick={() => setConfirm({ item: m, action: "delete" })}
                     >
                       Xóa
@@ -493,6 +629,7 @@ export function ModelsPage() {
           </DataTable>
         </LoadState>
       </Panel>
+
       {editor && (
         <ModelEditor
           onClose={() => setEditor(false)}
@@ -504,10 +641,14 @@ export function ModelsPage() {
       )}
       {confirm && (
         <ConfirmDialog
-          title={
-            confirm.action === "activate" ? "Kích hoạt model" : "Xóa model"
+          title={confirm.action === "activate" ? "Kích hoạt model" : "Xóa model"}
+          message={
+            confirm.action === "activate"
+              ? activeByType.has(confirm.item.modelType)
+                ? `Thay model ${modelTypeShortLabel(confirm.item.modelType)} hiện tại bằng ${confirm.item.name}? Model cũ cùng loại sẽ tự tắt; DR/Lesion/Fractal loại khác không bị ảnh hưởng.`
+                : `Kích hoạt ${confirm.item.name} cho loại ${modelTypeShortLabel(confirm.item.modelType)}?`
+              : `Xóa phiên bản ${confirm.item.name}?`
           }
-          message={`${confirm.action === "activate" ? "Kích hoạt" : "Xóa"} phiên bản ${confirm.item.name}?`}
           danger={confirm.action === "delete"}
           onClose={() => setConfirm(null)}
           onConfirm={act}
@@ -527,6 +668,7 @@ function ModelEditor({
   const data = useData();
   const toast = useToast();
   const [form, setForm] = useState<RegisterModelRequest>({
+    modelType: 1,
     name: "",
     filePath: "",
     sha256: "",
@@ -538,15 +680,36 @@ function ModelEditor({
   const [busy, setBusy] = useState(false);
   const p = (k: keyof RegisterModelRequest, v: unknown) =>
     setForm((x) => ({ ...x, [k]: v }));
+
   const save = async () => {
-    if (!form.name || !form.filePath || form.sha256.length !== 64) {
+    const hasMetric = form.qwk != null || form.dice != null || form.ioU != null;
+    const metrics = [form.qwk, form.dice, form.ioU].filter((x): x is number => x != null);
+    if (!form.name.trim() || !form.filePath.trim() || form.sha256.trim().length !== 64) {
       toast.push("Tên, đường dẫn và SHA-256 đủ 64 ký tự là bắt buộc.", "error");
       return;
     }
+    if (!/^[0-9a-fA-F]{64}$/.test(form.sha256.trim())) {
+      toast.push("SHA-256 phải gồm đúng 64 ký tự hệ 16.", "error");
+      return;
+    }
+    if (!hasMetric) {
+      toast.push("Cần nhập ít nhất một chỉ số QWK, Dice hoặc IoU.", "error");
+      return;
+    }
+    if (metrics.some((x) => x < 0 || x > 1)) {
+      toast.push("QWK, Dice và IoU phải nằm trong khoảng 0 đến 1.", "error");
+      return;
+    }
+
     setBusy(true);
     try {
-      await data.admin.registerModel(form);
-      toast.push("Đã đăng ký model.", "success");
+      await data.admin.registerModel({
+        ...form,
+        name: form.name.trim(),
+        filePath: form.filePath.trim(),
+        sha256: form.sha256.trim().toLowerCase(),
+      });
+      toast.push(`Đã đăng ký ${modelTypeShortLabel(form.modelType)} model.`, "success");
       onSaved();
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -554,6 +717,7 @@ function ModelEditor({
       setBusy(false);
     }
   };
+
   return (
     <Modal
       title="Đăng ký phiên bản model"
@@ -567,18 +731,27 @@ function ModelEditor({
         </>
       }
     >
+      <Field
+        labelText="Loại model"
+        required
+        help="Mỗi loại có tối đa một phiên bản active."
+      >
+        <select
+          value={form.modelType}
+          onChange={(e) => p("modelType", Number(e.target.value) as 1 | 2 | 3)}
+        >
+          {modelTypes.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+      </Field>
+
       <div className="form-row">
         <Field labelText="Tên" required>
-          <input
-            value={form.name}
-            onChange={(e) => p("name", e.target.value)}
-          />
+          <input value={form.name} onChange={(e) => p("name", e.target.value)} />
         </Field>
         <Field labelText="Đường dẫn" required>
-          <input
-            value={form.filePath}
-            onChange={(e) => p("filePath", e.target.value)}
-          />
+          <input value={form.filePath} onChange={(e) => p("filePath", e.target.value)} />
         </Field>
       </div>
       <Field labelText="SHA-256" required>
@@ -594,20 +767,20 @@ function ModelEditor({
           <Field key={k} labelText={k.toUpperCase()}>
             <input
               type="number"
+              min="0"
+              max="1"
               step="0.0001"
               value={(form[k] as number | null) ?? ""}
-              onChange={(e) =>
-                p(k, e.target.value === "" ? null : Number(e.target.value))
-              }
+              onChange={(e) => p(k, e.target.value === "" ? null : Number(e.target.value))}
             />
           </Field>
         ))}
       </div>
+      <div className="faint" style={{ marginBottom: 8 }}>
+        Gợi ý: DR thường đánh giá bằng QWK; Lesion/Fractal thường dùng Dice/IoU. Cần có ít nhất một chỉ số đánh giá.
+      </div>
       <Field labelText="Ghi chú">
-        <textarea
-          value={form.note || ""}
-          onChange={(e) => p("note", e.target.value)}
-        />
+        <textarea value={form.note || ""} onChange={(e) => p("note", e.target.value)} />
       </Field>
     </Modal>
   );

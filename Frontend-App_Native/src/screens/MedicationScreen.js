@@ -107,7 +107,7 @@ export default function MedicationScreen() {
   // Liều chưa uống mà đã quá giờ (để nhắc nổi bật).
   const now = new Date();
   const overdueCount = list.filter(
-    (m) => m.status !== 1 && m.scheduledAt && new Date(m.scheduledAt) < now,
+    (m) => m.status === 0 && m.scheduledAt && new Date(m.scheduledAt) < now,
   ).length;
 
   const setMedicationStatus = async (item, status) => {
@@ -116,7 +116,7 @@ export default function MedicationScreen() {
       toast.push(
         status === 1
           ? "Đã xác nhận uống thuốc."
-          : status === 2
+          : status === 4
             ? "Đã ghi nhận bỏ qua liều."
             : "Đã hoàn tác về chưa uống.",
         "success",
@@ -244,7 +244,7 @@ export default function MedicationScreen() {
       >
         {list.map((m) => {
           const taken = m.status === 1;
-          const skipped = m.status === 2;
+          const skipped = m.status === 3;
           const overdue = m.status === 0 && m.scheduledAt && new Date(m.scheduledAt) < now;
           return (
             <Card key={m.id} style={[styles.medCard, overdue && styles.medCardOverdue]}>
@@ -266,7 +266,8 @@ export default function MedicationScreen() {
                   {m.status === 0 && (
                     <TouchableOpacity
                       style={styles.skipButton}
-                      onPress={() => setMedicationStatus(m, 2)}
+                      onPress={() => setMedicationStatus(m, 4)}
+
                     >
                       <Text style={styles.skipButtonText}>Bỏ qua liều</Text>
                     </TouchableOpacity>

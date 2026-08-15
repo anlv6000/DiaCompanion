@@ -37,7 +37,11 @@ public class EngagementService : BaseService, IEngagementService
         var result = await _repository.GetNotificationPageAsync(_me.RequireId(), _clock.UtcNow, page);
         return Ok(new PagedResult<NotificationDto>
         {
-            Items = result.Items.ToList(),
+            Items = result.Items.Select(n =>
+            {
+                n.CreatedAt = _clock.ToLocal(n.CreatedAt)!.Value;
+                return n;
+            }).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
             TotalItems = result.Total
@@ -193,7 +197,7 @@ public class EngagementService : BaseService, IEngagementService
         {
             var visit = await _repository.GetVisitForUpdateAsync(visitId)
                 ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
-            if (visit.PatientId != patientId)
+            if (visit.MedicalRecord.PatientId != patientId)
                 throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền phản hồi lượt khám này.");
             if (visit.Status != VisitStatus.Completed)
                 throw AppException.BadRequest(Msg.ApptImmutable, "Chỉ có thể phản hồi sau khi lượt khám đã hoàn tất.");
@@ -241,10 +245,18 @@ public class EngagementService : BaseService, IEngagementService
             ? _clock.ToUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue))
             : null;
         var normalized = string.IsNullOrWhiteSpace(q) ? null : VietnameseText.RemoveDiacritics(q.Trim());
-        var result = await _repository.GetFeedbackPageAsync(rating, q, normalized, fromUtc, toExclusiveUtc, page);
+        var doctorId = _me.IsInRole(Roles.Doctor) && !_me.IsInRole(Roles.Admin)
+            ? _me.RequireId()
+            : (int?)null;
+        var result = await _repository.GetFeedbackPageAsync(
+            rating, q, normalized, fromUtc, toExclusiveUtc, doctorId, page);
         return Ok(new PagedResult<FeedbackDto>
         {
-            Items = result.Items.ToList(),
+            Items = result.Items.Select(f =>
+            {
+                f.CreatedAt = _clock.ToLocal(f.CreatedAt)!.Value;
+                return f;
+            }).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
             TotalItems = result.Total
@@ -253,7 +265,10 @@ public class EngagementService : BaseService, IEngagementService
 
     public async Task<IActionResult> FeedbackSummary()
     {
-        var ratings = await _repository.GetFeedbackRatingsAsync();
+        var doctorId = _me.IsInRole(Roles.Doctor) && !_me.IsInRole(Roles.Admin)
+            ? _me.RequireId()
+            : (int?)null;
+        var ratings = await _repository.GetFeedbackRatingsAsync(doctorId);
         return Ok(new
         {
             total = ratings.Count,
@@ -269,7 +284,7 @@ public class EngagementService : BaseService, IEngagementService
         return MapSymptom(report, null);
     }
 
-    private static SymptomReportDto MapSymptom(SymptomReport report, string? replierName) => new()
+    private SymptomReportDto MapSymptom(SymptomReport report, string? replierName) => new()
     {
         Id = report.Id,
         Symptoms = report.Symptoms,
@@ -279,8 +294,8 @@ public class EngagementService : BaseService, IEngagementService
         AutoAdvice = report.AutoAdvice,
         DoctorReply = report.DoctorReply,
         RepliedByName = replierName,
-        RepliedAt = report.RepliedAt,
-        CreatedAt = report.CreatedAt,
+        RepliedAt = _clock.ToLocal(report.RepliedAt),
+        CreatedAt = _clock.ToLocal(report.CreatedAt)!.Value,
         PatientName = report.Patient?.FullName ?? "",
         ResponsibleDoctorId = report.ResponsibleDoctorId,
         ResponsibleDoctorName = report.ResponsibleDoctor?.FullName,

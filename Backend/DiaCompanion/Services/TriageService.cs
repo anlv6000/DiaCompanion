@@ -14,10 +14,11 @@ public class TriageService : BaseService, ITriageService
     private readonly IAuditService _audit;
     private readonly IVoidService _void;
     private readonly IConfigService _cfg;
+    private readonly IClinicClock _clock;
 
     public TriageService(IRepository repository, ICurrentUser me, IAuditService audit,
-                            IVoidService voidSvc, IConfigService cfg)
-    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; }
+                            IVoidService voidSvc, IConfigService cfg, IClinicClock clock)
+    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _cfg = cfg; _clock = clock; }
 
     /// <summary>
     /// UC-30 — hàng đợi các ca đã có kết quả AI nhưng chưa ai xác nhận.
@@ -51,7 +52,7 @@ public class TriageService : BaseService, ITriageService
             PatientName = x.PatientName, VisitId = x.VisitId, Eye = (byte)x.Eye,
             DrGrade = (byte)x.DrGrade, Confidence = x.Confidence, Disagreement = x.Disagreement,
             IsDeferred = x.IsDeferred, DeferReason = (byte?)x.DeferReason,
-            NeedsReferral = (byte)x.DrGrade >= referableGrade, CreatedAt = x.CreatedAt,
+            NeedsReferral = (byte)x.DrGrade >= referableGrade, CreatedAt = _clock.ToLocal(x.CreatedAt)!.Value,
             DoctorName = x.DoctorName, RowVersion = x.RowVer.Length == 0 ? null : Convert.ToBase64String(x.RowVer)
         }).ToList();
         var last = data.Items.LastOrDefault();
@@ -91,7 +92,7 @@ public class TriageService : BaseService, ITriageService
         // Bắt buộc cập nhật chính AiDiagnosis để RowVer thực sự tham gia câu UPDATE.
         // Nếu hai bác sĩ cùng dùng một token cũ, một request sẽ nhận 409.
         d.LastReviewActionBy = doctorId;
-        d.LastReviewActionAt = DateTime.UtcNow;
+        d.LastReviewActionAt = _clock.UtcNow;
 
         _repository.Add(review);
         await _audit.LogAsync(AuditAction.ReviewApprove, nameof(AiDiagnosis), d.Id,
@@ -124,7 +125,7 @@ public class TriageService : BaseService, ITriageService
         };
 
         d.LastReviewActionBy = doctorId;
-        d.LastReviewActionAt = DateTime.UtcNow;
+        d.LastReviewActionAt = _clock.UtcNow;
 
         _repository.Add(review);
 
@@ -178,6 +179,11 @@ public class TriageService : BaseService, ITriageService
                 Msg.Forbidden,
                 "Bác sĩ chỉ được duyệt kết quả thuộc lượt khám do mình phụ trách.");
 
+        if (visit.Status != VisitStatus.InProgress)
+            throw AppException.Conflict(
+                Msg.ApptImmutable,
+                "Lượt khám đã đóng. Kết quả đã trở thành dữ liệu chỉ đọc.");
+
         if (await _repository.ReviewExistsForDiagnosisAsync(diagnosisId))
             throw AppException.Conflict(Msg.ConcurrentEdit,
                 "Ca này vừa được một bác sĩ khác xử lý. Vui lòng tải lại hàng đợi.");
@@ -208,7 +214,7 @@ public class TriageService : BaseService, ITriageService
             FinalGradeLabel = DiagnosesService.GradeLabel((byte)r.FinalGrade),
             Reason = r.Reason,
             DoctorName = r.Doctor?.FullName ?? "",
-            CreatedAt = r.CreatedAt,
+            CreatedAt = _clock.ToLocal(r.CreatedAt)!.Value,
             RowVersion = r.ToRowVersion()
         };
     }

@@ -14,8 +14,8 @@ public class EngagementController : BaseApiController
     public EngagementController(IEngagementService service) => _service = service;
 
     [HttpGet("notifications")]
-    public async Task<ActionResult<PagedResult<NotificationDto>>> Notifications([FromQuery] PageQuery page) =>
-        await _service.Notifications(page);
+    public async Task<ActionResult<PagedResult<NotificationDto>>> Notifications([FromQuery] PageQuery paging) =>
+        await _service.Notifications(paging);
 
     [HttpGet("notifications/unread-count")]
     public async Task<IActionResult> UnreadCount() => await _service.UnreadCount();
@@ -36,8 +36,8 @@ public class EngagementController : BaseApiController
     public async Task<ActionResult<PagedResult<SymptomReportDto>>> Symptoms(
         [FromQuery] int? patientId,
         [FromQuery] bool pendingOnly = false,
-        [FromQuery] PageQuery? page = null) =>
-        await _service.Symptoms(patientId, pendingOnly, page);
+        [FromQuery] PageQuery? paging = null) =>
+        await _service.Symptoms(patientId, pendingOnly, paging);
 
     [HttpPut("symptoms/{id:int}/reply")]
     [Authorize(Roles = Roles.DoctorOnly)]
@@ -50,16 +50,16 @@ public class EngagementController : BaseApiController
         await _service.CreateFeedback(req);
 
     [HttpGet("feedback")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = Roles.DoctorOrAdmin)]
     public async Task<ActionResult<PagedResult<FeedbackDto>>> Feedbacks(
         [FromQuery] byte? rating,
         [FromQuery] string? q,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
-        [FromQuery] PageQuery page) =>
-        await _service.Feedbacks(rating, q, from, to, page);
+        [FromQuery] PageQuery paging) =>
+        await _service.Feedbacks(rating, q, from, to, paging);
 
     [HttpGet("feedback/summary")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = Roles.DoctorOrAdmin)]
     public async Task<IActionResult> FeedbackSummary() => await _service.FeedbackSummary();
 }

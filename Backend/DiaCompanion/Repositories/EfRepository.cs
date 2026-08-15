@@ -5,6 +5,7 @@ using DiaCompanion.Dtos;
 using DiaCompanion.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using static DiaCompanion.Api.Repositories.IRepository;
 
 namespace DiaCompanion.Api.Repositories;
 
@@ -128,13 +129,15 @@ public sealed partial class EfRepository : IRepository
 
             // 3. Loại User đã có hồ sơ Patient đang hoạt động.
             .Where(u =>
-                !_db.Patients.Any(p =>
-                    p.UserId == u.Id &&
-                    !p.IsVoided))
-
+                !_db.Patients.IgnoreQueryFilters().Any(p =>
+   
+                    p.UserId == u.Id ))
+            
             // 4. Admin không được dùng để tạo hồ sơ Patient qua luồng này.
-            .Where(u => !u.UserRoles.Any(ur =>
+            .Where(u => 
+            !u.UserRoles.Any(ur =>
                 ur.Role.Name == Roles.Admin &&
+                
                 ur.IsActive &&
                 ur.Role.IsActive));
 
@@ -238,5 +241,52 @@ public sealed partial class EfRepository : IRepository
             query = query.AsNoTracking();
 
         return await query.FirstOrDefaultAsync(ct);
+    }
+
+
+
+    public async Task<PatientAdminTarget?> GetPatientAdminTargetAsync(
+    int patientId,
+    bool tracking,
+    CancellationToken ct = default)
+    {
+        IQueryable<Patient> query = _db.Patients
+            .Include(p => p.User)
+            .Where(p => p.Id == patientId);
+
+        if (!tracking)
+            query = query.AsNoTracking();
+
+        var patient = await query.FirstOrDefaultAsync(ct);
+
+        if (patient is null)
+            return null;
+
+
+        if (patient.UserId is not int userId)
+        {
+            return new PatientAdminTarget(
+                patient,
+                null,
+                null);
+        }
+
+
+        IQueryable<UserRole> roleQuery = _db.UserRoles
+            .Where(ur =>
+                ur.UserId == userId &&
+                ur.Role.Name == Roles.Patient);
+
+        if (!tracking)
+            roleQuery = roleQuery.AsNoTracking();
+
+        var patientRole =
+            await roleQuery.FirstOrDefaultAsync(ct);
+
+
+        return new PatientAdminTarget(
+            patient,
+            patient.User,
+            patientRole);
     }
 }

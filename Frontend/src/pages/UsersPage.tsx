@@ -92,11 +92,13 @@ export function UsersPage() {
               }}
             >
               <option value="">Tất cả</option>
-              {roles.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
+              {roles.filter((r) => r.value !== "Admin")
+                .map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+
             </select>
           </Field>
           <Field labelText="Trạng thái" className="inline">
@@ -211,6 +213,7 @@ function UserEditor({
   const isNew = user === "new";
   const [fullName, setName] = useState(isNew ? "" : user.fullName);
   const [email, setEmail] = useState(isNew ? "" : user.email || "");
+  const [phone, setPhone] = useState(isNew ? "" : user.phone || "");
   const [selectedRole, setSelectedRole] = useState<StaffRole>(() => {
     if (isNew) return "Doctor";
     // Màn quản trị nhân viên chỉ cho chọn 1 role nghiệp vụ chính.
@@ -226,6 +229,7 @@ function UserEditor({
   const save = async () => {
     if (
       !fullName.trim() ||
+      !phone.trim() ||
       (isNew && !email.trim()) ||
       (selectedRole === "Doctor" && !license.trim())
     ) {
@@ -237,8 +241,10 @@ function UserEditor({
     try {
       if (isNew) {
         const c = await data.users.create({
-          fullName,
-          email,
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+
           role: selectedRole,
           // Backend mới vẫn nhận roles[], nhưng FE chỉ cho chọn đúng 1 role nhân viên.
           roles: [selectedRole],
@@ -247,7 +253,8 @@ function UserEditor({
         onSaved(c);
       } else {
         await data.users.update(user.id, {
-          fullName,
+          fullName: fullName.trim(),
+          phone: phone.trim(),
           licenseNo: selectedRole === "Doctor" ? license.trim() || null : null,
           // Chỉ cập nhật 1 role nhân viên. Role Patient (nếu có) do backend bảo toàn.
           roles: [selectedRole],
@@ -287,6 +294,15 @@ function UserEditor({
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
+        <Field labelText="Số điện thoại" required>
+          <input
+            type="tel"
+            value={phone}
+            disabled={!isNew}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="VD: 0912345678"
+          />
+        </Field>
         <Field
           labelText="Vai trò"
           required
@@ -296,11 +312,13 @@ function UserEditor({
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value as StaffRole)}
           >
-            {roles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
+            {roles
+              .filter((r) => r.value !== "Admin")
+              .map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
           </select>
         </Field>
         <Field labelText="Số chứng chỉ" required={selectedRole === "Doctor"}>

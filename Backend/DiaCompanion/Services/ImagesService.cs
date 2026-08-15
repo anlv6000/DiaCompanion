@@ -14,10 +14,11 @@ public class ImagesService : BaseService, IImagesService
     private readonly IAuditService _audit;
     private readonly IVoidService _void;
     private readonly IFileStorageService _storage;
+    private readonly IClinicClock _clock;
 
     public ImagesService(IRepository repository, ICurrentUser me, IAuditService audit,
-                            IVoidService voidSvc, IFileStorageService storage)
-    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _storage = storage; }
+                            IVoidService voidSvc, IFileStorageService storage, IClinicClock clock)
+    { _repository = repository; _me = me; _audit = audit; _void = voidSvc; _storage = storage; _clock = clock; }
     public async Task<ActionResult<List<FundusImageDto>>> List(
         [FromQuery] int? patientId, [FromQuery] int? visitId)
     {
@@ -34,7 +35,7 @@ public class ImagesService : BaseService, IImagesService
             Eye = (byte)f.Eye,
             QualityStatus = (byte)f.QualityStatus,
             QualityNote = f.QualityNote,
-            CreatedAt = f.CreatedAt,
+            CreatedAt = _clock.ToLocal(f.CreatedAt)!.Value,
             ContentUrl = $"/api/images/{f.Id}/content",
             RowVersion = f.ToRowVersion()
         }).ToList();
@@ -102,7 +103,7 @@ public class ImagesService : BaseService, IImagesService
             VisitId = image.VisitId,
             Eye = (byte)image.Eye,
             QualityStatus = (byte)image.QualityStatus,
-            CreatedAt = image.CreatedAt,
+            CreatedAt = _clock.ToLocal(image.CreatedAt)!.Value,
             ContentUrl = $"/api/images/{image.Id}/content",
             RowVersion = image.ToRowVersion()
         });
@@ -181,7 +182,7 @@ public class ImagesService : BaseService, IImagesService
         image.QualityStatus = req.Status;
         image.QualityNote = req.Note?.Trim();
         image.QualityCheckedBy = _me.RequireId();
-        image.QualityCheckedAt = DateTime.UtcNow;
+        image.QualityCheckedAt = _clock.UtcNow;
 
         await _audit.LogAsync(AuditAction.QualityCheck, nameof(FundusImage), image.Id,
             before, new { status = req.Status.ToString(), note = req.Note });

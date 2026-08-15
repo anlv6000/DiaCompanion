@@ -9,6 +9,8 @@ import { useAuth } from "./contexts/AuthContext";
 import { useData } from "./contexts/DataContext";
 import { colors } from "./theme/colors";
 
+
+import ContactScreen from "./screens/ContactScreen";
 import LoginScreen from "./screens/LoginScreen";
 import ForgotPasswordScreen from "./screens/ForgotPasswordScreen";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
@@ -108,6 +110,12 @@ function MainStack() {
       <Stack.Screen name="VisitHistory" component={VisitHistoryScreen} options={{ title: "Lịch sử khám" }} />
       <Stack.Screen name="VisitDetail" component={VisitDetailScreen} options={{ title: "Kết quả khám" }} />
       <Stack.Screen name="VisitFeedback" component={VisitFeedbackScreen} options={{ title: "Phản hồi lượt khám" }} />
+      <Stack.Screen
+  name="Contact"
+  component={ContactScreen}
+  options={{ title: "Liên hệ bệnh viện" }}
+/>
+      
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: "Đổi mật khẩu" }} />
     </Stack.Navigator>
   );

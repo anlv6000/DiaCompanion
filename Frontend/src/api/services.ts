@@ -17,14 +17,61 @@ function normalizeStaff(value: T.StaffUserDto): T.StaffUserDto {
 // Không có OTP/đăng nhập bằng số điện thoại (đó là luồng của app bệnh nhân).
 // Quên mật khẩu do Admin cấp lại (usersApi.reset), không self-service qua SĐT.
 export const authApi = {
-  login: async (body: { email: string; password: string }) =>
-    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/login", body)),
-  me: async () => normalizeLogin(await http.get<T.LoginResponse>("/api/auth/me")),
+  login: async (body: T.LoginRequest) =>
+    normalizeLogin(
+      await http.post<T.LoginResponse>(
+        "/api/auth/login",
+        body,
+      ),
+    ),
+
+  forgotPassword: (phone: string) =>
+    http.post<T.OtpResponse>(
+      "/api/auth/forgot-password",
+      { phone },
+    ),
+
+  resetPassword: (
+    body: T.ResetPasswordRequest,
+  ) =>
+    http.post<T.ApiMessage>(
+      "/api/auth/reset-password",
+      body,
+    ),
+
+  me: async () =>
+    normalizeLogin(
+      await http.get<T.LoginResponse>(
+        "/api/auth/me",
+      ),
+    ),
+
+  profile: () =>
+    http.get<T.StaffProfileDto>("/api/auth/profile"),
+
+  updateProfile: (body: T.UpdateStaffProfileRequest) =>
+    http.put<T.StaffProfileDto>("/api/auth/profile", body),
+
   refresh: async (refreshToken: string) =>
-    normalizeLogin(await http.post<T.LoginResponse>("/api/auth/refresh", { refreshToken })),
-  logout: () => http.post<T.ApiMessage>("/api/auth/logout"),
-  change: (body: T.ChangePasswordRequest) =>
-    http.post<T.ApiMessage>("/api/auth/change-password", body),
+    normalizeLogin(
+      await http.post<T.LoginResponse>(
+        "/api/auth/refresh",
+        { refreshToken },
+      ),
+    ),
+
+  logout: () =>
+    http.post<T.ApiMessage>(
+      "/api/auth/logout",
+    ),
+
+  change: async (body: T.ChangePasswordRequest) =>
+    normalizeLogin(
+      await http.post<T.ChangePasswordResponse>(
+        "/api/auth/change-password",
+        body,
+      ),
+    ) as T.ChangePasswordResponse,
 };
 export const usersApi = {
   list: async (p: Record<string, unknown>) => {
@@ -51,6 +98,7 @@ export const usersApi = {
     ),
 };
 export const patientsApi = {
+  
   list: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.PatientListItemDto>>("/api/patients" + query(p)),
   get: (id: number) => http.get<T.PatientDetailDto>(`/api/patients/${id}`),
@@ -64,6 +112,34 @@ export const patientsApi = {
     ),
   void: (id: number, reason: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/patients/${id}/void`, { reason, rowVersion }),
+
+
+  adminList: (p: Record<string, unknown>) =>
+  http.get<T.PagedResult<T.AdminPatientDto>>(
+    "/api/patients/admin" + query(p),
+  ),
+
+adminUpdate: (
+  id: number,
+  body: T.AdminUpdatePatientRequest,
+) =>
+  http.put<T.ApiMessage>(
+    `/api/patients/admin/${id}`,
+    body,
+  ),
+
+adminSetActive: (
+  id: number,
+  value: boolean,
+  rowVersion: string,
+) =>
+  http.put<T.ApiMessage>(
+    `/api/patients/admin/${id}/active` +
+      query({ value }),
+    {
+      rowVersion,
+    },
+  ),
 };
 export const visitsApi = {
   list: (p: Record<string, unknown>) =>
@@ -71,6 +147,10 @@ export const visitsApi = {
   assignedToMe: (p: Record<string, unknown>) =>
     http.get<T.PagedResult<T.VisitDto>>("/api/visits/assigned-to-me" + query(p)),
   get: (id: number) => http.get<T.VisitDto>(`/api/visits/${id}`),
+  healthMetrics: (id: number) =>
+    http.get<T.VisitHealthMetricsDto>(`/api/visits/${id}/health-metrics`),
+  saveHealthMetrics: (id: number, b: T.SaveVisitHealthMetricsRequest) =>
+    http.put<T.VisitHealthMetricsDto>(`/api/visits/${id}/health-metrics`, b),
   create: (b: T.CreateVisitRequest) => http.post<T.VisitDto>("/api/visits", b),
   close: (id: number, b: T.CloseVisitRequest) =>
     http.put<T.VisitDto>(`/api/visits/${id}/close`, b),
@@ -254,7 +334,8 @@ export const blogApi = {
     ),
 };
 export const adminApi = {
-  dashboard: () => http.get<T.DashboardDto>("/api/admin/dashboard"),
+  dashboard: (p: Record<string, unknown> = {}) =>
+    http.get<T.DashboardDto>("/api/admin/dashboard" + query(p)),
   configs: () => http.get<T.SystemConfigDto[]>("/api/admin/configs"),
   updateConfig: (key: string, value: string, rowVersion: string) =>
     http.put<T.ApiMessage>(`/api/admin/configs/${encodeURIComponent(key)}`, {
@@ -289,3 +370,4 @@ export const exportApi = {
   conflictsCsv: (modelVersionId?: number | null) =>
     http.blob("/api/export/disagreement-cases.csv" + query({ modelVersionId })),
 };
+

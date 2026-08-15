@@ -7,7 +7,7 @@ import { colors } from "../theme/colors";
 import { font, spacing } from "../theme/typography";
 
 export default function ChangePasswordScreen({ navigation, route }) {
-  const { changePassword, logout, mustChangePassword } = useAuth();
+  const { changePassword, changeFirstPassword, logout, mustChangePassword } = useAuth();
   // Dùng trạng thái auth làm nguồn chính; route param chỉ là lớp dự phòng.
   // Nhờ vậy màn bắt buộc đổi mật khẩu vẫn đúng ngay cả khi route params
   // không được truyền hoặc navigation state được khôi phục từ cache.
@@ -37,7 +37,11 @@ export default function ChangePasswordScreen({ navigation, route }) {
 
     setBusy(true);
     try {
-      await changePassword(force ? null : current, next);
+      if (force) {
+        await changeFirstPassword(next);
+      } else {
+        await changePassword(current, next);
+      }
 
       toast.push(
         force
@@ -47,8 +51,8 @@ export default function ChangePasswordScreen({ navigation, route }) {
       );
 
       if (!force && navigation.canGoBack()) {
-        navigation.goBack();
-      }
+  navigation.goBack();
+}
     } catch (e) {
       toast.push(e.message, "error");
     } finally {

@@ -14,6 +14,8 @@ public interface IVisitsService
     Task<ActionResult<VisitDto>> Create(CreateVisitRequest req);
     Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req);
     Task<IActionResult> Void(int id, VoidRequest req);
+    Task<ActionResult<VisitHealthMetricsDto>> GetHealthMetrics(int visitId);
+    Task<ActionResult<VisitHealthMetricsDto>> SaveHealthMetrics(int visitId, SaveVisitHealthMetricsRequest req);
 
     Task<PagedResult<VisitDto>> GetMineAsync(int userId,PageQuery page);
 

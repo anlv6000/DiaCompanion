@@ -33,17 +33,18 @@ public sealed partial class EfRepository
         CancellationToken ct = default)
     {
         var rows = await _db.Visits.AsNoTracking()
-            .Where(v => v.Status == VisitStatus.Completed
+            .Where(v => !v.IsVoided && v.Status == VisitStatus.Completed
                         && v.ClosedAt != null
                         && v.RecheckMonths != null
-                        && v.Patient != null
-                        && v.Patient.UserId != null)
+                        && v.MedicalRecord.Patient != null
+                        && v.MedicalRecord.Patient.UserId != null)
             .Select(v => new
             {
                 v.Id,
-                v.PatientId,
-                UserId = v.Patient!.UserId!.Value,
-                PatientName = v.Patient.FullName,
+                PatientId =
+                v.MedicalRecord.PatientId,
+                UserId = v.MedicalRecord.Patient!.UserId!.Value,
+                PatientName = v.MedicalRecord.Patient.FullName,
                 ClosedAt = v.ClosedAt!.Value,
                 RecheckMonths = v.RecheckMonths!.Value
             })
@@ -59,8 +60,12 @@ public sealed partial class EfRepository
 
         var patientIds = latestVisits.Select(x => x.PatientId).ToArray();
         var latestDates = await _db.Visits.AsNoTracking()
-            .Where(v => patientIds.Contains(v.PatientId))
-            .GroupBy(v => v.PatientId)
+            .Where(v => !v.IsVoided
+                        && patientIds.Contains(v.MedicalRecord.PatientId)
+                        && (v.RecheckMonths != null
+                            || v.Images.Any(i => !i.IsVoided)
+                            || _db.Prescriptions.Any(p => p.VisitId == v.Id && !p.IsVoided)))
+            .GroupBy(v => v.MedicalRecord.PatientId)
             .Select(g => new { PatientId = g.Key, LatestVisitDate = g.Max(v => v.VisitDate) })
             .ToDictionaryAsync(x => x.PatientId, x => x.LatestVisitDate, ct);
 

@@ -107,19 +107,38 @@ const NAV: [string, NavItem[]][] = [
         roles: ["Doctor", "Admin"],
       },
       { to: "/blog", label: "Blog", icon: "file", roles: ["Doctor", "Admin"] },
-      { to: "/feedback", label: "Phản hồi", icon: "heart", roles: ["Admin"] },
+      { to: "/feedback", label: "Phản hồi", icon: "heart", roles: ["Doctor", "Admin"] },
     ],
   ],
   [
     "Quản trị",
     [
-      { to: "/users", label: "Tài khoản", icon: "users", roles: ["Admin"] },
+      {
+      to: "/users",
+      label: "TK nhân viên",
+      icon: "users",
+      roles: ["Admin"],
+    },
+
+    {
+      to: "/patient-accounts",
+      label: "TK bệnh nhân",
+      icon: "users",
+      roles: ["Admin"],
+    },   
       { to: "/audit", label: "Nhật ký", icon: "lock", roles: ["Admin"] },
       { to: "/configs", label: "Cấu hình", icon: "settings", roles: ["Admin"] },
       { to: "/models", label: "Model", icon: "settings", roles: ["Admin"] },
     ],
   ],
 ];
+
+
+function modelPipelineStatus(activeModel: string) {
+  const text = activeModel.toLowerCase();
+  const count = ["dr:", "lesion:", "fractal:"].filter((x) => text.includes(x)).length;
+  return `AI models ${count}/3 active`;
+}
 
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -163,6 +182,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         </nav>
         <div className="nav-spacer" />
         <div className="side-footer">
+          {hasAnyRole(user, ["Doctor", "Receptionist"]) && (
+            <Link to="/profile" className={`navlink ${pathname.startsWith("/profile") ? "on" : ""}`}>
+              <Icon name="users" />
+              Hồ sơ cá nhân
+            </Link>
+          )}
           <Link to="/change-password" className="navlink">
             <Icon name="lock" />
             Đổi mật khẩu
@@ -179,7 +204,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           <small>Console lâm sàng — sàng lọc võng mạc ĐTĐ</small>
           <div className="top-actions">
             {dash.data?.activeModel && (
-              <StatusBadge text={dash.data.activeModel} />
+              <StatusBadge
+                text={modelPipelineStatus(dash.data.activeModel)}
+                kind={modelPipelineStatus(dash.data.activeModel).includes("3/3") ? "ok" : "alert"}
+              />
             )}
             <button
               className="notification-button"
@@ -191,15 +219,27 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                 <span className="notification-dot" />
               )}
             </button>
-            <div className="user-menu">
-              <span className="avatar">{initials(user?.fullName)}</span>
-              <span>
-                {user?.fullName}
-                <small style={{ display: "block" }}>
-                  {rolesLabel(user).toUpperCase()}
-                </small>
-              </span>
-            </div>
+            {hasAnyRole(user, ["Doctor", "Receptionist"]) ? (
+              <Link to="/profile" className="user-menu" title="Mở hồ sơ cá nhân">
+                <span className="avatar">{initials(user?.fullName)}</span>
+                <span>
+                  {user?.fullName}
+                  <small style={{ display: "block" }}>
+                    {rolesLabel(user).toUpperCase()}
+                  </small>
+                </span>
+              </Link>
+            ) : (
+              <div className="user-menu">
+                <span className="avatar">{initials(user?.fullName)}</span>
+                <span>
+                  {user?.fullName}
+                  <small style={{ display: "block" }}>
+                    {rolesLabel(user).toUpperCase()}
+                  </small>
+                </span>
+              </div>
+            )}
           </div>
         </header>
         <div className="content">{children}</div>

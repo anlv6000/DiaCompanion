@@ -1,5 +1,8 @@
 export type Role = "Admin" | "Doctor" | "Patient" | "Receptionist";
 export type StaffRole = Exclude<Role, "Patient">;
+export type DoctorOrReceptionist = "Doctor" | "Receptionist";
+
+export type ModelType = 1 | 2 | 3;
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
   items: T[];
@@ -53,14 +56,41 @@ export interface OtpResponse {
   devCode?: string | null;
   note?: string | null;
 }
-export interface ChangePasswordRequest {
-  currentPassword: string;
+export interface ResetPasswordRequest {
+  phone: string;
+  code: string;
   newPassword: string;
+}
+export interface ChangePasswordRequest {
+  /** Bỏ trống khi mustChangePassword=true (lần đăng nhập đầu bằng mật khẩu tạm). */
+  currentPassword?: string;
+  newPassword: string;
+}
+export interface ChangePasswordResponse extends LoginResponse {
+  message: string;
+}
+export interface StaffProfileDto {
+  id: number;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  role: DoctorOrReceptionist;
+  licenseNo?: string | null;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  rowVersion: string;
+}
+export interface UpdateStaffProfileRequest {
+  fullName: string;
+  phone: string;
+  licenseNo?: string | null;
+  rowVersion: string;
 }
 export interface StaffUserDto {
   id: number;
   fullName: string;
   email?: string | null;
+  phone?: string | null;
   /** Vai trò ưu tiên do backend trả để tương thích client cũ. */
   role?: Role;
   /** Danh sách role active thực tế của User. */
@@ -91,6 +121,7 @@ export interface TempCredentialResponse {
 export interface CreateStaffRequest {
   email: string;
   fullName: string;
+  phone: string;
   /** Role nhân viên được chọn trên UI. */
   role?: StaffRole;
   /** FE gửi mảng 1 phần tử để tương thích backend dùng UserRoles. */
@@ -99,6 +130,7 @@ export interface CreateStaffRequest {
 }
 export interface UpdateStaffRequest {
   fullName: string;
+  phone: string;
   licenseNo?: string | null;
   /** FE gửi tối đa 1 role nhân viên; backend giữ nguyên role Patient nếu User đang có. */
   roles?: StaffRole[];
@@ -165,6 +197,7 @@ export interface VisitDto {
   closedAt?: string | null;
   imageCount: number;
   pendingReviewCount: number;
+  healthMetrics?: VisitHealthMetricsDto | null;
   rowVersion: string;
 }
 export interface CreateVisitRequest {
@@ -208,8 +241,17 @@ export interface FundusImageDto {
 export interface AiDiagnosisDto {
   id: number;
   fundusImageId: number;
+  visitId?: number | null;
+  visitStatus?: number | null;
   eye: number;
+  /** Field tương thích cũ; backend trả tên DR model. */
   modelVersion: string;
+  drModelVersionId: number;
+  drModelVersion: string;
+  lesionModelVersionId?: number | null;
+  lesionModelVersion?: string | null;
+  fractalModelVersionId?: number | null;
+  fractalModelVersion?: string | null;
   drGrade: number;
   drGradeLabel: string;
   confidence: number;
@@ -342,7 +384,7 @@ export interface DoctorShiftDto {
   licenseNo?: string | null;
   dayOfWeek: number; // 0=CN … 6=T7
   dayLabel: string;
-  shift: number; // 1=Sáng, 2=Chiều
+  shift: number; // 1=Sáng, 2=Chiều, 3=Đêm
   shiftLabel: string;
   isActive: boolean;
   rowVersion: string;
@@ -373,6 +415,7 @@ export interface OnDutyResponse {
 }
 export interface HealthMetricDto {
   id: number;
+  visitId?: number | null;
   metricType: number;
   value: number;
   unit: string;
@@ -381,6 +424,33 @@ export interface HealthMetricDto {
   recordedLocalDate: string;
   note?: string | null;
   isAbnormal: boolean;
+  rowVersion: string;
+  pairMetricId?: number | null;
+  pairRowVersion?: string | null;
+  systolicValue?: number | null;
+  diastolicValue?: number | null;
+}
+export interface VisitHealthMetricsDto {
+  visitId: number;
+  glucose?: HealthMetricDto | null;
+  hbA1c?: HealthMetricDto | null;
+  bloodPressure?: HealthMetricDto | null;
+}
+export interface SaveVisitHealthMetricsRequest {
+  glucose?: number | null;
+  glucoseContext?: number | null;
+  glucoseNote?: string | null;
+  glucoseRowVersion?: string | null;
+
+  hbA1c?: number | null;
+  hbA1cNote?: string | null;
+  hbA1cRowVersion?: string | null;
+
+  systolicBp?: number | null;
+  diastolicBp?: number | null;
+  bloodPressureNote?: string | null;
+  systolicRowVersion?: string | null;
+  diastolicRowVersion?: string | null;
 }
 export interface CreateMetricRequest {
   metricType: number;
@@ -431,7 +501,7 @@ export interface MetricSummary {
   to: string;
   totalAbnormalCount: number;
   glucose: MetricTrend;
-  hba1c: MetricTrend;
+  hbA1c: MetricTrend;
   bloodPressure: BloodPressureTrend;
 }
 export interface LifestyleLogDto {
@@ -477,6 +547,9 @@ export interface SymptomReportDto {
 }
 export interface FeedbackDto {
   id: number;
+  patientId: number;
+  patientCode: string;
+  patientName: string;
   visitId?: number | null;
   rating: number;
   tags?: string | null;
@@ -508,6 +581,10 @@ export interface SaveBlogRequest {
   rowVersion?: string;
 }
 export interface DashboardDto {
+  periodFrom: string;
+  periodTo: string;
+  modelVersionId?: number | null;
+  scope: string;
   totalPatients: number;
   visitsThisMonth: number;
   pendingTriage: number;
@@ -516,6 +593,7 @@ export interface DashboardDto {
   referralRate: number;
   overrideRate: number;
   gradeDistribution: Record<string, number>;
+  /** Chuỗi backend: "Dr: ... | Lesion: ... | Fractal: ...". */
   activeModel: string;
 }
 export interface SystemConfigDto {
@@ -544,6 +622,8 @@ export interface ThresholdImpactDto {
 }
 export interface ModelVersionDto {
   id: number;
+  modelType: ModelType;
+  modelTypeLabel: string;
   name: string;
   filePath: string;
   sha256: string;
@@ -558,6 +638,7 @@ export interface ModelVersionDto {
   rowVersion: string;
 }
 export interface RegisterModelRequest {
+  modelType: ModelType;
   name: string;
   filePath: string;
   sha256: string;
@@ -609,17 +690,35 @@ export interface VisitReportVisit {
   conclusion?: string | null;
   referral?: number | null;
   recheckMonths?: number | null;
+  recheckDueDate?: string | null;
   closedAt?: string | null;
   doctorName?: string | null;
   doctorLicense?: string | null;
 }
+export interface VisitReportImage {
+  imageId: number;
+  eye: number;
+  qualityStatus: number;
+  qualityStatusLabel: string;
+  qualityNote?: string | null;
+}
 export interface VisitReportFinding {
+  diagnosisId: number;
   eye: number;
   imageId: number;
+  qualityStatus: number;
+  qualityStatusLabel: string;
+  qualityNote?: string | null;
   finalGrade: number;
   finalGradeLabel: string;
+  action: number;
+  actionLabel: string;
+  reason?: string | null;
   confirmedBy: string;
   createdAt: string;
+  urlImageLesionAfterMedical?: string | null;
+  urlImageVesselAfterMedical?: string | null;
+  urlImgBeforeMEDICAL?: string | null;
   ai: {
     grade: number;
     gradeLabel: string;
@@ -638,6 +737,28 @@ export interface VisitReportFinding {
   };
   fractal?: number | null;
 }
+export interface VisitReportMetricValue {
+  value: number;
+  unit: string;
+  recordedAt: string;
+  isAbnormal: boolean;
+}
+export interface VisitReportGlucose extends VisitReportMetricValue {
+  context?: number | null;
+}
+export interface VisitReportBloodPressure {
+  systolic: number;
+  diastolic: number;
+  unit: string;
+  recordedAt: string;
+  isAbnormal: boolean;
+}
+export interface VisitReportHealthMetrics {
+  date: string;
+  glucose?: VisitReportGlucose | null;
+  hba1c?: VisitReportMetricValue | null;
+  bloodPressure?: VisitReportBloodPressure | null;
+}
 export interface VisitReportPrescription {
   issuedAt: string;
   note?: string | null;
@@ -649,12 +770,50 @@ export interface VisitReportPrescription {
     instruction?: string | null;
   }[];
 }
+export interface VisitReportFeedback {
+  rating: number;
+  tags?: string | null;
+  comment?: string | null;
+  createdAt: string;
+}
 export interface VisitReport {
   clinic: VisitReportClinic;
   patient: VisitReportPatient;
   visit: VisitReportVisit;
+  images: VisitReportImage[];
   findings: VisitReportFinding[];
+  healthMetrics: VisitReportHealthMetrics;
   prescriptions: VisitReportPrescription[];
+  feedback?: VisitReportFeedback | null;
   disclaimer: string;
   generatedAt: string;
+}
+export interface AdminPatientDto {
+  id: number;
+
+  userId?: number | null;
+
+  code: string;
+
+  fullName: string;
+
+  gender: number;
+
+  phone: string;
+
+  address?: string | null;
+
+  hasAccount: boolean;
+
+  isActive?: boolean | null;
+
+  patientRowVersion: string;
+
+  accountRowVersion?: string | null;
+}
+export interface AdminUpdatePatientRequest {
+  fullName: string;
+  gender: number;
+  address?: string | null;
+  rowVersion: string;
 }

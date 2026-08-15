@@ -133,18 +133,27 @@ export default function ProfileScreen({ navigation }) {
         </LoadState>
 
         <Button
-          title="Đổi mật khẩu"
-          kind="outline"
-          icon="lock-closed-outline"
-          onPress={() => navigation.navigate("ChangePassword")}
-          style={{ marginBottom: spacing.sm }}
-        />
-        <Button
-          title="Đăng xuất"
-          kind="danger"
-          icon="log-out-outline"
-          onPress={confirmLogout}
-        />
+  title="Đổi mật khẩu"
+  kind="outline"
+  icon="lock-closed-outline"
+  onPress={() => navigation.navigate("ChangePassword")}
+  style={{ marginBottom: spacing.sm }}
+/>
+
+<Button
+  title="Liên hệ bệnh viện"
+  kind="outline"
+  icon="call-outline"
+  onPress={() => navigation.navigate("Contact")}
+  style={{ marginBottom: spacing.sm }}
+/>
+
+<Button
+  title="Đăng xuất"
+  kind="danger"
+  icon="log-out-outline"
+  onPress={confirmLogout}
+/>
 
         <Text style={styles.version}>DiaCompanion · Phiên bản 1.0</Text>
       </Screen>

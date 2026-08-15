@@ -64,7 +64,8 @@ export function FundusPage({ imageId }: { imageId: number }) {
     if (selected) setGrade(selected.drGrade);
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canReview = can.reviewDiagnosis(user);
+  const closedVisit = selected?.visitStatus === 1;
+  const canReview = can.reviewDiagnosis(user) && !closedVisit;
   const canRunAgain = canReview && !selected?.isConfirmed;
 
   const downloadOriginal = async () => {
@@ -93,8 +94,8 @@ export function FundusPage({ imageId }: { imageId: number }) {
       const d = await data.diagnoses.run(imageId);
       toast.push(
         selected
-          ? "Đã chạy lại AI và tự động void lượt chạy cũ."
-          : "Đã chạy AI.",
+          ? "Đã chạy lại đủ 3 model AI và tự động void lượt chạy cũ."
+          : "Đã chạy đủ 3 model AI.",
         "success",
       );
       await diagnoses.reload();
@@ -154,14 +155,20 @@ export function FundusPage({ imageId }: { imageId: number }) {
                 disabled={!canRunAgain}
                 onClick={run}
               >
-                {selected ? "Chạy lại AI" : "Chạy AI"}
+                {selected ? "Chạy lại 3 model AI" : "Chạy 3 model AI"}
               </Button>
             )}
           </>
         }
       />
 
-      {selected?.isConfirmed && (
+      {closedVisit && (
+        <div className="state ai-rerun-lock">
+          Lượt khám đã đóng. Ảnh, kết quả AI và review của lượt này chỉ được xem.
+        </div>
+      )}
+
+      {selected?.isConfirmed && !closedVisit && (
         <div className="state ai-rerun-lock">
           Kết quả này đã được phê duyệt. Hệ thống đã khóa chức năng chạy lại AI.
         </div>
@@ -251,7 +258,9 @@ export function FundusPage({ imageId }: { imageId: number }) {
                         k="Fractal"
                         v={num(selected.fractalDimension, 4)}
                       />
-                      <Info k="Model" v={selected.modelVersion} />
+                      <Info k="DR model" v={selected.drModelVersion || selected.modelVersion} />
+                      <Info k="Lesion model" v={selected.lesionModelVersion || "—"} />
+                      <Info k="Fractal model" v={selected.fractalModelVersion || "—"} />
                       <Info
                         k="Thời điểm"
                         v={fmtDate(selected.createdAt, true)}
@@ -324,9 +333,9 @@ export function FundusPage({ imageId }: { imageId: number }) {
                           />
                         </div>
                         {selected.review.reason && <p>{selected.review.reason}</p>}
-                        {can.voidReview(user) && (
+                        {!closedVisit && can.voidReview(user) && (
                           <Button kind="danger" onClick={() => setVoidReview(true)}>
-                            Void review
+                            Thu hồi xác nhận
                           </Button>
                         )}
                       </div>
@@ -387,8 +396,8 @@ export function FundusPage({ imageId }: { imageId: number }) {
 
       {voidReview && selected?.review && (
         <ConfirmDialog
-          title="Void review"
-          message="Review sẽ được thu hồi và ca quay lại hàng đợi triage."
+          title="Thu hồi xác nhận"
+          message="Kết quả xác nhận sẽ được thu hồi và ca được đưa lại vào danh sách cần bác sĩ xem xét."
           requireReason
           danger
           onClose={() => setVoidReview(false)}

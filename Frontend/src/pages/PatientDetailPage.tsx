@@ -39,14 +39,13 @@ import type {
   PatientDetailDto,
   VisitDto,
   FundusImageDto,
-  PrescriptionDto,
-  PrescriptionItemDto,
   TempCredentialResponse,
   DoctorDto,
+  PrescriptionDto,
 } from "@/types/api";
 
 const TABS = [
-  { key: "profile", label: "Hồ sơ" },
+  { key: "profile", label: "Hồ sơ bệnh án" },
   { key: "visits", label: "Lượt khám" },
   { key: "images", label: "Ảnh & AI" },
   { key: "prescriptions", label: "Đơn thuốc" },
@@ -140,11 +139,30 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
   const [voiding, setVoiding] = useState(false);
 
   const reissue = async () => setCred(await data.patients.reissue(patient.id));
-  const doVoid = async (reason: string) => {
-    await data.patients.void(patient.id, reason, patient.rowVersion);
-    toast.push("Đã thu hồi hồ sơ và chuỗi lâm sàng liên quan.", "success");
+ const doVoid = async (reason: string) => {
+  try {
+    await data.patients.void(
+      patient.id,
+      reason,
+      patient.rowVersion,
+    );
+
+    toast.push(
+      "Đã thu hồi hồ sơ bệnh nhân.",
+      "success",
+    );
+
+    setVoiding(false);
     navigate("/patients");
-  };
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Không thể thu hồi hồ sơ bệnh nhân.";
+
+    toast.push(message, "error");
+  }
+};
 
   return (
     <>
@@ -208,15 +226,15 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
         </Panel>
       )}
 
-      {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Bác sĩ. */}
+      {/* Thu hồi hồ sơ là thao tác lâm sàng dành cho Lễ tân. */}
       {can.voidPatient(user) && (
         <Panel title="Thu hồi hồ sơ" className="danger-zone">
           <p>
-            Chỉ dùng khi hồ sơ nhập sai hoặc trùng. Hành động sẽ void lượt khám,
-            ảnh, kết quả AI và đơn thuốc theo quy tắc backend.
+            Chỉ dùng khi hồ sơ được tạo nhầm hoặc bị trùng. Hành động này sẽ
+            thu hồi các lượt khám, ảnh, kết quả AI và đơn thuốc liên quan.
           </p>
           <Button kind="danger" onClick={() => setVoiding(true)}>
-            Void hồ sơ
+            Thu hồi hồ sơ
           </Button>
         </Panel>
       )}
@@ -248,7 +266,7 @@ function ProfileTab({ patient }: { patient: PatientDetailDto }) {
           message={`Hồ sơ ${patient.code} — ${patient.fullName} sẽ bị thu hồi cùng chuỗi lâm sàng liên quan.`}
           requireReason
           danger
-          confirmText="Void hồ sơ"
+          confirmText="Thu hồi hồ sơ"
           onClose={() => setVoiding(false)}
           onConfirm={doVoid}
         />
@@ -429,7 +447,7 @@ function CloseVisitModal({
         </Field>
         <Field
           labelText="Tái khám sau (tháng)"
-          help="Để trống để backend suy theo mức DR đã xác nhận."
+          help="Để trống để hệ thống tự xác định theo mức DR đã xác nhận."
         >
           <input
             type="number"
@@ -454,6 +472,10 @@ function ImagesTab({ patientId }: { patientId: number }) {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const visits = useAsync(
+    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
+    [patientId],
+  );
   const list = useAsync(async () => {
     const images = await data.images.list({ patientId });
     return Promise.all(
@@ -467,6 +489,9 @@ function ImagesTab({ patientId }: { patientId: number }) {
       }),
     );
   }, [patientId]);
+  const visitStatus = new Map(
+    (visits.data?.items || []).map((v) => [v.id, v.status] as const),
+  );
   const [quality, setQuality] = useState<FundusImageDto | null>(null);
   const [voiding, setVoiding] = useState<FundusImageDto | null>(null);
   const [running, setRunning] = useState<number | null>(null);
@@ -475,7 +500,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
     setRunning(img.id);
     try {
       const d = await data.diagnoses.run(img.id);
-      toast.push("AI đã hoàn tất suy luận.", "success");
+      toast.push("Cả 3 model AI đã hoàn tất suy luận.", "success");
       navigate(`/fundus/${img.id}?diagnosis=${d.id}`);
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -532,7 +557,9 @@ function ImagesTab({ patientId }: { patientId: number }) {
               "Thao tác",
             ]}
           >
-            {list.data?.map((img) => (
+            {list.data?.map((img) => {
+              const closed = img.visitId != null && visitStatus.get(img.visitId) === 1;
+              return (
               <tr key={img.id}>
                 <td>
                   <ProtectedImage
@@ -603,13 +630,13 @@ function ImagesTab({ patientId }: { patientId: number }) {
                 <td className="mono">{fmtDate(img.createdAt, true)}</td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user) && (
+                    {!closed && can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>
                         Chất lượng
                       </Button>
                     )}
                     <Button
-                      disabled={img.qualityStatus !== 1 || running === img.id}
+                      disabled={(!img.latestDiagnosis && (closed || img.qualityStatus !== 1)) || running === img.id}
                       busy={running === img.id}
                       onClick={() =>
                         img.latestDiagnosis
@@ -619,18 +646,19 @@ function ImagesTab({ patientId }: { patientId: number }) {
                           : run(img)
                       }
                     >
-                      {img.latestDiagnosis ? "Xem" : "Chạy AI"}
+                      {img.latestDiagnosis ? "Xem" : closed ? "Chỉ đọc" : "Chạy 3 model AI"}
                     </Button>
                     {/* Void ảnh: Bác sĩ hoặc Admin. */}
-                    {can.voidImage(user) && (
+                    {!closed && can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
-                        Void
+                        Thu hồi
                       </Button>
                     )}
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </DataTable>
         </LoadState>
       </Panel>
@@ -643,7 +671,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
       )}
       {voiding && (
         <ConfirmDialog
-          title="Void ảnh đáy mắt"
+          title="Thu hồi ảnh đáy mắt"
           message={`Ảnh #${voiding.id} và mọi kết quả AI/review liên quan sẽ bị thu hồi.`}
           requireReason
           danger
@@ -708,8 +736,9 @@ function QualityModal({
 
 function PrescriptionsTab({ patientId }: { patientId: number }) {
   const data = useData();
-  const { user } = useAuth();
   const toast = useToast();
+  const [viewing, setViewing] = useState<PrescriptionDto | null>(null);
+  const [viewingId, setViewingId] = useState<number | null>(null);
   const list = useAsync(
     () => data.prescriptions.list({ patientId, page: 1, pageSize: 100 }),
     [patientId],
@@ -718,18 +747,18 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
     () => data.prescriptions.adherence(patientId),
     [patientId],
   );
-  const [editor, setEditor] = useState<PrescriptionDto | "new" | null>(null);
-  const [voiding, setVoiding] = useState<PrescriptionDto | null>(null);
 
-  const voidRx = async (reason: string) => {
-    if (!voiding) return;
+  const viewPrescription = async (id: number) => {
+    setViewingId(id);
     try {
-      await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
-      toast.push("Đã void đơn thuốc.", "success");
-      setVoiding(null);
-      list.reload();
-    } catch (e) {
-      toast.push((e as Error).message, "error");
+      setViewing(await data.prescriptions.get(id));
+    } catch (err) {
+      toast.push(
+        err instanceof Error ? err.message : "Không thể tải chi tiết đơn thuốc.",
+        "error",
+      );
+    } finally {
+      setViewingId(null);
     }
   };
 
@@ -768,15 +797,10 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
             )}
           </LoadState>
         </Panel>
-        <Panel title="Kê đơn">
+        <Panel title="Thông tin đơn thuốc">
           <p className="muted">
-            Mỗi dòng thuốc gồm tên, liều, số lần/ngày, số ngày và hướng dẫn.
-          </p>
-          {/* Tạo đơn thuốc mới gắn với LƯỢT KHÁM — thực hiện ở trang lượt khám
-              của bác sĩ. Tại đây chỉ xem lại và SỬA đơn đã có (nút Sửa bên dưới). */}
-          <p className="help">
-            Kê đơn mới được thực hiện trong lượt khám. Tại đây có thể xem và sửa
-            các đơn thuốc đã có.
+            Các đơn thuốc được bác sĩ kê trong từng lượt khám. Tại hồ sơ bệnh
+            nhân, thông tin này được dùng để theo dõi và tra cứu lịch sử điều trị.
           </p>
         </Panel>
       </div>
@@ -814,208 +838,62 @@ function PrescriptionsTab({ patientId }: { patientId: number }) {
                 </td>
                 <td className="wrap-text">{p.note || "—"}</td>
                 <td>
-                  <div className="actions">
-                    {can.prescribe(user) && (
-                      <Button onClick={() => setEditor(p)}>Sửa</Button>
-                    )}
-                    {/* Void đơn thuốc: CHỈ Bác sĩ. */}
-                    {can.voidPrescription(user) && (
-                      <Button kind="danger" onClick={() => setVoiding(p)}>
-                        Void
-                      </Button>
-                    )}
-                  </div>
+                  <Button
+                    busy={viewingId === p.id}
+                    onClick={() => viewPrescription(p.id)}
+                  >
+                    Xem
+                  </Button>
                 </td>
               </tr>
             ))}
           </DataTable>
         </LoadState>
       </Panel>
-      {editor && (
-        <PrescriptionEditor
-          patientId={patientId}
-          value={editor}
-          onClose={() => setEditor(null)}
-          onSaved={() => {
-            setEditor(null);
-            list.reload();
-          }}
-        />
-      )}
-      {voiding && (
-        <ConfirmDialog
-          title="Void đơn thuốc"
-          message={`Thu hồi đơn #${voiding.id}. Nhật ký uống thuốc đã xác nhận vẫn được giữ lại.`}
-          requireReason
-          danger
-          onClose={() => setVoiding(null)}
-          onConfirm={voidRx}
-        />
+
+      {viewing && (
+        <Modal
+          title={`Đơn thuốc #${viewing.id}`}
+          onClose={() => setViewing(null)}
+          footer={<Button onClick={() => setViewing(null)}>Đóng</Button>}
+        >
+          <div className="detail-grid">
+            <Info k="Bác sĩ kê" v={viewing.doctorName || "—"} />
+            <Info
+              k="Lượt khám"
+              v={viewing.visitId ? `#${viewing.visitId}` : "—"}
+              mono
+            />
+            <Info k="Ngày kê" v={fmtDate(viewing.issuedAt, true)} mono />
+            <Info k="Ghi chú" v={viewing.note || "—"} />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <DataTable
+              headers={[
+                "Thuốc",
+                "Liều dùng",
+                "Số lần/ngày",
+                "Số ngày",
+                "Hướng dẫn",
+              ]}
+            >
+              {viewing.items.map((item, index) => (
+                <tr key={item.id ?? index}>
+                  <td>{item.drugName}</td>
+                  <td className="mono">{item.dose}</td>
+                  <td className="mono">{item.timesPerDay}</td>
+                  <td className="mono">{item.durationDays}</td>
+                  <td className="wrap-text">
+                    {item.instruction || item.instructions || "—"}
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          </div>
+        </Modal>
       )}
     </>
-  );
-}
-
-function PrescriptionEditor({
-  patientId,
-  value,
-  onClose,
-  onSaved,
-}: {
-  patientId: number;
-  value: PrescriptionDto | "new";
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const data = useData();
-  const toast = useToast();
-  const isNew = value === "new";
-  const [note, setNote] = useState(isNew ? "" : value.note || "");
-  const [items, setItems] = useState<PrescriptionItemDto[]>(
-    isNew
-      ? [
-          {
-            drugName: "",
-            dose: "",
-            timesPerDay: 1,
-            durationDays: 30,
-            instruction: "",
-          },
-        ]
-      : value.items.map((x) => ({ ...x })),
-  );
-  const [busy, setBusy] = useState(false);
-  const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) =>
-    setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
-  const visitId = value !== "new" ? value.visitId ?? null : null;
-  const save = async () => {
-    if (
-      !items.length ||
-      items.some((x) => !x.drugName.trim() || !x.dose.trim())
-    ) {
-      toast.push("Tên thuốc và liều là bắt buộc.", "error");
-      return;
-    }
-    setBusy(true);
-    try {
-      // Khi TẠO mới: bỏ id (chưa có, để backend sinh).
-      // Khi SỬA: GIỮ id của từng dòng thuốc — backend cần PrescriptionItem.Id
-      // để biết dòng nào cập nhật, dòng nào thêm mới (id rỗng), dòng nào đã xoá.
-      const baseBody = {
-        patientId,
-        visitId,
-        note: note || null,
-        items: isNew
-          ? items.map(({ id, ...x }) => x)
-          : items.map((x) => ({ ...x })),
-      };
-      if (isNew) {
-        await data.prescriptions.create(baseBody);
-      } else {
-        await data.prescriptions.update(value.id, {
-          ...baseBody,
-          rowVersion: value.rowVersion,
-        });
-      }
-      toast.push("Đã lưu đơn thuốc.", "success");
-      onSaved();
-    } catch (e) {
-      toast.push((e as Error).message, "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      title={isNew ? "Tạo đơn thuốc" : `Sửa đơn #${value.id}`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Hủy</Button>
-          <Button kind="primary" busy={busy} onClick={save}>
-            Lưu đơn
-          </Button>
-        </>
-      }
-    >
-      <DataTable
-        headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}
-      >
-        {items.map((x, i) => (
-          <tr key={i}>
-            <td>
-              <input
-                value={x.drugName}
-                onChange={(e) => patch(i, "drugName", e.target.value)}
-              />
-            </td>
-            <td>
-              <input
-                value={x.dose}
-                onChange={(e) => patch(i, "dose", e.target.value)}
-              />
-            </td>
-            <td>
-              <input
-                type="number"
-                min="1"
-                max="6"
-                value={x.timesPerDay}
-                onChange={(e) =>
-                  patch(i, "timesPerDay", Number(e.target.value))
-                }
-              />
-            </td>
-            <td>
-              <input
-                type="number"
-                min="1"
-                max="365"
-                value={x.durationDays}
-                onChange={(e) =>
-                  patch(i, "durationDays", Number(e.target.value))
-                }
-              />
-            </td>
-            <td>
-              <input
-                value={x.instruction || ""}
-                onChange={(e) => patch(i, "instruction", e.target.value)}
-              />
-            </td>
-            <td>
-              <Button
-                kind="danger"
-                disabled={items.length === 1}
-                onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))}
-              >
-                ×
-              </Button>
-            </td>
-          </tr>
-        ))}
-      </DataTable>
-      <Button
-        onClick={() =>
-          setItems((x) => [
-            ...x,
-            {
-              drugName: "",
-              dose: "",
-              timesPerDay: 1,
-              durationDays: 30,
-              instruction: "",
-            },
-          ])
-        }
-      >
-        <Icon name="plus" />
-        Thêm thuốc
-      </Button>
-      <Field labelText="Ghi chú">
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-    </Modal>
   );
 }
 
@@ -1026,12 +904,19 @@ function MonitoringTab({ patientId }: { patientId: number }) {
     () => data.monitoring.metrics({ patientId, type, size: 100 }),
     [patientId, type],
   );
+  const visits = useAsync(
+    () => data.visits.list({ patientId, page: 1, pageSize: 100 }),
+    [patientId],
+  );
+  const doctorByVisit = new Map(
+    (visits.data?.items || []).map((v) => [v.id, v.doctorName] as const),
+  );
   const summary = useAsync(
     () => data.monitoring.summary(patientId),
     [patientId],
   );
   const glucose = summary.data?.glucose;
-  const hba1c = summary.data?.hba1c;
+  const hba1c = summary.data?.hbA1c;
   const bloodPressure = summary.data?.bloodPressure;
 
   return (
@@ -1076,6 +961,10 @@ function MonitoringTab({ patientId }: { patientId: number }) {
           </select>
         }
       >
+        <p className="muted">
+          Nguồn cho biết chỉ số do bệnh nhân tự ghi nhận hay được bác sĩ ghi
+          trong một lượt khám.
+        </p>
         <LoadState
           loading={metrics.loading}
           error={metrics.error}
@@ -1085,6 +974,7 @@ function MonitoringTab({ patientId }: { patientId: number }) {
           <DataTable
             headers={[
               "Ngày",
+              "Nguồn",
               "Loại",
               "Giá trị",
               "Bối cảnh",
@@ -1095,6 +985,13 @@ function MonitoringTab({ patientId }: { patientId: number }) {
             {metrics.data?.items.map((m) => (
               <tr key={m.id}>
                 <td className="mono">{fmtDate(m.recordedAtUtc, true)}</td>
+                <td>
+                  {m.visitId
+                    ? doctorByVisit.get(m.visitId)
+                      ? `BS. ${doctorByVisit.get(m.visitId)} · Lượt #${m.visitId}`
+                      : `Bác sĩ · Lượt #${m.visitId}`
+                    : "Bệnh nhân tự nhập"}
+                </td>
                 <td>{label(metricTypes, m.metricType)}</td>
                 <td className="mono">
                   {m.value} {m.unit}

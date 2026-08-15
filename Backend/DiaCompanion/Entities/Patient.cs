@@ -14,7 +14,6 @@ public class Patient : IVoidable, IHasRowVersion
     [Required, MaxLength(200)] public string FullName { get; set; } = "";
     /// <summary>QT-15: bản bỏ dấu, sinh tự động khi lưu. Có index riêng.</summary>
     [MaxLength(200)] public string? FullNameSearch { get; set; }
-
     public byte Gender { get; set; }
     public DateOnly DateOfBirth { get; set; }
     [Required, MaxLength(20)] public string Phone { get; set; } = "";
@@ -35,7 +34,6 @@ public class Patient : IVoidable, IHasRowVersion
     public int? VoidedBy { get; set; }
     public DateTime? VoidedAt { get; set; }
 
-    public ICollection<Visit> Visits { get; set; } = new List<Visit>();
     public ICollection<FundusImage> Images { get; set; } = new List<FundusImage>();
     public byte[] RowVer { get; set; } = Array.Empty<byte>();
 

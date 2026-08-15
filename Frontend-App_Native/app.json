@@ -30,7 +30,10 @@
       ]
     },
     "extra": {
-      "apiBase": "https://localhost:55403"
+      "apiBase": "http://10.33.69.77:8080",
+      "eas": {
+        "projectId": "9acb91ca-b817-44d7-8b43-c3e2eb167847"
+      }
     },
     "icon": "./assets/icon.png",
     "web": {

@@ -41,7 +41,7 @@ public sealed partial class EfRepository
                 .SetProperty(n => n.ReadAt, now), ct);
 
     public Task<int?> GetLatestResponsibleDoctorIdAsync(int patientId, CancellationToken ct = default) =>
-        _db.Visits.AsNoTracking().Where(v => v.PatientId == patientId && v.DoctorId != null)
+        _db.Visits.AsNoTracking().Where(v => v.MedicalRecord.PatientId == patientId && v.DoctorId != null)
             .OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.Id)
             .Select(v => v.DoctorId).FirstOrDefaultAsync(ct);
 
@@ -83,10 +83,19 @@ public sealed partial class EfRepository
         string? normalizedKeyword,
         DateTime? fromUtc,
         DateTime? toExclusiveUtc,
+        int? doctorId,
         PageQuery page,
         CancellationToken ct = default)
     {
         var query = _db.Feedbacks.AsNoTracking().Include(f => f.Patient).AsQueryable();
+
+        // Doctor chỉ thấy feedback của lượt khám mà mình là bác sĩ phụ trách.
+        // Feedback không gắn Visit không thuộc phạm vi của Doctor; Admin vẫn thấy tất cả.
+        if (doctorId is int did)
+            query = query.Where(f =>
+                f.VisitId.HasValue &&
+                _db.Visits.Any(v => v.Id == f.VisitId.Value && v.DoctorId == did));
+
         if (rating is byte value) query = query.Where(f => f.Rating == value);
         if (fromUtc is DateTime from) query = query.Where(f => f.CreatedAt >= from);
         if (toExclusiveUtc is DateTime to) query = query.Where(f => f.CreatedAt < to);
@@ -128,6 +137,17 @@ public sealed partial class EfRepository
         return new FeedbackPage(items, total);
     }
 
-    public async Task<IReadOnlyList<byte>> GetFeedbackRatingsAsync(CancellationToken ct = default) =>
-        await _db.Feedbacks.AsNoTracking().Select(f => f.Rating).ToListAsync(ct);
+    public async Task<IReadOnlyList<byte>> GetFeedbackRatingsAsync(
+        int? doctorId,
+        CancellationToken ct = default)
+    {
+        var query = _db.Feedbacks.AsNoTracking().AsQueryable();
+
+        if (doctorId is int did)
+            query = query.Where(f =>
+                f.VisitId.HasValue &&
+                _db.Visits.Any(v => v.Id == f.VisitId.Value && v.DoctorId == did));
+
+        return await query.Select(f => f.Rating).ToListAsync(ct);
+    }
 }

@@ -15,11 +15,11 @@ public sealed partial class EfRepository
         CancellationToken ct = default)
     {
         var diagnoses = _db.AiDiagnoses.AsNoTracking()
-            .Where(d => d.CreatedAt >= fromUtc && d.CreatedAt < toExclusiveUtc);
+            .Where(d => !d.IsVoided && d.CreatedAt >= fromUtc && d.CreatedAt < toExclusiveUtc);
         var reviews = _db.DiagnosisReviews.AsNoTracking()
-            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < toExclusiveUtc);
+            .Where(r => !r.IsVoided && r.CreatedAt >= fromUtc && r.CreatedAt < toExclusiveUtc);
         var visits = _db.Visits.AsNoTracking()
-            .Where(v => v.VisitDate >= fromUtc && v.VisitDate < toExclusiveUtc);
+            .Where(v => !v.IsVoided && v.VisitDate >= fromUtc && v.VisitDate < toExclusiveUtc);
 
         if (doctorId is int did)
         {
@@ -30,8 +30,21 @@ public sealed partial class EfRepository
 
         if (modelVersionId is int mid)
         {
-            diagnoses = diagnoses.Where(d => d.ModelVersionId == mid);
-            reviews = reviews.Where(r => r.AiDiagnosis!.ModelVersionId == mid);
+            diagnoses = diagnoses.Where(d => d.ModelVersionId == mid
+                || d.LesionModelVersionId == mid
+                || d.FractalModelVersionId == mid);
+            reviews = reviews.Where(r => r.AiDiagnosis!.ModelVersionId == mid
+                || r.AiDiagnosis.LesionModelVersionId == mid
+                || r.AiDiagnosis.FractalModelVersionId == mid);
+
+            // Khi dashboard lọc theo một version bất kỳ trong bộ 3 model,
+            // các KPI theo lượt khám/bệnh nhân cũng phải cùng phạm vi. Nếu không,
+            // deferral/override được lọc theo model nhưng visit/referral/patient lại
+            // vẫn là toàn bộ kỳ -> biểu đồ và KPI không cùng mẫu số.
+            visits = visits.Where(v => v.Images.Any(i => i.Diagnoses.Any(d =>
+                d.ModelVersionId == mid
+                || d.LesionModelVersionId == mid
+                || d.FractalModelVersionId == mid)));
         }
 
         var totalDiagnoses = await diagnoses.CountAsync(ct);
@@ -46,13 +59,18 @@ public sealed partial class EfRepository
 
         var patientCount = countAllPatients
             ? await _db.Patients.CountAsync(ct)
-            : await visits.Select(v => v.PatientId).Distinct().CountAsync(ct);
+            : await visits.Select(v => v.MedicalRecord.PatientId).Distinct().CountAsync(ct);
 
         var visitCount = await visits.CountAsync(ct);
-        var pendingTriage = await diagnoses.CountAsync(d => !d.Reviews.Any(), ct);
-        var deferredPending = await diagnoses.CountAsync(d => !d.Reviews.Any() && d.IsDeferred, ct);
-        var activeModel = await _db.ModelVersions.AsNoTracking()
-            .Where(m => m.IsActive).Select(m => m.Name).FirstOrDefaultAsync(ct);
+        var pendingTriage = await diagnoses.CountAsync(d => !d.Reviews.Any(r => !r.IsVoided), ct);
+        var deferredPending = await diagnoses.CountAsync(d => !d.Reviews.Any(r => !r.IsVoided) && d.IsDeferred, ct);
+        var activeModels = await _db.ModelVersions.AsNoTracking()
+            .Where(m => m.IsActive)
+            .OrderBy(m => m.ModelType)
+            .Select(m => new { m.ModelType, m.Name })
+            .ToListAsync(ct);
+        var activeModel = activeModels.Count == 0 ? null : string.Join(" | ",
+            activeModels.Select(m => $"{m.ModelType}: {m.Name}"));
 
         return new DashboardStats(
             totalDiagnoses, deferredTotal, totalReviews, overrides, closedVisits, referred,
@@ -72,14 +90,20 @@ public sealed partial class EfRepository
 
     public async Task<IReadOnlyList<ModelVersionWithCount>> GetModelVersionsWithCountsAsync(CancellationToken ct = default)
     {
-        var models = await _db.ModelVersions.AsNoTracking().OrderByDescending(m => m.CreatedAt).ToListAsync(ct);
+        var models = await _db.ModelVersions.AsNoTracking()
+            .OrderBy(m => m.ModelType)
+            .ThenByDescending(m => m.CreatedAt)
+            .ToListAsync(ct);
         if (models.Count == 0) return Array.Empty<ModelVersionWithCount>();
-        var ids = models.Select(m => m.Id).ToArray();
-        var counts = await _db.AiDiagnoses.AsNoTracking().Where(d => ids.Contains(d.ModelVersionId))
-            .GroupBy(d => d.ModelVersionId)
-            .Select(g => new { Id = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
-        return models.Select(m => new ModelVersionWithCount(m, counts.GetValueOrDefault(m.Id))).ToList();
+
+        var refs = await _db.AiDiagnoses.AsNoTracking()
+            .Select(d => new { d.Id, Dr = d.ModelVersionId, d.LesionModelVersionId, d.FractalModelVersionId })
+            .ToListAsync(ct);
+
+        return models.Select(m => new ModelVersionWithCount(
+            m,
+            refs.Count(d => d.Dr == m.Id || d.LesionModelVersionId == m.Id || d.FractalModelVersionId == m.Id)))
+            .ToList();
     }
 
     public Task<ModelVersion?> GetModelVersionAsync(int id, bool tracking, CancellationToken ct = default)
@@ -93,14 +117,20 @@ public sealed partial class EfRepository
         _db.ModelVersions.AnyAsync(m => m.Name == name, ct);
 
     public async Task<IReadOnlyList<ModelVersion>> GetOtherActiveModelsForUpdateAsync(
-        int excludedModelId, CancellationToken ct = default) =>
-        await _db.ModelVersions.Where(m => m.IsActive && m.Id != excludedModelId).ToListAsync(ct);
+        int excludedModelId, ModelType modelType, CancellationToken ct = default) =>
+        await _db.ModelVersions
+            .Where(m => m.IsActive && m.ModelType == modelType && m.Id != excludedModelId)
+            .ToListAsync(ct);
 
     public Task<bool> ModelHasDiagnosesAsync(int modelVersionId, CancellationToken ct = default) =>
-        _db.AiDiagnoses.AnyAsync(d => d.ModelVersionId == modelVersionId, ct);
+        _db.AiDiagnoses.AnyAsync(d => d.ModelVersionId == modelVersionId
+            || d.LesionModelVersionId == modelVersionId
+            || d.FractalModelVersionId == modelVersionId, ct);
 
     public Task<int> CountDiagnosesForModelAsync(int modelVersionId, CancellationToken ct = default) =>
-        _db.AiDiagnoses.AsNoTracking().CountAsync(d => d.ModelVersionId == modelVersionId, ct);
+        _db.AiDiagnoses.AsNoTracking().CountAsync(d => d.ModelVersionId == modelVersionId
+            || d.LesionModelVersionId == modelVersionId
+            || d.FractalModelVersionId == modelVersionId, ct);
 
     public async Task<AuditPage> GetAuditPageAsync(
         string? action,

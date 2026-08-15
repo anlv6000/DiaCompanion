@@ -13,7 +13,12 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString =
+    builder.Configuration.GetConnectionString("Default");
 
+Console.WriteLine("=== CONNECTION STRING ===");
+Console.WriteLine(connectionString);
+Console.WriteLine("=========================");
 /* ------------------------------------------------------------------ config */
 // QT-19: secret đọc từ biến môi trường, KHÔNG từ bảng SystemConfigs.
 // Ví dụ: JWT__SIGNINGKEY=... (hai gạch dưới = phân cấp)
@@ -23,6 +28,9 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlServer(builder.Configuration.GetConnectionString("Default"),
         sql => sql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+
+
+
 
 // Repository is scoped together with AppDbContext (one Unit of Work per request).
 builder.Services.AddScoped<IRepository, EfRepository>();
@@ -43,7 +51,14 @@ builder.Services.AddScoped<IVoidService, VoidService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAdherenceService, AdherenceService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
+builder.Services.AddHttpClient<ISmsSender, SmsGatewaySender>(c =>
+{
+    c.BaseAddress = new Uri(
+        builder.Configuration["SmsGateway:BaseUrl"] ?? "http://127.0.0.1:8091/");
 
+    c.Timeout = TimeSpan.FromSeconds(
+        builder.Configuration.GetValue<int?>("SmsGateway:TimeoutSeconds") ?? 10);
+});
 builder.Services.AddHttpClient<IAiInferenceClient, AiInferenceClient>(c =>
 {
     c.BaseAddress = new Uri(builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000");
@@ -63,6 +78,7 @@ builder.Services.AddScoped<IMonitoringService, MonitoringService>();
 builder.Services.AddScoped<IPatientsService, PatientsService>();
 builder.Services.AddScoped<IPrescriptionsService, PrescriptionsService>();
 builder.Services.AddScoped<IRecheckService, RecheckService>();
+builder.Services.AddScoped<IVisitMaintenanceService, VisitMaintenanceService>();
 builder.Services.AddScoped<IReceptionService, ReceptionService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();
@@ -190,13 +206,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 }
             }
         };
-    }); 
+    });
 
 builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
 
-    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081" , "app://.")
+    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081", "http://10.33.69.77:8081", "app://.")
     .AllowAnyHeader().AllowAnyMethod()));
 
 

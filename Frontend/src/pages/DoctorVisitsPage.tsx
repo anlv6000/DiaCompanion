@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,11 +30,12 @@ import {
 } from "@/lib/enums";
 import { can } from "@/lib/permissions";
 import { ProtectedImage } from "@/components/ProtectedImage";
-import { fmtDate, num } from "@/lib/format";
+import { clinicToday, fmtDate, num } from "@/lib/format";
 import type {
   VisitDto,
   FundusImageDto,
   PatientDetailDto,
+  PrescriptionDto,
   PrescriptionItemDto,
 } from "@/types/api";
 
@@ -54,7 +55,7 @@ export function DoctorVisitsPage() {
   const { user } = useAuth();
   const toast = useToast();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = clinicToday();
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState<string>("");
   const [selected, setSelected] = useState<VisitDto | null>(null);
@@ -133,7 +134,7 @@ export function DoctorVisitsPage() {
                   </td>
                   <td>
                     <Button kind="primary" onClick={() => setSelected(v)}>
-                      Mở lượt
+                      {v.status === 1 ? "Xem lượt" : "Mở lượt"}
                     </Button>
                   </td>
                 </tr>
@@ -239,6 +240,16 @@ function VisitWorkspace({
     <Modal title={`Lượt khám · ${visit.patientName}`} onClose={onClose} width="80%">
       <PatientSummary patient={patient.data} loading={patient.loading} />
 
+      {closed && (
+        <div className="state" style={{ marginBottom: 12 }}>
+          <b>Lượt khám đã đóng · chỉ đọc</b>
+          <div>
+            Kết luận, ảnh, AI, review và đơn thuốc của lượt này được giữ nguyên.
+            Bạn chỉ có thể xem hồ sơ hoặc xuất báo cáo.
+          </div>
+        </div>
+      )}
+
       <div className="visit-tabs">
         <button
           className={tab === "images" ? "active" : ""}
@@ -266,8 +277,8 @@ function VisitWorkspace({
             Đóng lượt
           </button>
         )}
-        <button onClick={() => navigate(`/patients/${visit.patientId}`)}>
-          Mở hồ sơ đầy đủ
+        <button onClick={() => navigate(`/patients/${visit.patientId}?tab=profile`)}>
+          Hồ sơ bệnh án
         </button>
       </div>
 
@@ -275,9 +286,11 @@ function VisitWorkspace({
         <VisitImages visit={visit} closed={closed} onChanged={onChanged} />
       )}
       {tab === "prescriptions" && (
-        <PrescriptionPanel visit={visit} />
+        <PrescriptionPanel visit={visit} closed={closed} />
       )}
-      {tab === "monitoring" && <MonitoringPanel patientId={visit.patientId} />}
+      {tab === "monitoring" && (
+        <MonitoringPanel visit={visit} closed={closed} />
+      )}
       {tab === "close" && !closed && (
         <CloseVisitForm
           visit={visit}
@@ -343,47 +356,311 @@ function InfoRow({ k, v }: { k: string; v: ReactNode }) {
 }
 
 /* ---------------- Ảnh + AI trong lượt ---------------- */
-function MonitoringPanel({ patientId }: { patientId: number }) {
+function MonitoringPanel({
+  visit,
+  closed,
+}: {
+  visit: VisitDto;
+  closed: boolean;
+}) {
   const data = useData();
+  const toast = useToast();
   const [type, setType] = useState("");
-  const metrics = useAsync(
-    () => data.monitoring.metrics({ patientId, type, size: 100 }),
-    [patientId, type],
+  const [saving, setSaving] = useState(false);
+
+  const visitMetrics = useAsync(
+    () => data.visits.healthMetrics(visit.id),
+    [visit.id],
   );
-  const summary = useAsync(() => data.monitoring.summary(patientId), [patientId]);
-  const glucose = summary.data?.glucose;
-  const hba1c = summary.data?.hba1c;
-  const bloodPressure = summary.data?.bloodPressure;
+  const history = useAsync(
+    () => data.monitoring.metrics({ patientId: visit.patientId, type, size: 100 }),
+    [visit.patientId, type],
+  );
+  const patientVisits = useAsync(
+    () => data.visits.list({ patientId: visit.patientId, page: 1, pageSize: 100 }),
+    [visit.patientId],
+  );
+  const doctorByVisit = new Map(
+    (patientVisits.data?.items || []).map((v) => [v.id, v.doctorName] as const),
+  );
+  const summary = useAsync(
+    () => data.monitoring.summary(visit.patientId),
+    [visit.patientId],
+  );
+
+  const [glucose, setGlucose] = useState("");
+  const [glucoseContext, setGlucoseContext] = useState("");
+  const [glucoseNote, setGlucoseNote] = useState("");
+  const [hba1c, setHba1c] = useState("");
+  const [hba1cNote, setHba1cNote] = useState("");
+  const [systolic, setSystolic] = useState("");
+  const [diastolic, setDiastolic] = useState("");
+  const [bloodPressureNote, setBloodPressureNote] = useState("");
+
+  useEffect(() => {
+    const m = visitMetrics.data;
+    if (!m) return;
+    setGlucose(m.glucose?.value == null ? "" : String(m.glucose.value));
+    setGlucoseContext(m.glucose?.context == null ? "" : String(m.glucose.context));
+    setGlucoseNote(m.glucose?.note || "");
+    setHba1c(m.hbA1c?.value == null ? "" : String(m.hbA1c.value));
+    setHba1cNote(m.hbA1c?.note || "");
+    setSystolic(
+      m.bloodPressure?.systolicValue == null
+        ? ""
+        : String(m.bloodPressure.systolicValue),
+    );
+    setDiastolic(
+      m.bloodPressure?.diastolicValue == null
+        ? ""
+        : String(m.bloodPressure.diastolicValue),
+    );
+    setBloodPressureNote(m.bloodPressure?.note || "");
+  }, [visitMetrics.data]);
+
+  const nullableNumber = (value: string): number | null => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+  };
+
+  const save = async () => {
+    const glucoseValue = nullableNumber(glucose);
+    const hba1cValue = nullableNumber(hba1c);
+    const systolicValue = nullableNumber(systolic);
+    const diastolicValue = nullableNumber(diastolic);
+
+    if (
+      Number.isNaN(glucoseValue) ||
+      Number.isNaN(hba1cValue) ||
+      Number.isNaN(systolicValue) ||
+      Number.isNaN(diastolicValue)
+    ) {
+      toast.push("Giá trị chỉ số phải là số hợp lệ.", "error");
+      return;
+    }
+    if (glucoseValue != null && !glucoseContext) {
+      toast.push("Đường huyết phải chọn thời điểm trước ăn hoặc sau ăn.", "error");
+      return;
+    }
+    if ((systolicValue == null) !== (diastolicValue == null)) {
+      toast.push("Huyết áp phải nhập đồng thời cả tâm thu và tâm trương.", "error");
+      return;
+    }
+    if (
+      systolicValue != null &&
+      diastolicValue != null &&
+      systolicValue <= diastolicValue
+    ) {
+      toast.push("Huyết áp tâm thu phải lớn hơn tâm trương.", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const current = visitMetrics.data;
+      await data.visits.saveHealthMetrics(visit.id, {
+        glucose: glucoseValue,
+        glucoseContext: glucoseValue == null ? null : Number(glucoseContext),
+        glucoseNote: glucoseValue == null ? null : glucoseNote.trim() || null,
+        glucoseRowVersion: current?.glucose?.rowVersion ?? null,
+        hbA1c: hba1cValue,
+        hbA1cNote: hba1cValue == null ? null : hba1cNote.trim() || null,
+        hbA1cRowVersion: current?.hbA1c?.rowVersion ?? null,
+        systolicBp: systolicValue,
+        diastolicBp: diastolicValue,
+        bloodPressureNote:
+          systolicValue == null ? null : bloodPressureNote.trim() || null,
+        systolicRowVersion:
+          current?.bloodPressure?.metricType === 3
+            ? current.bloodPressure.rowVersion
+            : current?.bloodPressure?.pairRowVersion ?? null,
+        diastolicRowVersion:
+          current?.bloodPressure?.metricType === 4
+            ? current.bloodPressure.rowVersion
+            : current?.bloodPressure?.pairRowVersion ?? null,
+      });
+      toast.push("Đã lưu chỉ số của lượt khám.", "success");
+      visitMetrics.reload();
+      history.reload();
+      summary.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+      // RowVersion có thể đã cũ nếu người dùng mở cùng lượt ở tab khác.
+      visitMetrics.reload();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const glucoseSummary = summary.data?.glucose;
+  const hba1cSummary = summary.data?.hbA1c;
+  const bloodPressureSummary = summary.data?.bloodPressure;
 
   return (
     <>
+      <Panel title="Chỉ số của lượt khám">
+        <p className="muted">
+          Các giá trị dưới đây gắn trực tiếp với lượt khám #{visit.id}. Khi lượt
+          đã đóng, dữ liệu chỉ được xem và không thể chỉnh sửa.
+        </p>
+
+        <LoadState
+          loading={visitMetrics.loading}
+          error={visitMetrics.error}
+          onRetry={visitMetrics.reload}
+        >
+          <div className="visit-metric-form">
+            <div className="visit-metric-group">
+              <h4>Đường huyết</h4>
+              <div className="visit-metric-fields">
+                <Field labelText="Glucose (mmol/L)">
+                  <input
+                    type="number"
+                    min="1"
+                    max="40"
+                    step="0.1"
+                    value={glucose}
+                    disabled={closed}
+                    onChange={(e) => setGlucose(e.target.value)}
+                    placeholder="VD 7.2"
+                  />
+                </Field>
+                <Field labelText="Thời điểm đo">
+                  <select
+                    value={glucoseContext}
+                    disabled={closed || !glucose}
+                    onChange={(e) => setGlucoseContext(e.target.value)}
+                  >
+                    <option value="">Chọn thời điểm</option>
+                    <option value="1">Trước ăn</option>
+                    <option value="2">Sau ăn</option>
+                  </select>
+                </Field>
+                <Field labelText="Ghi chú">
+                  <input
+                    value={glucoseNote}
+                    disabled={closed}
+                    onChange={(e) => setGlucoseNote(e.target.value)}
+                    placeholder="Tùy chọn"
+                  />
+                </Field>
+              </div>
+              {visitMetrics.data?.glucose && (
+                <MetricStatus metric={visitMetrics.data.glucose} />
+              )}
+            </div>
+
+            <div className="visit-metric-group">
+              <h4>HbA1c</h4>
+              <div className="visit-metric-fields two-cols">
+                <Field labelText="HbA1c (%)">
+                  <input
+                    type="number"
+                    min="3"
+                    max="20"
+                    step="0.1"
+                    value={hba1c}
+                    disabled={closed}
+                    onChange={(e) => setHba1c(e.target.value)}
+                    placeholder="VD 7.0"
+                  />
+                </Field>
+                <Field labelText="Ghi chú">
+                  <input
+                    value={hba1cNote}
+                    disabled={closed}
+                    onChange={(e) => setHba1cNote(e.target.value)}
+                    placeholder="Tùy chọn"
+                  />
+                </Field>
+              </div>
+              {visitMetrics.data?.hbA1c && (
+                <MetricStatus metric={visitMetrics.data.hbA1c} />
+              )}
+            </div>
+
+            <div className="visit-metric-group">
+              <h4>Huyết áp</h4>
+              <div className="visit-metric-fields">
+                <Field labelText="Tâm thu (mmHg)">
+                  <input
+                    type="number"
+                    min="40"
+                    max="300"
+                    step="1"
+                    value={systolic}
+                    disabled={closed}
+                    onChange={(e) => setSystolic(e.target.value)}
+                    placeholder="VD 120"
+                  />
+                </Field>
+                <Field labelText="Tâm trương (mmHg)">
+                  <input
+                    type="number"
+                    min="20"
+                    max="200"
+                    step="1"
+                    value={diastolic}
+                    disabled={closed}
+                    onChange={(e) => setDiastolic(e.target.value)}
+                    placeholder="VD 80"
+                  />
+                </Field>
+                <Field labelText="Ghi chú">
+                  <input
+                    value={bloodPressureNote}
+                    disabled={closed}
+                    onChange={(e) => setBloodPressureNote(e.target.value)}
+                    placeholder="Tùy chọn"
+                  />
+                </Field>
+              </div>
+              {visitMetrics.data?.bloodPressure && (
+                <MetricStatus metric={visitMetrics.data.bloodPressure} bloodPressure />
+              )}
+            </div>
+          </div>
+
+          {!closed && (
+            <div className="modal-actions">
+              <Button kind="primary" busy={saving} onClick={save}>
+                Lưu chỉ số lượt khám
+              </Button>
+            </div>
+          )}
+        </LoadState>
+      </Panel>
+
       <div className="stats">
         <div className="stat">
           <span>Glucose bất thường</span>
-          <b className="mono">{glucose?.abnormalCount ?? "—"}</b>
+          <b className="mono">{glucoseSummary?.abnormalCount ?? "—"}</b>
         </div>
         <div className="stat">
           <span>Glucose trung bình</span>
-          <b className="mono">{num(glucose?.average)}</b>
+          <b className="mono">{num(glucoseSummary?.average)}</b>
         </div>
         <div className="stat">
           <span>HbA1c gần nhất</span>
           <b className="mono">
-            {hba1c?.latest?.value == null ? "—" : `${hba1c.latest.value}%`}
+            {hba1cSummary?.latest?.value == null
+              ? "—"
+              : `${hba1cSummary.latest.value}%`}
           </b>
         </div>
         <div className="stat">
           <span>HA tâm thu</span>
-          <b className="mono">{num(bloodPressure?.latest?.systolic)}</b>
+          <b className="mono">{num(bloodPressureSummary?.latest?.systolic)}</b>
         </div>
         <div className="stat">
           <span>HA tâm trương</span>
-          <b className="mono">{num(bloodPressure?.latest?.diastolic)}</b>
+          <b className="mono">{num(bloodPressureSummary?.latest?.diastolic)}</b>
         </div>
       </div>
 
       <Panel
-        title="Chỉ số sức khỏe"
+        title="Lịch sử chỉ số của bệnh nhân"
         action={
           <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">Tất cả loại</option>
@@ -398,18 +675,37 @@ function MonitoringPanel({ patientId }: { patientId: number }) {
           </select>
         }
       >
+        <p className="muted">
+          Theo dõi các chỉ số sức khỏe của bệnh nhân theo thời gian, gồm số đo
+          bệnh nhân tự ghi nhận và số đo được bác sĩ ghi trong các lần khám.
+        </p>
         <LoadState
-          loading={metrics.loading}
-          error={metrics.error}
-          empty={!metrics.data?.items.length}
-          onRetry={metrics.reload}
+          loading={history.loading}
+          error={history.error}
+          empty={!history.data?.items.length}
+          onRetry={history.reload}
         >
           <DataTable
-            headers={["Ngày", "Loại", "Giá trị", "Bối cảnh", "Đánh giá", "Ghi chú"]}
+            headers={[
+              "Ngày",
+              "Nguồn",
+              "Loại",
+              "Giá trị",
+              "Bối cảnh",
+              "Đánh giá",
+              "Ghi chú",
+            ]}
           >
-            {metrics.data?.items.map((m) => (
+            {history.data?.items.map((m) => (
               <tr key={m.id}>
                 <td className="mono">{fmtDate(m.recordedAtUtc, true)}</td>
+                <td>
+                  {m.visitId
+                    ? doctorByVisit.get(m.visitId)
+                      ? `BS. ${doctorByVisit.get(m.visitId)} · Lượt #${m.visitId}`
+                      : `Bác sĩ · Lượt #${m.visitId}`
+                    : "Bệnh nhân tự nhập"}
+                </td>
                 <td>{label(metricTypes, m.metricType)}</td>
                 <td className="mono">
                   {m.value} {m.unit}
@@ -428,6 +724,27 @@ function MonitoringPanel({ patientId }: { patientId: number }) {
         </LoadState>
       </Panel>
     </>
+  );
+}
+
+function MetricStatus({
+  metric,
+  bloodPressure = false,
+}: {
+  metric: import("@/types/api").HealthMetricDto;
+  bloodPressure?: boolean;
+}) {
+  const value = bloodPressure
+    ? `${num(metric.systolicValue, 0)}/${num(metric.diastolicValue, 0)} ${metric.unit}`
+    : `${num(metric.value)} ${metric.unit}`;
+  return (
+    <div className="visit-metric-current">
+      <span className="mono">Đã lưu: {value}</span>
+      <StatusBadge
+        text={metric.isAbnormal ? "Bất thường" : "Trong ngưỡng"}
+        kind={metric.isAbnormal ? "alert" : "ok"}
+      />
+    </div>
   );
 }
 
@@ -472,7 +789,7 @@ function VisitImages({
   const runAi = async (imageId: number) => {
     try {
       await data.diagnoses.run(imageId);
-      toast.push("Đã chạy AI cho ảnh.", "success");
+      toast.push("Đã chạy đủ 3 model AI cho ảnh.", "success");
       images.reload();
     } catch (e) {
       toast.push((e as Error).message, "error");
@@ -547,7 +864,7 @@ function VisitImages({
                 </td>
                 <td>
                   <div className="actions">
-                    {can.manageImages(user) && (
+                    {!closed && can.manageImages(user) && (
                       <Button onClick={() => setQuality(img)}>Chất lượng</Button>
                     )}
                     <Button
@@ -561,9 +878,9 @@ function VisitImages({
                     >
                       Xem
                     </Button>
-                    {can.voidImage(user) && (
+                    {!closed && can.voidImage(user) && (
                       <Button kind="danger" onClick={() => setVoiding(img)}>
-                        Void
+                        Thu hồi
                       </Button>
                     )}
                     
@@ -596,7 +913,7 @@ function VisitImages({
       )}
       {voiding && (
         <ConfirmDialog
-          title="Void ảnh đáy mắt"
+          title="Thu hồi ảnh đáy mắt"
           message={`Ảnh #${voiding.id} và mọi kết quả AI/review liên quan sẽ bị thu hồi.`}
           requireReason
           danger
@@ -656,8 +973,15 @@ function QualityModal({
   );
 }
 
-function PrescriptionPanel({ visit }: { visit: VisitDto }) {
+function PrescriptionPanel({
+  visit,
+  closed,
+}: {
+  visit: VisitDto;
+  closed: boolean;
+}) {
   const data = useData();
+  const { user } = useAuth();
   const toast = useToast();
   const prescriptions = useAsync(
     () => data.prescriptions.list({ patientId: visit.patientId, page: 1, pageSize: 100 }),
@@ -674,6 +998,20 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
     },
   ]);
   const [busy, setBusy] = useState(false);
+  const [editor, setEditor] = useState<PrescriptionDto | null>(null);
+  const [voiding, setVoiding] = useState<PrescriptionDto | null>(null);
+
+  const voidRx = async (reason: string) => {
+    if (!voiding) return;
+    try {
+      await data.prescriptions.void(voiding.id, reason, voiding.rowVersion);
+      toast.push("Đã thu hồi đơn thuốc.", "success");
+      setVoiding(null);
+      prescriptions.reload();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    }
+  };
 
   const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) => {
     setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -718,6 +1056,11 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
 
   return (
     <>
+      {closed ? (
+        <div className="state" style={{ marginBottom: 12 }}>
+          Lượt khám đã đóng. Đơn thuốc của lượt này chỉ được xem.
+        </div>
+      ) : (
       <Panel title="Kê đơn thuốc">
         <p className="muted">
           Nhập thuốc cho lượt khám này. Mỗi dòng gồm tên thuốc, liều dùng, số lần/ngày và số ngày.
@@ -790,17 +1133,20 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
           </Button>
         </div>
       </Panel>
+      )}
 
-      <Panel title="Lịch sử đơn thuốc">
+      <Panel title="Đơn thuốc của lượt khám">
         <LoadState
           loading={prescriptions.loading}
           error={prescriptions.error}
-          empty={!prescriptions.data?.items.length}
-          emptyText="Chưa có đơn thuốc nào cho bệnh nhân này."
+          empty={!prescriptions.data?.items.some((p) => p.visitId === visit.id)}
+          emptyText="Lượt khám này chưa có đơn thuốc."
         >
           {prescriptions.data && (
-            <DataTable headers={["Ngày kê", "Bác sĩ", "Thuốc", "Ghi chú"]}>
-              {prescriptions.data.items.map((p) => (
+            <DataTable headers={["Ngày kê", "Bác sĩ", "Thuốc", "Ghi chú", "Thao tác"]}>
+              {prescriptions.data.items
+                .filter((p) => p.visitId === visit.id)
+                .map((p) => (
                 <tr key={p.id}>
                   <td>{fmtDate(p.issuedAt, true)}</td>
                   <td>{p.doctorName}</td>
@@ -813,13 +1159,150 @@ function PrescriptionPanel({ visit }: { visit: VisitDto }) {
                       .join("; ")}
                   </td>
                   <td className="wrap-text">{p.note || "—"}</td>
+                  <td>
+                    <div className="actions">
+                      {!closed && can.prescribe(user) && (
+                        <Button onClick={() => setEditor(p)}>Sửa</Button>
+                      )}
+                      {!closed && can.voidPrescription(user) && (
+                        <Button kind="danger" onClick={() => setVoiding(p)}>
+                          Thu hồi
+                        </Button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </DataTable>
           )}
         </LoadState>
       </Panel>
+      {editor && (
+        <PrescriptionEditor
+          patientId={visit.patientId}
+          value={editor}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            prescriptions.reload();
+          }}
+        />
+      )}
+      {voiding && (
+        <ConfirmDialog
+          title="Thu hồi đơn thuốc"
+          message={`Thu hồi đơn #${voiding.id}. Nhật ký uống thuốc đã xác nhận vẫn được giữ lại.`}
+          requireReason
+          danger
+          onClose={() => setVoiding(null)}
+          onConfirm={voidRx}
+        />
+      )}
     </>
+  );
+}
+
+function PrescriptionEditor({
+  patientId,
+  value,
+  onClose,
+  onSaved,
+}: {
+  patientId: number;
+  value: PrescriptionDto;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const data = useData();
+  const toast = useToast();
+  const [note, setNote] = useState(value.note || "");
+  const [items, setItems] = useState<PrescriptionItemDto[]>(
+    value.items.map((x) => ({ ...x })),
+  );
+  const [busy, setBusy] = useState(false);
+
+  const patch = (i: number, k: keyof PrescriptionItemDto, v: unknown) =>
+    setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+
+  const save = async () => {
+    if (!items.length || items.some((x) => !x.drugName.trim() || !x.dose.trim())) {
+      toast.push("Tên thuốc và liều là bắt buộc.", "error");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await data.prescriptions.update(value.id, {
+        patientId,
+        visitId: value.visitId ?? null,
+        note: note || null,
+        items: items.map((x) => ({ ...x })),
+        rowVersion: value.rowVersion,
+      });
+      toast.push("Đã lưu đơn thuốc.", "success");
+      onSaved();
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Sửa đơn #${value.id}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Hủy</Button>
+          <Button kind="primary" busy={busy} onClick={save}>
+            Lưu đơn
+          </Button>
+        </>
+      }
+    >
+      <DataTable headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}>
+        {items.map((x, i) => (
+          <tr key={i}>
+            <td><input value={x.drugName} onChange={(e) => patch(i, "drugName", e.target.value)} /></td>
+            <td><input value={x.dose} onChange={(e) => patch(i, "dose", e.target.value)} /></td>
+            <td>
+              <input type="number" min="1" max="6" value={x.timesPerDay}
+                onChange={(e) => patch(i, "timesPerDay", Number(e.target.value))} />
+            </td>
+            <td>
+              <input type="number" min="1" max="365" value={x.durationDays}
+                onChange={(e) => patch(i, "durationDays", Number(e.target.value))} />
+            </td>
+            <td>
+              <input value={x.instruction || ""}
+                onChange={(e) => patch(i, "instruction", e.target.value)} />
+            </td>
+            <td>
+              <Button kind="danger" disabled={items.length === 1}
+                onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))}>
+                ×
+              </Button>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
+      <Button
+        onClick={() => setItems((xs) => [...xs, {
+          drugName: "",
+          dose: "",
+          timesPerDay: 1,
+          durationDays: 30,
+          instruction: "",
+        }])}
+      >
+        <Icon name="plus" />
+        Thêm thuốc
+      </Button>
+      <Field labelText="Ghi chú">
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }
 

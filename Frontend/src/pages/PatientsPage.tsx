@@ -17,7 +17,7 @@ import {
   Icon,
 } from "@/components/ui";
 import { genders, diabetesTypes, grades, label } from "@/lib/enums";
-import { fmtDate } from "@/lib/format";
+import { clinicToday, fmtDate } from "@/lib/format";
 import { useToast } from "@/contexts/ToastContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { can } from "@/lib/permissions";
@@ -376,7 +376,7 @@ export function PatientFormPage({ id }: { id?: number }) {
                 <Field labelText="Ngày sinh" required>
                   <input
                     type="date"
-                    max={new Date().toISOString().slice(0, 10)}
+                    max={clinicToday()}
                     value={form.dateOfBirth}
                     onChange={(e) => patch("dateOfBirth", e.target.value)}
                   />
