@@ -37,4 +37,5 @@ weights/
 **/venv/
 
 
-**/publish/
+**/publish/"__pycache__/" 
+"*.pyc" 

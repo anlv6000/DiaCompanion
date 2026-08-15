@@ -51,7 +51,14 @@ builder.Services.AddScoped<IVoidService, VoidService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAdherenceService, AdherenceService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
+builder.Services.AddHttpClient<ISmsSender, SmsGatewaySender>(c =>
+{
+    c.BaseAddress = new Uri(
+        builder.Configuration["SmsGateway:BaseUrl"] ?? "http://127.0.0.1:8091/");
 
+    c.Timeout = TimeSpan.FromSeconds(
+        builder.Configuration.GetValue<int?>("SmsGateway:TimeoutSeconds") ?? 10);
+});
 builder.Services.AddHttpClient<IAiInferenceClient, AiInferenceClient>(c =>
 {
     c.BaseAddress = new Uri(builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000");
@@ -205,7 +212,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
 
-    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081", "http://192.168.1.5:8081", "app://.")
+    .WithOrigins("http://localhost:5173", "http://localhost:9001", "http://localhost:8081", "http://10.33.69.77:8081", "app://.")
     .AllowAnyHeader().AllowAnyMethod()));
 
 
