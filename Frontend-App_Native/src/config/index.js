@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 
 const fromConfig = Constants.expoConfig?.extra?.apiBase;
 
-const DEFAULT_API = "http://10.33.69.77:8080";
+const DEFAULT_API = "https://localhost:55403";
 
 export const API_BASE = (fromConfig || DEFAULT_API).replace(/\/$/, "");
 

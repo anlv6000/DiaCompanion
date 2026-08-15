@@ -51,8 +51,16 @@ export function ReceptionNewVisitPage() {
   );
 
   // Bước 2: chọn bác sĩ đang trực hôm nay.
+  // Tìm kiếm dùng chung endpoint on-duty, chỉ truyền thêm tham số q — không có
+  // API riêng, và cũng không nên lọc ở client vì danh sách đã bị backend giới
+  // hạn theo đúng ca trực hiện tại.
   const today = clinicToday();
-  const onDuty = useAsync(() => data.reception.onDuty(today), []);
+  const [doctorQ, setDoctorQ] = useState("");
+  const dDoctorQ = useDebounce(doctorQ);
+  const onDuty = useAsync(
+    () => data.reception.onDuty(today, undefined, dDoctorQ.trim() || undefined),
+    [dDoctorQ],
+  );
   const [doctorId, setDoctorId] = useState<number | null>(null);
 
   const [busy, setBusy] = useState(false);
@@ -131,11 +139,23 @@ export function ReceptionNewVisitPage() {
 
       {/* Bước 2: chọn bác sĩ trực */}
       <Panel title="2. Chọn bác sĩ đang trực hôm nay">
+        <Field labelText="Tìm bác sĩ">
+          <input
+            value={doctorQ}
+            onChange={(e: any) => setDoctorQ(e.target.value)}
+            placeholder="Họ tên hoặc số chứng chỉ hành nghề"
+          />
+        </Field>
+
         <LoadState
           loading={onDuty.loading}
           error={onDuty.error}
           empty={!onDuty.data?.doctors.length}
-          emptyText="Hôm nay không có bác sĩ nào trong lịch trực. Kiểm tra lại Lịch ca trực."
+          emptyText={
+            dDoctorQ.trim()
+              ? "Không có bác sĩ trực nào khớp từ khoá này. Xoá ô tìm để xem toàn bộ ca trực hiện tại."
+              : "Hôm nay không có bác sĩ nào trong lịch trực. Kiểm tra lại Lịch ca trực."
+          }
         >
           {onDuty.data && (
             <>
@@ -187,6 +207,9 @@ export function ReceptionNewVisitPage() {
 
 /* ======================================================================== */
 /*  TRANG 2 — Quản lý lịch ca trực bác sĩ                                   */
+/*                                                                          */
+/*  Thuộc quyền Admin (trước đây là Lễ tân). Lễ tân vẫn dùng danh sách bác   */
+/*  sĩ đang trực ở trang tạo lượt khám, nhưng không còn tự sửa lịch trực.    */
 /* ======================================================================== */
 
 const DAYS = [
@@ -203,9 +226,39 @@ export function ReceptionShiftsPage() {
   const data = useData();
   const toast = useToast();
 
+  // Bác sĩ lọc ở SERVER (BE /api/reception/shifts nhận doctorId).
+  const [doctorFilter, setDoctorFilter] = useState("");
+  // Thứ, ca và trạng thái lọc ở CLIENT: lịch trực cố định theo tuần nên tập dữ
+  // liệu tối đa chỉ là (số bác sĩ × 7 thứ × 3 ca), tải hết một lần rẻ hơn là
+  // thêm tham số backend và gọi lại API mỗi lần đổi ô lọc.
+  const [dayFilter, setDayFilter] = useState("");
+  const [shiftFilter, setShiftFilter] = useState("");
+  const [activeFilter, setActiveFilter] = useState("");
+
   const doctors = useAsync(() => data.users.doctors(), []);
-  const shifts = useAsync(() => data.reception.listShifts(), []);
+  const shifts = useAsync(
+    () => data.reception.listShifts(doctorFilter ? Number(doctorFilter) : undefined),
+    [doctorFilter],
+  );
   const [adding, setAdding] = useState(false);
+
+  const rows = (shifts.data || []).filter((s: DoctorShiftDto) => {
+    if (dayFilter !== "" && s.dayOfWeek !== Number(dayFilter)) return false;
+    if (shiftFilter !== "" && s.shift !== Number(shiftFilter)) return false;
+    if (activeFilter === "true" && !s.isActive) return false;
+    if (activeFilter === "false" && s.isActive) return false;
+    return true;
+  });
+
+  const hasFilter =
+    !!doctorFilter || dayFilter !== "" || shiftFilter !== "" || activeFilter !== "";
+
+  const clearFilters = () => {
+    setDoctorFilter("");
+    setDayFilter("");
+    setShiftFilter("");
+    setActiveFilter("");
+  };
 
   const toggleActive = async (s: DoctorShiftDto) => {
     try {
@@ -240,17 +293,78 @@ export function ReceptionShiftsPage() {
       />
 
       <Panel>
+        <div className="toolbar">
+          <Field labelText="Bác sĩ" className="inline">
+            <select
+              value={doctorFilter}
+              onChange={(e) => setDoctorFilter(e.target.value)}
+            >
+              <option value="">Tất cả bác sĩ</option>
+              {(doctors.data || []).map((d: DoctorDto) => (
+                <option value={d.id} key={d.id}>
+                  {d.fullName}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field labelText="Thứ" className="inline">
+            <select
+              value={dayFilter}
+              onChange={(e) => setDayFilter(e.target.value)}
+            >
+              <option value="">Cả tuần</option>
+              {DAYS.map((d) => (
+                <option value={d.value} key={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field labelText="Ca" className="inline">
+            <select
+              value={shiftFilter}
+              onChange={(e) => setShiftFilter(e.target.value)}
+            >
+              <option value="">Tất cả ca</option>
+              {Object.entries(SHIFT_LABELS).map(([value, text]) => (
+                <option value={value} key={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field labelText="Trạng thái" className="inline">
+            <select
+              value={activeFilter}
+              onChange={(e) => setActiveFilter(e.target.value)}
+            >
+              <option value="">Tất cả</option>
+              <option value="true">Đang áp dụng</option>
+              <option value="false">Tạm nghỉ</option>
+            </select>
+          </Field>
+          {hasFilter && (
+            <Button size="sm" onClick={clearFilters}>
+              Xoá lọc
+            </Button>
+          )}
+        </div>
+
         <LoadState
           loading={shifts.loading}
           error={shifts.error}
-          empty={!shifts.data?.length}
-          emptyText="Chưa có ca trực nào. Nhấn 'Thêm ca trực' để bắt đầu."
+          empty={!rows.length}
+          emptyText={
+            hasFilter
+              ? "Không có ca trực nào khớp bộ lọc. Thử nới điều kiện hoặc xoá lọc."
+              : "Chưa có ca trực nào. Nhấn 'Thêm ca trực' để bắt đầu."
+          }
         >
-          {shifts.data && (
+          {rows.length > 0 && (
             <DataTable
               headers={["Bác sĩ", "Giấy phép", "Thứ", "Ca", "Trạng thái", ""]}
             >
-              {shifts.data.map((s: DoctorShiftDto) => (
+              {rows.map((s: DoctorShiftDto) => (
                 <tr key={s.id}>
                   <td>{s.doctorName}</td>
                   <td>{s.licenseNo || "—"}</td>
@@ -264,10 +378,10 @@ export function ReceptionShiftsPage() {
                   </td>
                   <td>
                     <div className="actions">
-                      <Button onClick={() => toggleActive(s)}>
+                      <Button size="sm" onClick={() => toggleActive(s)}>
                         {s.isActive ? "Tạm nghỉ" : "Bật lại"}
                       </Button>
-                      <Button kind="danger" onClick={() => remove(s)}>
+                      <Button size="sm" kind="danger" onClick={() => remove(s)}>
                         Xoá
                       </Button>
                     </div>
@@ -408,8 +522,13 @@ export function ReceptionVisitsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [status, setStatus] = useState("");
+  // BE /api/visits nhận doctorId nhưng FE chưa từng gửi; lễ tân không lọc được
+  // theo bác sĩ phụ trách dù đó là câu hỏi hay gặp nhất ở quầy.
+  const [doctorId, setDoctorId] = useState("");
   const [page, setPage] = useState(1);
   const [voiding, setVoiding] = useState<VisitDto | null>(null);
+
+  const doctors = useAsync(() => data.users.doctors(), []);
 
   const list = useAsync(
     () =>
@@ -417,10 +536,11 @@ export function ReceptionVisitsPage() {
         from: from || undefined,
         to: to || undefined,
         status: status || undefined,
+        doctorId: doctorId || undefined,
         page,
         pageSize: 25,
       }),
-    [from, to, status, page],
+    [from, to, status, doctorId, page],
   );
 
   const setToday = () => {
@@ -434,6 +554,7 @@ export function ReceptionVisitsPage() {
     setFrom("");
     setTo("");
     setStatus("");
+    setDoctorId("");
     setPage(1);
   };
 
@@ -499,6 +620,22 @@ export function ReceptionVisitsPage() {
               <option value="">Tất cả</option>
               <option value="0">Đang khám</option>
               <option value="1">Đã đóng</option>
+            </select>
+          </Field>
+          <Field labelText="Bác sĩ phụ trách" className="inline">
+            <select
+              value={doctorId}
+              onChange={(e) => {
+                setDoctorId(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Tất cả bác sĩ</option>
+              {(doctors.data || []).map((d: DoctorDto) => (
+                <option value={d.id} key={d.id}>
+                  {d.fullName}
+                </option>
+              ))}
             </select>
           </Field>
           <Button onClick={setToday}>Hôm nay</Button>

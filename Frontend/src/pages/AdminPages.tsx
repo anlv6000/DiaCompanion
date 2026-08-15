@@ -791,9 +791,13 @@ export function AuditPage() {
   const data = useData();
   const [action, setAction] = useState("");
   const [entity, setEntity] = useState("");
+  // BE /api/admin/audit nhận thêm entityId + userId; trước đây FE không dùng,
+  // nên muốn tra "ai đã sửa hồ sơ số 128" phải cuộn tay qua toàn bộ nhật ký.
+  const [entityId, setEntityId] = useState("");
+  const [userId, setUserId] = useState("");
+  const [cursor, setCursor] = useState<string | undefined>();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [cursor, setCursor] = useState<string | undefined>();
   const [rows, setRows] = useState<any[]>([]);
 
   const page = useAsync(
@@ -801,12 +805,14 @@ export function AuditPage() {
       data.admin.audit({
         action,
         entityType: entity,
+        entityId: entityId || undefined,
+        userId: userId || undefined,
         from: from ? new Date(from).toISOString() : undefined,
         to: to ? new Date(to + "T23:59:59").toISOString() : undefined,
         cursor,
         size: 50,
       }),
-    [action, entity, from, to, cursor],
+    [action, entity, entityId, userId, from, to, cursor],
   );
 
   useEffect(() => {
@@ -816,7 +822,7 @@ export function AuditPage() {
   useEffect(() => {
     setCursor(undefined);
     setRows([]);
-  }, [action, entity, from, to]);
+  }, [action, entity, entityId, userId, from, to]);
 
   const csv = () =>
     downloadText("audit.csv", toCsv(rows), "text/csv;charset=utf-8");
@@ -846,6 +852,22 @@ export function AuditPage() {
               value={entity}
               onChange={(e) => setEntity(e.target.value)}
               placeholder="Patient, Visit…"
+            />
+          </Field>
+          <Field labelText="Mã bản ghi" className="inline">
+            <input
+              inputMode="numeric"
+              value={entityId}
+              onChange={(e) => setEntityId(e.target.value.replace(/\D/g, ""))}
+              placeholder="VD: 128"
+            />
+          </Field>
+          <Field labelText="Người thực hiện (ID)" className="inline">
+            <input
+              inputMode="numeric"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))}
+              placeholder="VD: 7"
             />
           </Field>
           <Field labelText="Từ ngày" className="inline">

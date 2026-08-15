@@ -179,7 +179,11 @@ const buildPrescriptions = () => ({
     prescriptionsApi.adherence(patientId, days),
 });
 const buildReception = () => ({
-  onDuty: (date?: string, shift?: number) => receptionApi.onDuty(date, shift),
+  // q lọc bác sĩ theo họ tên hoặc số chứng chỉ hành nghề.
+  // Wrapper này phải nhận và chuyển tiếp ĐỦ tham số: thiếu một cái là màn hình
+  // gọi vẫn chạy nhưng bộ lọc im lặng không có tác dụng.
+  onDuty: (date?: string, shift?: number, q?: string) =>
+    receptionApi.onDuty(date, shift, q),
   listShifts: (doctorId?: number) => receptionApi.listShifts(doctorId),
   createShift: (b: T.CreateDoctorShiftRequest) => receptionApi.createShift(b),
   createShiftsBatch: (b: T.CreateDoctorShiftsBatchRequest) =>

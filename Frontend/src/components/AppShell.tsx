@@ -83,12 +83,6 @@ const NAV: [string, NavItem[]][] = [
         icon: "menu",
         roles: ["Receptionist"],
       },
-      {
-        to: "/reception/shifts",
-        label: "Lịch ca trực",
-        icon: "settings",
-        roles: ["Receptionist"],
-      },
     ],
   ],
   [
@@ -126,6 +120,12 @@ const NAV: [string, NavItem[]][] = [
       icon: "users",
       roles: ["Admin"],
     },   
+      {
+        to: "/reception/shifts",
+        label: "Lịch ca trực",
+        icon: "calendar",
+        roles: ["Admin"],
+      },
       { to: "/audit", label: "Nhật ký", icon: "lock", roles: ["Admin"] },
       { to: "/configs", label: "Cấu hình", icon: "settings", roles: ["Admin"] },
       { to: "/models", label: "Model", icon: "settings", roles: ["Admin"] },
@@ -145,6 +145,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const data = useData();
   const { pathname } = useLocation();
   const [notices, setNotices] = useState(false);
+  // Ngăn kéo điều hướng cho md/sm: dưới 1180px .side bị ẩn, nếu không có
+  // ngăn kéo thì không còn đường nào để chuyển trang.
+  const [navOpen, setNavOpen] = useState(false);
 
   const unread = useAsync(() => data.engagement.unread(), [user?.userId]);
   const dash = useAsync(
@@ -156,8 +159,15 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   );
 
   return (
-    <div className="app">
-      <aside className="side">
+    <div className={`app ${navOpen ? "nav-open" : ""}`.trim()}>
+      {navOpen && (
+        <div
+          className="nav-backdrop"
+          onClick={() => setNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className="side" onClick={() => setNavOpen(false)}>
         <div className="logo">DiaCompanion</div>
         <nav>
           {NAV.map(([group, items]) => {
@@ -201,6 +211,15 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
       <main className="main">
         <header className="top">
+          <button
+            className="mobile-menu ghost icon-only"
+            onClick={() => setNavOpen((v) => !v)}
+            aria-label={navOpen ? "Đóng menu" : "Mở menu"}
+            aria-expanded={navOpen}
+            title="Menu"
+          >
+            <Icon name="menu" />
+          </button>
           <small>Console lâm sàng — sàng lọc võng mạc ĐTĐ</small>
           <div className="top-actions">
             {dash.data?.activeModel && (

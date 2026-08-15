@@ -107,16 +107,37 @@ export function Icon({ name }: { name: string }) {
     </span>
   );
 }
+/**
+ * Nút - FE_DESIGN_RULES muc 5.
+ *
+ * kind: "default" | "primary" | "danger" | "danger solid" | "ghost"
+ *   - Mỗi panel/modal chỉ có ĐÚNG MỘT nút primary.
+ *   - "danger solid" chỉ dùng cho nút xác nhận cuối trong modal huỷ dữ liệu.
+ * size: "sm" (trong bảng) | "md" (mặc định) | "lg" (hành động chính, mobile)
+ *
+ * busy khoá nút để tránh bấm hai lần. Truyền busyText để đổi nhãn sang thể
+ * tiếp diễn ("Đang lưu…") - nhãn tĩnh khi đang xử lý làm người dùng tưởng treo.
+ */
 export function Button({
   children,
   kind = "default",
+  size = "md",
   busy = false,
+  busyText,
+  iconOnly = false,
   ...props
 }: any) {
+  const cls = [
+    kind === "default" ? "" : kind,
+    size === "md" ? "" : size,
+    iconOnly ? "icon-only" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <button className={kind} disabled={busy || props.disabled} {...props}>
+    <button className={cls} disabled={busy || props.disabled} {...props}>
       {busy ? <span className="mono">…</span> : null}
-      {children}
+      {busy && busyText ? busyText : children}
     </button>
   );
 }
@@ -223,42 +244,66 @@ export function LoadState({
     return (
       <div className="empty">
         <b>Chưa có dữ liệu</b>
-        {emptyText}
+        {emptyText || "Khi có bản ghi mới, danh sách sẽ hiện ở đây."}
       </div>
     );
   return children;
 }
+/**
+ * Modal - FE_DESIGN_RULES muc 7.
+ *
+ * size: "sm" 420px (xác nhận) | "md" 560px (form, mặc định) | "lg" (xem ảnh, báo cáo)
+ * dismissible=false cho modal huỷ dữ liệu: không đóng bằng Esc, không đóng khi
+ * bấm nền - để tránh mất thao tác đang nhập dở hoặc đóng nhầm.
+ *
+ * Cuộn nằm trong .modal-b, nên tiêu đề và cụm nút luôn nhìn thấy.
+ */
 export function Modal({
   title,
   children,
   onClose,
   footer,
   width,
+  size = "md",
+  dismissible = true,
 }: {
   title: string;
   children?: any;
   onClose: () => void;
   footer?: any;
   width?: string;
+  size?: "sm" | "md" | "lg";
+  dismissible?: boolean;
 }) {
   useEffect(() => {
+    if (!dismissible) return;
     const h = (e: any) => {
       if (e.key === "Escape") onClose();
     };
     addEventListener("keydown", h);
     return () => removeEventListener("keydown", h);
-  }, []);
+  }, [dismissible]);
   return (
     <div
       className="modal-backdrop"
       onMouseDown={(e: any) => {
-        if (e.target === e.currentTarget) onClose();
+        if (dismissible && e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true" style={width ? { width } : undefined}>
+      <div
+        className={`modal ${size === "md" ? "" : size}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        style={width ? { width } : undefined}
+      >
         <div className="modal-h">
           <span>{normalizeText(title)}</span>
-          <button className="close" onClick={onClose} aria-label="Đóng">
+          <button
+            className="close ghost"
+            onClick={onClose}
+            aria-label="Đóng"
+            title="Đóng"
+          >
             ×
           </button>
         </div>
@@ -294,12 +339,17 @@ export function ConfirmDialog({
     <Modal
       title={title}
       onClose={onClose}
+      size="sm"
+      dismissible={!danger}
       footer={
         <>
-          <Button onClick={onClose}>Hủy</Button>
+          <Button onClick={onClose} disabled={busy}>
+            Hủy
+          </Button>
           <Button
-            kind={danger ? "danger" : "primary"}
+            kind={danger ? "danger solid" : "primary"}
             busy={busy}
+            busyText="Đang xử lý…"
             disabled={requireReason && !reason.trim()}
             onClick={() => onConfirm(reason)}
           >
@@ -382,13 +432,21 @@ export function Pagination({
         {rangeLabel || `${start}–${end} / ${total}`}
       </span>
       <div className="actions">
-        <Button disabled={safePage <= 1} onClick={() => onPage(safePage - 1)}>
+        <Button
+          size="sm"
+          disabled={safePage <= 1}
+          onClick={() => onPage(safePage - 1)}
+        >
           Trước
         </Button>
         <span className="badge mono">
           {safePage}/{pages}
         </span>
-        <Button disabled={safePage >= pages} onClick={() => onPage(safePage + 1)}>
+        <Button
+          size="sm"
+          disabled={safePage >= pages}
+          onClick={() => onPage(safePage + 1)}
+        >
           Sau
         </Button>
       </div>

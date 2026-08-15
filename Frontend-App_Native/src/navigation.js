@@ -53,8 +53,15 @@ function AuthStack() {
 function ForceChangePasswordStack() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
+      {/*
+        Tên route PHẢI khác "ChangePassword" của MainStack.
+        Khi mustChangePassword lật sang false, NavigationContainer đổi con từ
+        ForceChangePasswordStack sang MainStack nhưng vẫn GIỮ state điều hướng.
+        Trùng tên route thì state cũ khớp được với navigator mới, nên app đứng
+        nguyên ở màn đổi mật khẩu thay vì vào Trang chủ.
+      */}
       <Stack.Screen
-        name="ChangePassword"
+        name="ForceChangePassword"
         component={ChangePasswordScreen}
         // Route param is a fallback; ChangePasswordScreen also reads
         // mustChangePassword directly from AuthContext.

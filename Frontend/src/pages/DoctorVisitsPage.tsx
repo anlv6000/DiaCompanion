@@ -57,6 +57,8 @@ export function DoctorVisitsPage() {
 
   const today = clinicToday();
   const [date, setDate] = useState(today);
+  // Khoảng ngày: để trống nghĩa là chỉ xem đúng ngày bắt đầu.
+  const [dateTo, setDateTo] = useState("");
   const [status, setStatus] = useState<string>("");
   const [selected, setSelected] = useState<VisitDto | null>(null);
 
@@ -64,13 +66,15 @@ export function DoctorVisitsPage() {
   const visits = useAsync(
     () =>
       data.visits.assignedToMe({
-        from: date,
-        to: date,
+        // BE nhận khoảng ngày; trước đây FE ép from = to = một ngày duy nhất
+        // nên bác sĩ không xem được cả tuần.
+        from: date || undefined,
+        to: dateTo || date || undefined,
         status: status || undefined,
         page: 1,
         pageSize: 50,
       }),
-    [date, status],
+    [date, dateTo, status],
   );
 
   // Số thông báo chưa đọc (chuông).
@@ -91,7 +95,7 @@ export function DoctorVisitsPage() {
 
       <Panel>
         <div className="toolbar">
-          <Field labelText="Ngày khám" className="inline">
+          <Field labelText="Từ ngày" className="inline">
             <input
               type="date"
               value={date}
@@ -99,6 +103,14 @@ export function DoctorVisitsPage() {
                 setDate(e.target.value);
                 setSelected(null);
               }}
+            />
+          </Field>
+          <Field labelText="Đến ngày (Để trống nếu chỉ xem một ngày)" className="inline">
+            <input
+              type="date"
+              value={dateTo}
+              min={date || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
             />
           </Field>
           <Field labelText="Trạng thái" className="inline">

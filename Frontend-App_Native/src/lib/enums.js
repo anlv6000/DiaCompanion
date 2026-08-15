@@ -19,13 +19,23 @@ export const symptomSeverities = {
   3: { label: "Nặng", kind: "alert" },
 };
 
+/**
+ * Khớp CHÍNH XÁC với MedicationStatus trong Common/Enums.cs:
+ *   Pending = 0, Taken = 1, Missed = 2, Skipped = 3, Cancelled = 4
+ *
+ * Trước đây 3 và 4 bị hoán đổi (3 ghi "Đã hủy", 4 ghi "Bỏ qua liều"), khiến
+ * liều bệnh nhân chủ động bỏ bị hiển thị thành "Đã hủy" — nghe như bác sĩ đã
+ * thu hồi đơn thuốc.
+ *
+ * Bệnh nhân chỉ đặt được 0, 1, 3. Giá trị 2 do hệ thống đánh khi quá hạn,
+ * giá trị 4 do backend đặt khi đơn thuốc bị thu hồi.
+ */
 export const medicationStatuses = {
   0: { label: "Chờ uống", kind: "warn" },
   1: { label: "Đã uống", kind: "ok" },
   2: { label: "Bỏ lỡ", kind: "alert" },
-  3: { label: "Đã hủy", kind: "muted" },
-  4: { label: "Bỏ qua liều", kind: "alert" },
-
+  3: { label: "Bỏ qua liều", kind: "alert" },
+  4: { label: "Đã hủy", kind: "muted" },
 };
 
 export const referralTypes = {

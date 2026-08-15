@@ -52,8 +52,18 @@ export const query = (params: Record<string, unknown>) => {
   const s = p.toString();
   return s ? `?${s}` : "";
 };
+/**
+ * Chuẩn hoá chuỗi Unicode về dạng TỔ HỢP (NFC).
+ *
+ * Trước đây dùng NFD — đó là dạng PHÂN RÃ, tách "ề" thành "ê" + dấu huyền
+ * rời (U+0300). Trình duyệt vẽ hai ký tự tách nhau nên tiêu đề hiện thành
+ * "Tiê`n sử tiểu đường", "Thu hô`i hô` sơ".
+ *
+ * NFC gộp lại thành một ký tự dựng sẵn, đúng dạng SQL Server trả về và đúng
+ * dạng mọi phông chữ có glyph sẵn.
+ */
 export function normalizeText(value?: string | null) {
-  return value == null ? value : value.normalize("NFD");
+  return value == null ? value : value.normalize("NFC");
 }
 
 export const initials = (name?: string | null) =>

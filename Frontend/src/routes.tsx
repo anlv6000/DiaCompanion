@@ -224,7 +224,7 @@ export function AppRoutes() {
       <Route
         path="/reception/shifts"
         element={
-          <RequireAuth roles={["Receptionist"]}>
+          <RequireAuth roles={["Admin"]}>
             <ReceptionShiftsPage />
           </RequireAuth>
         }
