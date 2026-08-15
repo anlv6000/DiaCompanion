@@ -10,11 +10,11 @@ using System.Reflection;
 namespace DiaCompanion.Api.Services;
 
 /// <summary>UC-12..17 — nghiệp vụ hồ sơ bệnh nhân. Không truy cập EF/DbContext trực tiếp.</summary>
-public class PatientsService : BaseService, IPatientsService    
+public class PatientsService : BaseService, IPatientsService
 {
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
-    private readonly IAuditService _audit;  
+    private readonly IAuditService _audit;
     private readonly IPasswordHasher _hasher;
     private readonly IVoidService _void;
     private readonly IClinicClock _clock;
@@ -93,7 +93,7 @@ public class PatientsService : BaseService, IPatientsService
             ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
         return Ok(await ToDetailAsync(patient));
     }
-    
+
     public async Task<ActionResult> Create(CreatePatientRequest req)
     {
         var phone = NormalizePhone(req.Phone);
@@ -195,6 +195,16 @@ public class PatientsService : BaseService, IPatientsService
             throw AppException.BadRequest(
                 Msg.RequiredFields,
                 "HbA1c ban đầu phải nằm trong khoảng từ 3% đến 20%.");
+        }
+
+        //dateOfbirth
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (req.DateOfBirth > today)
+        {
+
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Ngày sinh không được lớn hơn ngày hiện tại.");
         }
 
         // ------------------------------------------------------------
@@ -475,7 +485,13 @@ public class PatientsService : BaseService, IPatientsService
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho một hồ sơ khác.");
         if (phone != patient.Phone && await _repository.UserPhoneExistsAsync(phone, patient.UserId))
             throw AppException.Conflict(Msg.PhoneTaken, "Số điện thoại này đã được dùng cho tài khoản khác.");
-
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (req.DateOfBirth > today)
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Ngày sinh không được lớn hơn ngày hiện tại.");
+        }
         var before = new { patient.FullName, patient.Phone, patient.Address, patient.DiabetesType, patient.BaselineHbA1c };
         patient.FullName = req.FullName.Trim();
         patient.Gender = req.Gender;

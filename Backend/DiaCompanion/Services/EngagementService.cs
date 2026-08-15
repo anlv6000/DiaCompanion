@@ -125,26 +125,42 @@ public class EngagementService : BaseService, IEngagementService
         PageQuery? page = null)
     {
         page ??= new PageQuery();
+
         int? patientScope = null;
         int? doctorScope = null;
 
         if (IsPatientOnly(_me))
         {
+            // Patient chỉ được xem report của chính mình.
             patientScope = RequireMyPatientId(_me);
         }
         else if (_me.IsInRole(Roles.Doctor))
         {
+            // Doctor:
+            // - xem report được giao cho mình
+            // - xem report chưa có bác sĩ phụ trách
             doctorScope = _me.RequireId();
+
+            // Nếu truyền patientId thì filter thêm theo bệnh nhân.
             patientScope = patientId;
         }
         else
         {
-            throw AppException.Forbidden(Msg.Forbidden,
-                "Chỉ bệnh nhân và bác sĩ phụ trách được xem báo cáo triệu chứng.");
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Chỉ bệnh nhân và bác sĩ được xem báo cáo triệu chứng.");
         }
 
-        var result = await _repository.GetSymptomPageAsync(patientScope, doctorScope, pendingOnly, page);
-        var items = result.Items.Select(x => MapSymptom(x.Report, x.ReplierName)).ToList();
+        var result = await _repository.GetSymptomPageAsync(
+            patientScope,
+            doctorScope,
+            pendingOnly,
+            page);
+
+        var items = result.Items
+            .Select(x => MapSymptom(x.Report, x.ReplierName))
+            .ToList();
+
         return Ok(new PagedResult<SymptomReportDto>
         {
             Items = items,
@@ -157,39 +173,92 @@ public class EngagementService : BaseService, IEngagementService
     public async Task<IActionResult> Reply(int id, DoctorReplyRequest req)
     {
         var doctorId = _me.RequireId();
-        var report = await _repository.GetSymptomReportAsync(id, tracking: true, includePatient: true)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy báo cáo triệu chứng.");
-        if (report.ResponsibleDoctorId != doctorId)
-            throw AppException.Forbidden(Msg.Forbidden,
-                "Chỉ bác sĩ phụ trách tại thời điểm báo cáo được phản hồi triệu chứng này.");
 
-        _repository.ApplyOriginalRowVersion(report, req.RowVersion);
+        var report = await _repository.GetSymptomReportAsync(
+            id,
+            tracking: true,
+            includePatient: true)
+            ?? throw AppException.NotFound(
+                Msg.LoadFailed,
+                "Không tìm thấy báo cáo triệu chứng.");
+
+        // Nếu report đã có bác sĩ phụ trách
+        // thì chỉ bác sĩ đó được phản hồi.
+        //
+        // Nếu ResponsibleDoctorId == null:
+        // bệnh nhân chưa có bác sĩ phụ trách tại thời điểm báo cáo,
+        // bất kỳ bác sĩ nào cũng có thể phản hồi.
+        if (report.ResponsibleDoctorId.HasValue &&
+            report.ResponsibleDoctorId.Value != doctorId)
+        {
+            throw AppException.Forbidden(
+                Msg.Forbidden,
+                "Báo cáo triệu chứng này thuộc bác sĩ phụ trách khác.");
+        }
+
+        // Dùng RowVersion client gửi lên để chống concurrent update.
+        _repository.ApplyOriginalRowVersion(
+            report,
+            req.RowVersion);
+
         var oldReply = report.DoctorReply;
+        var oldResponsibleDoctorId = report.ResponsibleDoctorId;
+
+        // Nếu chưa có bác sĩ phụ trách,
+        // bác sĩ phản hồi thành công đầu tiên sẽ trở thành bác sĩ của report.
+        if (!report.ResponsibleDoctorId.HasValue)
+        {
+            report.ResponsibleDoctorId = doctorId;
+        }
+
         report.DoctorReply = req.Reply.Trim();
         report.RepliedBy = doctorId;
         report.RepliedAt = _clock.UtcNow;
-
-        if (report.Patient is not null)
-            _notify.PushToPatient(
-                report.Patient,
-                NotificationType.Result,
-                "Bác sĩ đã trả lời",
-                "Bác sĩ phụ trách đã phản hồi báo cáo triệu chứng của bạn.",
-                nameof(SymptomReport),
-                report.Id);
 
         await _audit.LogAsync(
             AuditAction.SymptomReply,
             nameof(SymptomReport),
             report.Id,
-            new { doctorReply = oldReply },
-            new { report.DoctorReply, report.RepliedBy });
+            new
+            {
+                doctorReply = oldReply,
+                responsibleDoctorId = oldResponsibleDoctorId
+            },
+            new
+            {
+                report.DoctorReply,
+                report.RepliedBy,
+                report.ResponsibleDoctorId
+            });
+
+        // Nếu hai bác sĩ load cùng RowVersion:
+        //
+        // Doctor A commit trước -> thành công -> RowVersion đổi
+        // Doctor B commit sau  -> RowVersion cũ -> concurrency conflict
         if (!await _repository.TryCommitAsync())
-            throw AppException.Conflict(Msg.StaleVersion, "Báo cáo triệu chứng đã thay đổi. Vui lòng tải lại.");
+        {
+            throw AppException.Conflict(
+                Msg.StaleVersion,
+                "Báo cáo triệu chứng đã được bác sĩ khác xử lý. Vui lòng tải lại.");
+        }
 
-        return Ok(new { message = "Đã gửi phản hồi tới bệnh nhân.", rowVersion = report.ToRowVersion() });
+        if (report.Patient is not null)
+        {
+            _notify.PushToPatient(
+                report.Patient,
+                NotificationType.Result,
+                "Bác sĩ đã trả lời",
+                "Bác sĩ đã phản hồi báo cáo triệu chứng của bạn.",
+                nameof(SymptomReport),
+                report.Id);
+        }
+
+        return Ok(new
+        {
+            message = "Đã gửi phản hồi tới bệnh nhân.",
+            rowVersion = report.ToRowVersion()
+        });
     }
-
     public async Task<IActionResult> CreateFeedback(CreateFeedbackRequest req)
     {
         var patientId = RequireMyPatientId(_me);

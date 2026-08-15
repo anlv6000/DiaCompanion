@@ -51,7 +51,12 @@ public sealed partial class EfRepository
         var query = _db.SymptomReports.AsNoTracking()
             .Include(s => s.Patient).Include(s => s.ResponsibleDoctor).AsQueryable();
         if (patientId is int pid) query = query.Where(s => s.PatientId == pid);
-        if (responsibleDoctorId is int did) query = query.Where(s => s.ResponsibleDoctorId == did);
+        if (responsibleDoctorId is int did)
+        {
+            query = query.Where(s =>
+                s.ResponsibleDoctorId == null ||
+                s.ResponsibleDoctorId == did);
+        }
         if (pendingOnly) query = query.Where(s => s.DoctorReply == null);
 
         var total = await query.CountAsync(ct);

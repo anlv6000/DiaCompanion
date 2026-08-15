@@ -5,7 +5,10 @@ namespace DiaCompanion.Api.Dtos;
 
 public class CreatePatientRequest
 {
-    [Required, MaxLength(200)] public string FullName { get; set; } = "";
+    [Required, MaxLength(200, ErrorMessage = "Họ và tên không được vượt quá 200 ký tự.")]
+    public string FullName { get; set; } = "";
+
+    [Range(0, 2, ErrorMessage = "giới tính chỉ được chọn là nam hoặc nữ.")]
     public byte Gender { get; set; }
     [Required] public DateOnly DateOfBirth { get; set; }
     /// <summary>LI-6: bắt buộc và duy nhất — đây là định danh đăng nhập của bệnh nhân.</summary>

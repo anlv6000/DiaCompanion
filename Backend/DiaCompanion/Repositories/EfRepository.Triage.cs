@@ -93,4 +93,8 @@ public sealed partial class EfRepository
     public Task<DiagnosisReview?> GetReviewAsync(int reviewId, CancellationToken ct = default) =>
         _db.DiagnosisReviews.AsNoTracking().Include(x => x.Doctor)
             .FirstOrDefaultAsync(x => x.Id == reviewId, ct);
+
+   
+
+
 }

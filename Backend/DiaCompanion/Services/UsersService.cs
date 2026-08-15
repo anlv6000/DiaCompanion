@@ -64,8 +64,8 @@ public class UsersService : BaseService, IUsersService
 
         if (staffRole == Roles.Doctor && string.IsNullOrWhiteSpace(req.LicenseNo)
             && string.IsNullOrWhiteSpace(req.FullName)
-            &&string.IsNullOrWhiteSpace(req.Phone)
-            &&string.IsNullOrWhiteSpace(req.Email))
+            && string.IsNullOrWhiteSpace(req.Phone)
+            && string.IsNullOrWhiteSpace(req.Email))
             throw AppException.BadRequest(Msg.LicenseRequired, "Bác sĩ phải có số chứng chỉ hành nghề, họ và tên, số điện thoại và email.");
 
         var email = req.Email.Trim().ToLowerInvariant();
@@ -74,7 +74,7 @@ public class UsersService : BaseService, IUsersService
         var phone = req.Phone.Trim();
         if (await _repository.PhoneExistsAsync(phone))
             throw AppException.Conflict(Msg.PhoneTaken, "Phone đã được sử dụng cho tài khoản khác.");
-        
+
         var temp = _hasher.GenerateTempPassword() + "Aa";
         var user = new User
         {

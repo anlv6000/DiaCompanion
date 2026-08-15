@@ -20,4 +20,5 @@ public partial interface IRepository
     Task<bool> ReviewExistsForDiagnosisAsync(int diagnosisId, CancellationToken ct = default);
     Task<bool> TryCommitReviewAsync(CancellationToken ct = default);
     Task<DiagnosisReview?> GetReviewAsync(int reviewId, CancellationToken ct = default);
+    
 }
