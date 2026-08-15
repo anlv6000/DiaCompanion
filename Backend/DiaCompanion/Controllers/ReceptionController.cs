@@ -15,8 +15,8 @@ public class ReceptionController : BaseApiController
 
     [HttpGet("on-duty")]
     [Authorize(Roles = Roles.Receptionist)]
-    public Task<ActionResult<OnDutyResponse>> OnDuty([FromQuery] DateOnly? date, [FromQuery] byte? shift) =>
-        _service.OnDuty(date, shift);
+    public Task<ActionResult<OnDutyResponse>> OnDuty([FromQuery] DateOnly? date, [FromQuery] byte? shift, string? q) =>
+        _service.OnDuty(date, shift, q);
 
     [HttpGet("shifts")]
     [Authorize(Roles = Roles.Receptionist)]

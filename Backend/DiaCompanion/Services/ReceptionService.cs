@@ -20,7 +20,7 @@ public class ReceptionService : BaseService, IReceptionService
     public ReceptionService(IRepository repository, ICurrentUser me, IClinicClock clock, IConfigService cfg)
     { _repository = repository; _me = me; _clock = clock; _cfg = cfg; }
 
-    public async Task<ActionResult<OnDutyResponse>> OnDuty(DateOnly? date, byte? shift)
+    public async Task<ActionResult<OnDutyResponse>> OnDuty(DateOnly? date, byte? shift, string? q)
     {
         // Lấy giờ ca trực trong config
         var configShiftTime = await GetShiftTimesAsync();
@@ -31,7 +31,7 @@ public class ReceptionService : BaseService, IReceptionService
         var dow = (byte)currentDate.DayOfWeek;
         // Lấy giờ trực từ ngày thực tế, ca trực thực tế, theo giờ trực trong config
         var shiftRange = ResolveShiftUtcRange(currentDate, currentShift.Shift, configShiftTime);
-        var rows = await _repository.GetOnDutyDoctorsAsync(dow, currentShift.Shift, shiftRange.StartUtc, shiftRange.EndUtc);
+        var rows = await _repository.GetOnDutyDoctorsAsync(dow, currentShift.Shift, shiftRange.StartUtc, shiftRange.EndUtc, q);
 
         var doctors = rows
             .GroupBy(r => new { r.DoctorId, r.DoctorName, r.LicenseNo, r.OpenVisitCount })

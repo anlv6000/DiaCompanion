@@ -8,14 +8,21 @@ namespace DiaCompanion.Api.Repositories;
 public sealed partial class EfRepository
 {
     public async Task<IReadOnlyList<OnDutyDoctorRow>> GetOnDutyDoctorsAsync(
-        byte dayOfWeek, byte shift, DateTime startUtc, DateTime endUtc, CancellationToken ct = default)
+        byte dayOfWeek, byte shift, DateTime startUtc, DateTime endUtc, string? q, CancellationToken ct = default)
     {
         // Lấy tất cả ca trực đang hoạt động và tương ứng với ca trực thực tế
         var shifts = _db.DoctorShifts.AsNoTracking()
             .Where(s => s.IsActive
                         && s.DayOfWeek == dayOfWeek
                         && (byte)s.Shift == shift);
-
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var keyword = q.Trim();
+            shifts = shifts.Where(s =>
+                s.Doctor != null &&
+                (s.Doctor.FullName.Contains(keyword)
+                 || (s.Doctor.LicenseNo != null && s.Doctor.LicenseNo.Contains(keyword))));
+        }
         var rows = await shifts
             .Where(s =>
                     s.Doctor != null &&
@@ -29,7 +36,7 @@ public sealed partial class EfRepository
                 DoctorId = s.DoctorId,
                 DoctorName = s.Doctor!.FullName,
                 LicenseNo = s.Doctor.LicenseNo 
-            }).ToListAsync();
+            }).ToListAsync(ct);
         // Với mỗi bác sĩ lấy ra số lượt khám đang mở
         var counts = await _db.Visits.AsNoTracking()
             .Where(v => v.Status == VisitStatus.InProgress && v.DoctorId != null
