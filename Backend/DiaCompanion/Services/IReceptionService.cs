@@ -5,7 +5,7 @@ namespace DiaCompanion.Api.Services;
 
 public interface IReceptionService
 {
-    Task<ActionResult<OnDutyResponse>> OnDuty(DateOnly? date, byte? shift);
+    Task<ActionResult<OnDutyResponse>> OnDuty(DateOnly? date, byte? shift, string? q);
     Task<ActionResult<List<DoctorShiftDto>>> ListShifts(int? doctorId);
     Task<ActionResult<DoctorShiftDto>> CreateShift(CreateDoctorShiftRequest req);
     Task<ActionResult<List<DoctorShiftDto>>> CreateShiftsBatch(CreateDoctorShiftsBatchRequest req);

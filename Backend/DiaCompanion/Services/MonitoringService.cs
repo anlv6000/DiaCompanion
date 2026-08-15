@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
 using DiaCompanion.Api.Common;
-using DiaCompanion.Api.Repositories;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
+using DiaCompanion.Api.Repositories;
+using DiaCompanion.Common;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DiaCompanion.Api.Services;
 
@@ -89,7 +90,7 @@ public class MonitoringService : BaseService, IMonitoringService
                 Value = m.Value,
                 Unit = m.Unit,
                 Context = (byte?)m.Context,
-                RecordedAtUtc = m.RecordedAtUtc,
+                RecordedAtUtc = _clock.ToLocal(m.RecordedAtUtc).Value,
                 RecordedLocalDate = m.RecordedLocalDate,
                 Note = m.Note,
                 IsAbnormal = m.IsAbnormal || pair?.IsAbnormal == true,
@@ -114,7 +115,7 @@ public class MonitoringService : BaseService, IMonitoringService
     {
         var pid = ResolvePatientId(null);
         var recordedUtc = req.RecordedAtUtc ?? _clock.UtcNow;
-
+        var diabetesType = await GetPatientDiabetesTypeAsync(pid);
         if (recordedUtc > _clock.UtcNow)
             throw AppException.BadRequest(Msg.RequiredFields, "Không thể ghi chỉ số ở thời điểm tương lai.");
 
@@ -133,7 +134,7 @@ public class MonitoringService : BaseService, IMonitoringService
                 RecordedAtUtc = recordedUtc,
                 RecordedLocalDate = _clock.ToLocalDate(recordedUtc),
                 Note = req.Note?.Trim(),
-                IsAbnormal = await IsAbnormalAsync(MetricType.HbA1c, req.Value, null)
+                IsAbnormal = await IsAbnormalAsync(MetricType.HbA1c, req.Value, null, diabetesType)
             };
 
             _repository.Add(hba1c);
@@ -261,7 +262,7 @@ public class MonitoringService : BaseService, IMonitoringService
             RecordedAtUtc = recordedUtc,
             RecordedLocalDate = _clock.ToLocalDate(recordedUtc),
             Note = req.Note,
-            IsAbnormal = await IsAbnormalAsync(MetricType.Glucose, req.Value, req.Context)
+            IsAbnormal = await IsAbnormalAsync(MetricType.Glucose, req.Value, req.Context, diabetesType)
         };
 
         _repository.Add(metric);
@@ -292,9 +293,11 @@ public class MonitoringService : BaseService, IMonitoringService
     /// <summary>UC-42 — sửa chỉ số đã nhập với optimistic concurrency.</summary>
     public async Task<IActionResult> UpdateMetric(int id, CreateMetricRequest req)
     {
+
         var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
         EnsureCanAccessPatient(_me, m.PatientId);
+        var diabetesType = await GetPatientDiabetesTypeAsync(m.PatientId);
         if (m.VisitId is not null)
             throw AppException.Forbidden(Msg.Forbidden,
                 "Chỉ số này được bác sĩ ghi trong lượt khám nên bệnh nhân không được sửa.");
@@ -324,7 +327,7 @@ public class MonitoringService : BaseService, IMonitoringService
 
             m.Value = req.Value;
             m.Note = req.Note?.Trim();
-            m.IsAbnormal = await IsAbnormalAsync(MetricType.HbA1c, req.Value, null);
+            m.IsAbnormal = await IsAbnormalAsync(MetricType.HbA1c, req.Value, null, diabetesType);
             await _audit.LogAsync(
                 AuditAction.MetricUpdate,
                 nameof(HealthMetric),
@@ -455,7 +458,7 @@ public class MonitoringService : BaseService, IMonitoringService
         m.Value = req.Value;
         m.Context = req.Context;
         m.Note = req.Note;
-        m.IsAbnormal = await IsAbnormalAsync(m.MetricType, req.Value, req.Context);
+        m.IsAbnormal = await IsAbnormalAsync(m.MetricType, req.Value, req.Context, diabetesType);
 
         await _audit.LogAsync(
             AuditAction.MetricUpdate,
@@ -840,19 +843,13 @@ public class MonitoringService : BaseService, IMonitoringService
             && req.ExerciseMinutes is null
             && string.IsNullOrWhiteSpace(req.ExerciseType))
             throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng nhập thông tin bữa ăn hoặc vận động.");
-        if(req.ExerciseMinutes is null)
-        {
-            throw AppException.BadRequest(
-                Msg.RequiredFields,
-                "Số phút vận động phải là số từ 0 đến 600. Bạn phải nhập số");
-        }
 
         if (req.ExerciseMinutes.HasValue &&
-       (req.ExerciseMinutes.Value < 0 || req.ExerciseMinutes.Value > 600))
+            (req.ExerciseMinutes.Value < 0))
         {
             throw AppException.BadRequest(
                 Msg.RequiredFields,
-                "Số phút vận động phải là số từ 0 đến 600.");
+                "Số phút vận động phải lớn hơn 0");
         }
        
     }
@@ -902,24 +899,19 @@ public class MonitoringService : BaseService, IMonitoringService
         var pid = requested ?? throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId.");
         return pid;
     }
+    private async Task<byte> GetPatientDiabetesTypeAsync(int patientId)
+    {
+        var patient = await _repository.GetPatientByIdAsync(patientId, tracking: false)
+            ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
 
-    private async Task<bool> IsAbnormalAsync(MetricType type, decimal value, MetricContext? ctx)
+        return patient.DiabetesType;
+    }
+    private async Task<bool> IsAbnormalAsync(MetricType type, decimal value, MetricContext? ctx, byte diabetesType)
     {
         switch (type)
         {
             case MetricType.Glucose:
-                {
-                    var glucoseMin = await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m);
-                    var fastingMax = await _cfg.GetDecimalAsync(ConfigKeys.GlucoseFastingMax, 7.2m);
-                    var postMealMax = await _cfg.GetDecimalAsync(ConfigKeys.GlucosePostMealMax, 10.0m);
-
-                    return ctx switch
-                    {
-                        MetricContext.BeforeMeal => value < glucoseMin || value > fastingMax,
-                        MetricContext.AfterMeal => value < glucoseMin || value > postMealMax,
-                        _ => false
-                    };
-                }
+                return GlucoseThresholds.IsAbnormal(diabetesType, value, ctx);
 
             case MetricType.HbA1c:
                 return value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m);

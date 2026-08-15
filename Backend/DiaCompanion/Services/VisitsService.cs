@@ -2,6 +2,7 @@ using DiaCompanion.Api.Common;
 using DiaCompanion.Api.Dtos;
 using DiaCompanion.Api.Entities;
 using DiaCompanion.Api.Repositories;
+using DiaCompanion.Common;
 using DiaCompanion.Entities;
 using Microsoft.AspNetCore.Mvc;
 
@@ -189,18 +190,20 @@ public class VisitsService : BaseService, IVisitsService
         var now = _clock.UtcNow;
         var localDate = _clock.ToLocalDate(now);
         var patientId = visit.MedicalRecord.PatientId;
-
+        var patient = await _repository.GetPatientByIdAsync(patientId, tracking: false)
+                    ?? throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
+        var diabetesType = patient.DiabetesType;
         var oldValue = ToVisitHealthMetricsAudit(metrics);
 
         await UpsertVisitMetricAsync(
             metrics, patientId, visitId, MetricType.Glucose,
             req.Glucose, "mmol/L", req.GlucoseContext, req.GlucoseNote,
-            req.GlucoseRowVersion, now, localDate);
+            req.GlucoseRowVersion, now, localDate, diabetesType);
 
         await UpsertVisitMetricAsync(
             metrics, patientId, visitId, MetricType.HbA1c,
             req.HbA1c, "%", null, req.HbA1cNote,
-            req.HbA1cRowVersion, now, localDate);
+            req.HbA1cRowVersion, now, localDate, diabetesType);
 
         var systolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
         var diastolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
@@ -210,12 +213,12 @@ public class VisitsService : BaseService, IVisitsService
         await UpsertVisitMetricAsync(
             metrics, patientId, visitId, MetricType.SystolicBp,
             req.SystolicBp, "mmHg", null, req.BloodPressureNote,
-            req.SystolicRowVersion, bpRecordedAt, bpLocalDate);
+            req.SystolicRowVersion, bpRecordedAt, bpLocalDate, diabetesType);
 
         await UpsertVisitMetricAsync(
             metrics, patientId, visitId, MetricType.DiastolicBp,
             req.DiastolicBp, "mmHg", null, req.BloodPressureNote,
-            req.DiastolicRowVersion, bpRecordedAt, bpLocalDate);
+            req.DiastolicRowVersion, bpRecordedAt, bpLocalDate, diabetesType);
 
         await _audit.LogAsync(
             AuditAction.MetricUpdate,
@@ -434,7 +437,9 @@ public class VisitsService : BaseService, IVisitsService
         string? note,
         string? rowVersion,
         DateTime recordedAtUtc,
-        DateOnly recordedLocalDate)
+        DateOnly recordedLocalDate,
+        byte diabetesType
+        )
     {
         var metric = metrics.FirstOrDefault(m => m.MetricType == type);
 
@@ -450,7 +455,7 @@ public class VisitsService : BaseService, IVisitsService
             return;
         }
 
-        var abnormal = await IsVisitMetricAbnormalAsync(type, value.Value, context);
+        var abnormal = await IsVisitMetricAbnormalAsync(type, value.Value, context, diabetesType);
 
         if (metric is null)
         {
@@ -481,20 +486,12 @@ public class VisitsService : BaseService, IVisitsService
     }
 
     private async Task<bool> IsVisitMetricAbnormalAsync(
-        MetricType type, decimal value, MetricContext? context)
+        MetricType type, decimal value, MetricContext? context, byte diabetesType)
     {
         return type switch
         {
-            MetricType.Glucose => context switch
-            {
-                MetricContext.BeforeMeal =>
-                    value < await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m)
-                    || value > await _cfg.GetDecimalAsync(ConfigKeys.GlucoseFastingMax, 7.2m),
-                MetricContext.AfterMeal =>
-                    value < await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m)
-                    || value > await _cfg.GetDecimalAsync(ConfigKeys.GlucosePostMealMax, 10.0m),
-                _ => false
-            },
+            MetricType.Glucose =>
+                GlucoseThresholds.IsAbnormal(diabetesType, value, context),
             MetricType.HbA1c =>
                 value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m),
             MetricType.SystolicBp => value >= 140m,

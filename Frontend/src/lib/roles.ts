@@ -37,8 +37,12 @@ export function roleLabel(role: Role): string {
 }
 
 export function rolesLabel(source: RoleSource): string {
-  const values = getRoles(source);
-  return values.length ? values.map(roleLabel).join(", ") : "—";
+  // Đây là web nội bộ bệnh viện nên không hiển thị role Patient.
+  const values = getRoles(source).filter(role => role !== "Patient");
+
+  return values.length
+    ? values.map(roleLabel).join(", ")
+    : "—";
 }
 
 /** Role ưu tiên để chọn landing page của WEB console. */
