@@ -5,7 +5,10 @@ namespace DiaCompanion.Api.Dtos;
 
 public class CreatePatientRequest
 {
-    [Required, MaxLength(200)] public string FullName { get; set; } = "";
+    [Required, MaxLength(200, ErrorMessage = "Họ và tên không được vượt quá 200 ký tự.")]
+    public string FullName { get; set; } = "";
+
+    [Range(0, 2, ErrorMessage = "giới tính chỉ được chọn là nam hoặc nữ.")]
     public byte Gender { get; set; }
     [Required] public DateOnly DateOfBirth { get; set; }
     /// <summary>LI-6: bắt buộc và duy nhất — đây là định danh đăng nhập của bệnh nhân.</summary>
@@ -19,7 +22,11 @@ public class CreatePatientRequest
     public bool CreateAccount { get; set; } = true;
 
 
-    // NULL = tạo User mới
-    // Có giá trị = dùng User đã tồn tại
+    // NULL:
+    //   nếu CreateAccount=true -> tạo User Patient mới.
+    //
+    // Có giá trị:
+    //   chỉ dùng để liên kết một User staff đang tồn tại
+    //   (Doctor/Receptionist) và kích hoạt thêm role Patient.
     public int? ExistingUserId { get; set; }
 }
