@@ -22,8 +22,8 @@ public class UsersController : BaseApiController
     [FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? isActive,
     [FromQuery] PageQuery paging)
     {
-        var testPage = paging.Page;         // phải = 1
-        var testSize = paging.PageSize;     // phải = 3
+        var testPage = paging.Page;       
+        var testSize = paging.PageSize;    
         var testDesc = paging.Desc;
         return await _service.List(q, role, isActive, paging);
     }

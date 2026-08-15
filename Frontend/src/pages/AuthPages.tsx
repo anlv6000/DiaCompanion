@@ -342,7 +342,6 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             <span className="faint small">
               Quên mật khẩu? Liên hệ quản trị viên để cấp lại.
             </span>
-            <span className="faint small">Backend: localhost:5080</span>
           </div>
         </form>
       </div>

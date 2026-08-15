@@ -8,6 +8,11 @@ public class HealthMetric : ISoftDeletable, IHasRowVersion
     public int Id { get; set; }
     public int PatientId { get; set; }
     public Patient? Patient { get; set; }
+
+    /// <summary>Null nếu bệnh nhân tự ghi ngoài lượt khám; có giá trị nếu bác sĩ ghi trong visit.</summary>
+    public int? VisitId { get; set; }
+    public Visit? Visit { get; set; }
+
     public MetricType MetricType { get; set; }
     public decimal Value { get; set; }
     [Required, MaxLength(20)] public string Unit { get; set; } = "";

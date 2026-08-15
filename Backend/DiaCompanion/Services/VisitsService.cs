@@ -42,8 +42,7 @@ public class VisitsService : BaseService, IVisitsService
 
     public async Task<ActionResult<VisitDto>> Get(int id)
     {
-        var visit = await _repository.GetVisitDtoAsync(id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+        var visit = await RequireVisitDtoAsync(id);
         return Ok(ToLocalVisitDto(visit));
     }
 
@@ -157,6 +156,90 @@ public class VisitsService : BaseService, IVisitsService
         
     }
 
+    public async Task<ActionResult<VisitHealthMetricsDto>> GetHealthMetrics(int visitId)
+    {
+        var visit = await _repository.GetVisitForUpdateAsync(visitId)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+        if (visit.DoctorId != _me.RequireId())
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Bạn không phải bác sĩ phụ trách lượt khám này.");
+
+        var metrics = await _repository.GetVisitHealthMetricsAsync(visitId);
+        return Ok(ToVisitHealthMetricsDto(visitId, metrics));
+    }
+
+    public async Task<ActionResult<VisitHealthMetricsDto>> SaveHealthMetrics(
+        int visitId, SaveVisitHealthMetricsRequest req)
+    {
+        var visit = await _repository.GetVisitForUpdateAsync(visitId)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
+        if (visit.DoctorId != _me.RequireId())
+            throw AppException.Forbidden(Msg.Forbidden,
+                "Bạn không phải bác sĩ phụ trách lượt khám này nên không thể nhập chỉ số.");
+
+        if (visit.Status != VisitStatus.InProgress)
+            throw AppException.Conflict(Msg.ApptImmutable,
+                "Lượt khám đã đóng nên các chỉ số sức khỏe chỉ được xem, không thể chỉnh sửa.");
+
+        ValidateVisitMetrics(req);
+
+        var metrics = (await _repository.GetVisitHealthMetricsAsync(visitId, tracking: true)).ToList();
+        var now = _clock.UtcNow;
+        var localDate = _clock.ToLocalDate(now);
+        var patientId = visit.MedicalRecord.PatientId;
+
+        var oldValue = ToVisitHealthMetricsAudit(metrics);
+
+        await UpsertVisitMetricAsync(
+            metrics, patientId, visitId, MetricType.Glucose,
+            req.Glucose, "mmol/L", req.GlucoseContext, req.GlucoseNote,
+            req.GlucoseRowVersion, now, localDate);
+
+        await UpsertVisitMetricAsync(
+            metrics, patientId, visitId, MetricType.HbA1c,
+            req.HbA1c, "%", null, req.HbA1cNote,
+            req.HbA1cRowVersion, now, localDate);
+
+        var systolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
+        var diastolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
+        var bpRecordedAt = systolic?.RecordedAtUtc ?? diastolic?.RecordedAtUtc ?? now;
+        var bpLocalDate = systolic?.RecordedLocalDate ?? diastolic?.RecordedLocalDate ?? localDate;
+
+        await UpsertVisitMetricAsync(
+            metrics, patientId, visitId, MetricType.SystolicBp,
+            req.SystolicBp, "mmHg", null, req.BloodPressureNote,
+            req.SystolicRowVersion, bpRecordedAt, bpLocalDate);
+
+        await UpsertVisitMetricAsync(
+            metrics, patientId, visitId, MetricType.DiastolicBp,
+            req.DiastolicBp, "mmHg", null, req.BloodPressureNote,
+            req.DiastolicRowVersion, bpRecordedAt, bpLocalDate);
+
+        await _audit.LogAsync(
+            AuditAction.MetricUpdate,
+            nameof(Visit),
+            visit.Id,
+            oldValue,
+            new
+            {
+                visitId = visit.Id,
+                patientId,
+                req.Glucose,
+                glucoseContext = req.GlucoseContext?.ToString(),
+                req.HbA1c,
+                req.SystolicBp,
+                req.DiastolicBp
+            },
+            "Bác sĩ cập nhật chỉ số sức khỏe trong lượt khám");
+
+        await _repository.CommitAsync();
+
+        var saved = await _repository.GetVisitHealthMetricsAsync(visitId);
+        return Ok(ToVisitHealthMetricsDto(visitId, saved));
+    }
+
     public async Task<ActionResult<VisitDto>> Close(int id, CloseVisitRequest req)
     {
         var visit = await _repository.GetVisitForUpdateAsync(id)
@@ -268,6 +351,8 @@ public class VisitsService : BaseService, IVisitsService
         dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
         dto.CreatedAt = _clock.ToLocal(dto.CreatedAt)!.Value;
         dto.ClosedAt = _clock.ToLocal(dto.ClosedAt);
+        dto.HealthMetrics = ToVisitHealthMetricsDto(
+            visitId, await _repository.GetVisitHealthMetricsAsync(visitId));
 
         return dto;
     }
@@ -279,9 +364,190 @@ public class VisitsService : BaseService, IVisitsService
             "Tài khoản chưa được liên kết với hồ sơ bệnh nhân.");
     }
 
-    private async Task<VisitDto> RequireVisitDtoAsync(int id) =>
-        await _repository.GetVisitDtoAsync(id)
-        ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+    private async Task<VisitDto> RequireVisitDtoAsync(int id)
+    {
+        var dto = await _repository.GetVisitDtoAsync(id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+        dto.HealthMetrics = ToVisitHealthMetricsDto(
+            id, await _repository.GetVisitHealthMetricsAsync(id));
+        return dto;
+    }
+
+    private static object ToVisitHealthMetricsAudit(IEnumerable<HealthMetric> rows) =>
+        rows.Select(m => new
+        {
+            m.Id,
+            type = m.MetricType.ToString(),
+            m.Value,
+            context = m.Context?.ToString(),
+            m.Unit,
+            m.Note,
+            m.RecordedAtUtc
+        }).ToList();
+
+    private void ValidateVisitMetrics(SaveVisitHealthMetricsRequest req)
+    {
+        if (req.Glucose is decimal glucose)
+        {
+            if (glucose is < 1m or > 40m)
+                throw AppException.BadRequest(Msg.InvalidData,
+                    "Glucose phải nằm trong khoảng 1–40 mmol/L.");
+            if (req.GlucoseContext is not (MetricContext.BeforeMeal or MetricContext.AfterMeal))
+                throw AppException.BadRequest(Msg.RequiredFields,
+                    "Glucose phải chọn thời điểm trước ăn hoặc sau ăn.");
+        }
+
+        if (req.HbA1c is decimal hba1c && (hba1c < 3m || hba1c > 20m))
+            throw AppException.BadRequest(Msg.InvalidData,
+                "HbA1c phải nằm trong khoảng 3–20%.");
+
+        var hasSystolic = req.SystolicBp.HasValue;
+        var hasDiastolic = req.DiastolicBp.HasValue;
+        if (hasSystolic != hasDiastolic)
+            throw AppException.BadRequest(Msg.RequiredFields,
+                "Huyết áp phải nhập đồng thời cả tâm thu và tâm trương.");
+
+        if (hasSystolic)
+        {
+            var sys = req.SystolicBp!.Value;
+            var dia = req.DiastolicBp!.Value;
+            if (sys is < 40m or > 300m)
+                throw AppException.BadRequest(Msg.InvalidData,
+                    "Huyết áp tâm thu phải nằm trong khoảng 40–300 mmHg.");
+            if (dia is < 20m or > 200m)
+                throw AppException.BadRequest(Msg.InvalidData,
+                    "Huyết áp tâm trương phải nằm trong khoảng 20–200 mmHg.");
+            if (sys <= dia)
+                throw AppException.BadRequest(Msg.InvalidData,
+                    "Huyết áp tâm thu phải lớn hơn huyết áp tâm trương.");
+        }
+    }
+
+    private async Task UpsertVisitMetricAsync(
+        List<HealthMetric> metrics,
+        int patientId,
+        int visitId,
+        MetricType type,
+        decimal? value,
+        string unit,
+        MetricContext? context,
+        string? note,
+        string? rowVersion,
+        DateTime recordedAtUtc,
+        DateOnly recordedLocalDate)
+    {
+        var metric = metrics.FirstOrDefault(m => m.MetricType == type);
+
+        // PUT là toàn bộ trạng thái form: null => xóa mềm metric hiện có.
+        if (value is null)
+        {
+            if (metric is not null)
+            {
+                _repository.ApplyOriginalRowVersion(metric, rowVersion ?? "");
+                metric.IsDeleted = true;
+                metric.DeletedAt = _clock.UtcNow;
+            }
+            return;
+        }
+
+        var abnormal = await IsVisitMetricAbnormalAsync(type, value.Value, context);
+
+        if (metric is null)
+        {
+            metric = new HealthMetric
+            {
+                PatientId = patientId,
+                VisitId = visitId,
+                MetricType = type,
+                Value = value.Value,
+                Unit = unit,
+                Context = context,
+                RecordedAtUtc = recordedAtUtc,
+                RecordedLocalDate = recordedLocalDate,
+                Note = note?.Trim(),
+                IsAbnormal = abnormal
+            };
+            _repository.Add(metric);
+            metrics.Add(metric);
+            return;
+        }
+
+        _repository.ApplyOriginalRowVersion(metric, rowVersion ?? "");
+        metric.Value = value.Value;
+        metric.Unit = unit;
+        metric.Context = context;
+        metric.Note = note?.Trim();
+        metric.IsAbnormal = abnormal;
+    }
+
+    private async Task<bool> IsVisitMetricAbnormalAsync(
+        MetricType type, decimal value, MetricContext? context)
+    {
+        return type switch
+        {
+            MetricType.Glucose => context switch
+            {
+                MetricContext.BeforeMeal =>
+                    value < await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m)
+                    || value > await _cfg.GetDecimalAsync(ConfigKeys.GlucoseFastingMax, 7.2m),
+                MetricContext.AfterMeal =>
+                    value < await _cfg.GetDecimalAsync(ConfigKeys.GlucoseMin, 3.9m)
+                    || value > await _cfg.GetDecimalAsync(ConfigKeys.GlucosePostMealMax, 10.0m),
+                _ => false
+            },
+            MetricType.HbA1c =>
+                value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m),
+            MetricType.SystolicBp => value >= 140m,
+            MetricType.DiastolicBp => value >= 90m,
+            _ => false
+        };
+    }
+
+    private static VisitHealthMetricsDto ToVisitHealthMetricsDto(
+        int visitId, IReadOnlyList<HealthMetric> metrics)
+    {
+        var glucose = metrics.FirstOrDefault(m => m.MetricType == MetricType.Glucose);
+        var hba1c = metrics.FirstOrDefault(m => m.MetricType == MetricType.HbA1c);
+        var systolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.SystolicBp);
+        var diastolic = metrics.FirstOrDefault(m => m.MetricType == MetricType.DiastolicBp);
+
+        HealthMetricDto? Map(HealthMetric? m) => m is null ? null : new HealthMetricDto
+        {
+            Id = m.Id,
+            VisitId = m.VisitId,
+            MetricType = (byte)m.MetricType,
+            Value = m.Value,
+            Unit = m.Unit,
+            Context = (byte?)m.Context,
+            RecordedAtUtc = m.RecordedAtUtc,
+            RecordedLocalDate = m.RecordedLocalDate,
+            Note = m.Note,
+            IsAbnormal = m.IsAbnormal,
+            RowVersion = m.ToRowVersion()
+        };
+
+        HealthMetricDto? bp = null;
+        if (systolic is not null || diastolic is not null)
+        {
+            var primary = systolic ?? diastolic!;
+            var pair = ReferenceEquals(primary, systolic) ? diastolic : systolic;
+            bp = Map(primary)!;
+            bp.IsAbnormal = primary.IsAbnormal || pair?.IsAbnormal == true;
+            bp.PairMetricId = pair?.Id;
+            bp.PairRowVersion = pair?.ToRowVersion();
+            bp.SystolicValue = systolic?.Value;
+            bp.DiastolicValue = diastolic?.Value;
+        }
+
+        return new VisitHealthMetricsDto
+        {
+            VisitId = visitId,
+            Glucose = Map(glucose),
+            HbA1c = Map(hba1c),
+            BloodPressure = bp
+        };
+    }
+
     private VisitDto ToLocalVisitDto(VisitDto dto)
     {
         dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;

@@ -1210,13 +1210,26 @@ a {
 /* Lưới thẻ bác sĩ đang trực */
 .duty-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
+
 .duty-card {
+  height: auto;
+  min-height: 96px;
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+
+  white-space: normal;
   text-align: left;
   padding: 14px 16px;
+
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 12px;
@@ -1231,14 +1244,24 @@ a {
   box-shadow: 0 0 0 2px var(--primary) inset;
 }
 .duty-name {
+  width: 100%;
+  min-width: 0;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
+
 .duty-meta {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 2px;
   font-size: 13px;
   color: var(--muted);
-  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.duty-card .badge {
+  white-space: nowrap;
 }
 
 /* Bộ chọn thứ trong tuần khi thêm ca trực */
@@ -1315,6 +1338,45 @@ a {
 .visit-tabs button.active {
   color: var(--primary);
   border-bottom-color: var(--primary);
+}
+
+
+/* Form chỉ số sức khỏe gắn trực tiếp với lượt khám */
+.visit-metric-form {
+  display: grid;
+  gap: 14px;
+}
+.visit-metric-group {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface);
+}
+.visit-metric-group h4 {
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.visit-metric-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.visit-metric-fields.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.visit-metric-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 13px;
+}
+@media (max-width: 900px) {
+  .visit-metric-fields,
+  .visit-metric-fields.two-cols {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Danh sách thông báo (chuông) */

@@ -22,7 +22,7 @@ public partial interface IRepository
 
     Task<HealthMetric?> GetHealthMetricForUpdateAsync(int id, CancellationToken ct = default);
     Task<HealthMetric?> GetBloodPressurePairForUpdateAsync(
-        int patientId, DateTime recordedAtUtc, MetricType pairType, CancellationToken ct = default);
+        int patientId, int? visitId, DateTime recordedAtUtc, MetricType pairType, CancellationToken ct = default);
     Task<IReadOnlyList<HealthMetric>> GetHealthMetricsAsync(
         int patientId, DateOnly from, DateOnly to, CancellationToken ct = default);
 

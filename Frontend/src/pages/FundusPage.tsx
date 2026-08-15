@@ -335,7 +335,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
                         {selected.review.reason && <p>{selected.review.reason}</p>}
                         {!closedVisit && can.voidReview(user) && (
                           <Button kind="danger" onClick={() => setVoidReview(true)}>
-                            Void review
+                            Thu hồi xác nhận
                           </Button>
                         )}
                       </div>
@@ -396,8 +396,8 @@ export function FundusPage({ imageId }: { imageId: number }) {
 
       {voidReview && selected?.review && (
         <ConfirmDialog
-          title="Void review"
-          message="Review sẽ được thu hồi và ca quay lại hàng đợi triage."
+          title="Thu hồi xác nhận"
+          message="Kết quả xác nhận sẽ được thu hồi và ca được đưa lại vào danh sách cần bác sĩ xem xét."
           requireReason
           danger
           onClose={() => setVoidReview(false)}

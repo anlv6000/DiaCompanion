@@ -203,8 +203,8 @@ public sealed partial class EfRepository
         // ============================================================
         // DANH SÁCH PATIENT
         // ============================================================
-
         var query = _db.Patients
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(p => p.User)
             .AsQueryable();
@@ -216,12 +216,21 @@ public sealed partial class EfRepository
 
         if (!string.IsNullOrWhiteSpace(q))
         {
-            var term = q.Trim();
+            string? normalized = null;
+
+                q = q.Trim();
+                normalized = VietnameseText.RemoveDiacritics(q);
 
             query = query.Where(p =>
-                p.FullName.Contains(term) ||
-                p.Code.Contains(term) ||
-                p.Phone.Contains(term));
+                EF.Functions.Like(
+                    p.FullNameSearch!,
+                    $"%{normalized}%") ||
+                EF.Functions.Like(
+                    p.Code,
+                    $"%{q}%") ||
+                EF.Functions.Like(
+                    p.Phone,
+                    $"%{q}%"));
         }
 
 

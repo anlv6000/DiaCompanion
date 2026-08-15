@@ -17,7 +17,8 @@ import { isConflict } from "../api/client";
  * - Đường huyết: tự đo, có thời điểm (trước/sau ăn).
  * - Huyết áp: nhập gộp tâm thu + tâm trương.
  * - HbA1c: KHÔNG nhập tay — chỉ hiển thị giá trị gần nhất do bác sĩ ghi.
- * Biểu đồ đường huyết 30 ngày; danh sách bản ghi thêm/sửa/xoá (xoá là ẩn mềm).
+ * - Metric có visitId là dữ liệu bác sĩ ghi trong lượt khám: bệnh nhân chỉ xem.
+ * Biểu đồ đường huyết 30 ngày; metric tự theo dõi mới được thêm/sửa/xoá.
  */
 export default function MetricsScreen({ route }) {
   const data = useData();
@@ -105,6 +106,9 @@ export default function MetricsScreen({ route }) {
                     {fmtDate(m.recordedAtUtc, true)}
                     {m.context ? ` · ${metricContexts[m.context]}` : ""}
                   </Text>
+                  <Text style={[styles.metricSource, m.visitId && styles.metricSourceVisit]}>
+                    {m.visitId ? `Ghi nhận tại lượt khám #${m.visitId}` : "Tự theo dõi tại nhà"}
+                  </Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={[styles.metricValue, m.isAbnormal && { color: colors.alert }]}>
@@ -114,16 +118,23 @@ export default function MetricsScreen({ route }) {
                 </View>
               </View>
               {m.note ? <Text style={styles.metricNote}>{m.note}</Text> : null}
-              <View style={styles.metricActions}>
-                <TouchableOpacity onPress={() => setEditing(withBpPair(m))} style={styles.actionBtn}>
-                  <Ionicons name="create-outline" size={18} color={colors.muted} />
-                  <Text style={styles.actionText}>Sửa</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => remove(m)} style={styles.actionBtn}>
-                  <Ionicons name="trash-outline" size={18} color={colors.alert} />
-                  <Text style={[styles.actionText, { color: colors.alert }]}>Xóa</Text>
-                </TouchableOpacity>
-              </View>
+              {m.visitId ? (
+                <View style={styles.readOnlyRow}>
+                  <Ionicons name="lock-closed-outline" size={16} color={colors.muted} />
+                  <Text style={styles.readOnlyText}>Chỉ đọc · chỉ số do bác sĩ ghi trong lượt khám</Text>
+                </View>
+              ) : (
+                <View style={styles.metricActions}>
+                  <TouchableOpacity onPress={() => setEditing(withBpPair(m))} style={styles.actionBtn}>
+                    <Ionicons name="create-outline" size={18} color={colors.muted} />
+                    <Text style={styles.actionText}>Sửa</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => remove(m)} style={styles.actionBtn}>
+                    <Ionicons name="trash-outline" size={18} color={colors.alert} />
+                    <Text style={[styles.actionText, { color: colors.alert }]}>Xóa</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </Card>
           ))}
         </LoadState>
@@ -340,10 +351,14 @@ const styles = StyleSheet.create({
   metricTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   metricType: { ...font.h3, color: colors.ink },
   metricMeta: { ...font.small, color: colors.muted, marginTop: 2 },
+  metricSource: { ...font.tiny, color: colors.faint, marginTop: 4 },
+  metricSourceVisit: { color: colors.primary },
   metricValue: { ...font.h2, color: colors.ink },
   metricUnit: { ...font.small, color: colors.muted },
   metricNote: { ...font.small, color: colors.muted, marginTop: 8, fontStyle: "italic" },
   metricActions: { flexDirection: "row", gap: spacing.lg, marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.hairline },
+  readOnlyRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.hairline },
+  readOnlyText: { ...font.small, color: colors.muted },
   actionBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
   actionText: { ...font.small, color: colors.muted, fontWeight: "600" },
 
