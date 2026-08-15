@@ -15,6 +15,7 @@ public sealed partial class EfRepository
             .Where(s => s.IsActive
                         && s.DayOfWeek == dayOfWeek
                         && (byte)s.Shift == shift);
+        
         if (!string.IsNullOrWhiteSpace(q))
         {
             var keyword = q.Trim();
