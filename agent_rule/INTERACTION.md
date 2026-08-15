@@ -1,241 +1,175 @@
 ---
 name: DiaCompanion Interaction & Behavior Standards
-scope: Frontend behavior only — timing, state, feedback, input handling
+scope: Current Web frontend behavior and incremental UX targets
 companion_files:
-  - DESIGN.md    # visual language (colors, type, spacing) — NOT repeated here
-  - AGENTS.md    # stack, folder structure, build order
+  - DESIGN.md
+  - AGENTS.md
 
 timing_ms:
-  debounce_search: 250        # text input -> server query
-  debounce_filter: 0          # dropdown/checkbox changes fire immediately
-  throttle_scroll: 100
-  instant_feedback: 100       # UI must acknowledge any click within this
-  skeleton_after: 300         # show skeleton only if load exceeds this
-  toast_duration: 4000
-  toast_duration_error: 8000  # errors stay longer; destructive errors are sticky
-  optimistic_rollback: 0      # revert immediately on failure, then explain
+  debounce_search_current_default: 300
+  debounce_filter: 0
+  instant_feedback_target: 100
+  toast_duration_target: 4000
 
 pagination:
-  default_page_size: 25
-  page_size_options: [10, 25, 50, 100]
-  strategy: server_side       # this app's datasets are unbounded
-  client_side_threshold: 1000 # below this, sort/filter locally without a round trip
-  virtualize_above: 1000
-  show_total: true            # "1–25 / 312" — a sense of place
-  reset_page_on: [filter_change, sort_change, search_change]
-  preserve_across_pages: [filters, sort, search, page_size]
-
-table:
-  row_height_px: 34           # dense (see DESIGN.md)
-  fixed_width_columns: [status, badges, dates, numeric_metrics, actions]
-  flex_columns: [name, description, note]
-  sortable_headers: true
-  sort_indicator: always_visible_on_hover
-  row_hover: true
-  sticky_header: true
-  selection: checkbox_column_when_bulk_actions_exist
-
-url_state:
-  sync: [search, filters, sort, page, page_size, active_tab]
-  method: query_params        # HashRouter -> /#/patients?q=an&page=2&sort=-updated
+  normal_lists:
+    strategy: server_side_page_number
+    default_page_size: 25
+  triage:
+    strategy: keyset_cursor
+    default_page_size: 25
 
 forms:
-  validate_on: blur           # never on every keystroke
-  revalidate_on: change       # only AFTER a field has errored once
   submit_disabled_while_pending: true
   preserve_input_on_error: true
-  autofocus_first_field: true
-  autofocus_first_error_on_submit: true
 ---
 
 ## Purpose
 
-`DESIGN.md` says what the app **looks like**. This file says how it **behaves**:
-how fast it responds, when it fetches, what happens while waiting, what happens
-when it fails. Visual tokens are settled — do not restate or override them here.
+This file describes behavior standards **without requiring a rewrite of the current
+frontend architecture**.
 
-The governing idea: this is a **worklist tool used under time pressure by clinicians**.
-Every interaction should reduce the number of deliberate actions required. If the
-system can figure out what the user wants from what they already typed or clicked,
-it must not also demand a button press.
+The implementation currently uses React local state, Context, `useAsync`, `useDebounce`,
+custom tables/modals, and backend pagination. Preserve that architecture unless a
+separate migration is approved.
 
-## 1. Live interaction — no "Apply" buttons
+## 1. Search and filters
 
-**Search is as-you-type.** Text inputs that filter or query fire automatically after
-a **250ms debounce** — the user never presses a search button. Debounce exists to
-protect the backend, not to make the user wait: below ~200ms requests spam the
-server, and past ~300ms the UI starts to feel like it is ignoring input. 250ms sits
-in that window.
+Search should remain as-you-type where the current page already uses `useDebounce`.
+The shared hook currently defaults to **300ms**. Do not force a change to 250ms only to
+match documentation.
 
-**Dropdowns, checkboxes, toggles, and date pickers apply immediately** (no debounce,
-no confirm). A discrete choice is already an explicit action; making the user confirm
-it twice is friction.
+Dropdowns and explicit discrete filters may apply immediately.
 
-**Sorting is instant.** Clicking a column header re-sorts without a page reload and
-without a confirm step. Sort direction is shown in the header at all times (not only
-after clicking).
-
-The only inputs that still require an explicit submit are **forms that write data**
-(create patient, prescribe, override a diagnosis) — because those have consequences.
-
-### Race conditions are mandatory to handle
-
-As-you-type search will produce out-of-order responses: a request for `an` may return
-*after* the request for `anh`, painting stale results over fresh ones. Every
-auto-firing request must therefore either be aborted when superseded (`AbortController`)
-or carry a request id that is checked before its result is committed to state.
-Silently rendering stale results is a bug, not a cosmetic issue.
-
-### Never blank the screen while re-querying
-
-When a search or filter re-runs, **keep the previous rows visible** and dim them
-slightly (or show a thin progress line at the top of the table). Do not clear to an
-empty state and do not swap in a full-page spinner — the list flickering and jumping
-is what makes search feel slow, even when the backend is fast.
+The current `useAsync` effect cleanup prevents a superseded request from committing its
+result after dependencies change. This is acceptable race protection for the current
+architecture; `AbortController` is optional rather than mandatory.
 
 ## 2. Pagination
 
-Use **server-side pagination** for every list in this app. Do not use infinite scroll:
-it suits discovery feeds, whereas clinical worklists are task-oriented tables where
-users need orientation, a stable position, predictable performance, and accessibility.
+Do not impose one pagination mechanism on every dataset.
 
-- **Default 25 rows**, selectable 10 / 25 / 50 / 100.
-- Always show **range and total** (`1–25 / 312`). A total count gives a sense of place.
-- **Reset to page 1** whenever the search, a filter, or the sort changes — otherwise
-  the user can land on a page that no longer exists in the new result set.
-- **Preserve filters, sort, and page size across page changes.** Changing page must
-  never silently drop the user's filters.
-- Keep pagination controls in a fixed position so they don't jump between pages.
-- Past ~1000 rows in a single continuous view, **virtualize** rather than paginate wider.
+### Standard lists
 
-**Sorting/filtering location:** if the loaded set is under ~1000 rows and already in
-memory, sort and filter **client-side** (zero latency). Beyond that, go server-side.
-Never mix silently — a sort that only reorders the current page while claiming to sort
-the whole set is misleading.
+Patient/staff/recheck and similar bounded table APIs may use numbered server-side
+pagination with backend metadata such as `page`, `pageSize`, `totalItems`,
+`totalPages`, and `rangeLabel`.
 
-## 3. Loading & feedback
+### Triage
 
-**Acknowledge every action within 100ms** — button enters a pressed/disabled state,
-row highlights, spinner appears inside the control. Never let a click produce zero
-visible change.
+The triage queue intentionally uses **keyset/cursor pagination**:
 
-**Skeletons, not spinners, for content** — and only after **300ms**. Faster responses
-should render directly; flashing a skeleton for 80ms is worse than showing nothing.
-Skeletons must match the shape of the incoming content (table rows for a table), so
-the layout does not shift when data arrives.
+```text
+GET /api/triage?...&cursor=...&size=25
+```
 
-**Inline spinners for actions** (saving, running AI, approving) go *inside* the
-triggering control, not over the whole page. The rest of the screen stays usable.
+This helps avoid skipping/reordering issues as new clinical cases enter the queue.
+Keep the current Previous / Load next behavior unless the backend contract changes.
 
-**Long operations get progress, not a frozen screen.** AI inference and exports show
-what stage they are in. If an operation may exceed ~10s, say so before it starts.
+Do not document triage as page-number pagination.
 
-**Never block the whole page** with a modal loading overlay unless the app genuinely
-cannot continue (session expiry).
+## 3. Loading and feedback
 
-## 4. Optimistic updates — and where they are forbidden
+The current baseline uses `LoadState` + skeleton rows and inline busy states.
 
-For **low-risk, reversible, high-frequency** actions, update the UI immediately and
-reconcile with the server afterwards: marking a notification read, toggling a lesion
-overlay layer, changing page size, dismissing a reminder. On failure, revert
-immediately and show a non-blocking error with a retry.
+It is acceptable for a re-query to show the current skeleton behavior. Keeping prior
+rows visible during background refresh is a future enhancement, not a requirement that
+justifies a state-management rewrite.
 
-**Optimistic updates are FORBIDDEN for clinical writes.** Approving or overriding an
-AI result, entering a conclusion, prescribing, voiding a record — these must show a
-pending state and only reflect success **after the server confirms**. A clinician must
-never see "approved" for something the server rejected. This follows directly from the
-safety rule in `DESIGN.md`: the human decision is the source of truth, so the UI must
-not fabricate it.
+Action buttons should disable while pending where implemented. Clinical actions must
+not show successful state until the backend confirms success.
 
-## 5. URL is state
+## 4. Optimistic updates
 
-Search text, filters, sort, page, page size, and the active tab live in **query
-parameters**. Consequences: refreshing keeps the view, a filtered worklist can be
-copied to a colleague, and browser back/forward work as expected. A doctor who filters
-to deferred cases, opens one, and presses Back must land on the same filtered list at
-the same page — losing their filters is a defect.
+Optimistic UI is acceptable only for low-risk reversible actions.
 
-Row detail navigation must **preserve scroll position** on return.
+Do **not** optimistically finalize:
+
+- AI approve/override;
+- prescriptions;
+- visit close;
+- void/revoke operations;
+- account activation/deactivation;
+- model activation.
+
+These wait for the backend response.
+
+## 5. URL state
+
+The current application uses **`BrowserRouter`**, not `HashRouter`.
+
+Pages currently keep much search/filter/pagination state in local React state. Query
+parameter synchronization is an optional incremental improvement, not a mandatory
+requirement for every existing screen.
+
+Do not rewrite all screens simply to put every filter into the URL.
+
+For navigation changes that are made in the future, preserve context when practical
+(e.g. selected patient/visit or useful search state).
 
 ## 6. Forms
 
-Validate on **blur**, never on every keystroke — erroring at character three of an
-email the user is still typing is hostile. Once a field has errored, re-validate on
-change so the error clears as soon as it is fixed.
+Retain the current form behavior unless a specific form has a UX defect.
 
-- Keep the submit button enabled-looking until pressed; on submit, disable it and show
-  a pending state so double-submit is impossible.
-- On failure, **never wipe the user's input**. Repopulate everything and focus the
-  first invalid field.
-- Show the specific problem, not "invalid input" — say which field and why.
-- Required fields are marked; units and expected formats are shown *before* the error
-  (e.g. `mmol/L`, `dd/mm/yyyy`).
-- **Warn before discarding unsaved changes** when navigating away from a dirty form.
-- Destructive or irreversible actions (void a record, deactivate an account, activate a
-  new model version) require explicit confirmation naming the specific object —
-  "Void chẩn đoán #142?" not "Are you sure?". Void additionally requires a reason.
+General expectations:
 
-## 7. Keyboard & focus
+- prevent double-submit while pending;
+- keep entered values after validation/API failure;
+- show specific backend validation messages;
+- require explicit confirmation for destructive/high-impact actions;
+- capture a reason when the corresponding backend void action requires one.
 
-Everything reachable by mouse is reachable by keyboard, in a logical tab order.
+Validation-on-blur is preferred for new forms but is not a requirement to refactor every
+existing form.
 
-- `/` focuses the main search field of the current view.
-- `↑`/`↓` move the selection in a worklist; `Enter` opens the selected row.
-- `Esc` closes dialogs, popovers, and inline edit states.
-- Dialogs **trap focus** while open and **return focus** to the trigger on close.
-- Focus is never lost to `<body>` after an action — after closing a row detail, focus
-  returns to that row.
-- Focus rings are always visible for keyboard users (see `DESIGN.md`); never
-  `outline: none` without a replacement.
+## 7. Keyboard and accessibility
 
-## 8. Accessibility (non-negotiable, not a phase-2 task)
+Maintain semantic tables and accessible labels where already present.
 
-- Use semantic `<table>`/`<th scope>` for tabular data — not stacks of `<div>`s.
-- Sortable headers expose `aria-sort`; sort changes are announced.
-- Async region updates (search results, queue refresh) use a polite live region so
-  screen readers hear "24 results" rather than nothing.
-- Every icon-only control has an accessible label; icons alone never carry meaning.
-- Status is never conveyed by color alone — icon + text as well (already required by
-  `DESIGN.md`, restated because it is an *interaction* rule too).
-- Respect `prefers-reduced-motion`: skip transitions, keep state changes instant.
-- Interactive targets are at least 32×32px in dense mode, 44×44px on touch.
+Incremental accessibility improvements are welcome, but do not treat the following as
+already implemented unless verified in code:
 
-## 9. Errors & empty states
+- global `/` search shortcut;
+- arrow-key worklist navigation;
+- complete focus trapping/return for every modal;
+- `aria-sort` on every sortable table;
+- live-region announcements for every async update.
 
-Every data surface defines four states — loading, empty, error, and populated — before
-it ships. In addition:
+These are enhancement targets rather than current guarantees.
 
-- **Errors are recoverable in place**: show what failed, why, and a retry control.
-  Never dead-end the user on a page with nothing but red text.
-- **Distinguish "no data yet" from "no results for this filter."** The second offers a
-  "clear filters" action; the first explains how to create the first record.
-- **Do not lose work on failure.** A failed prescription submit keeps the drafted items.
-- **Session expiry** is handled globally: pause, explain, offer re-login, and return the
-  user to where they were — never dump them to an empty login screen mid-task.
-- If the connection is poor, keep the last good data visible with a "may be out of date"
-  note rather than clearing to a blank screen that looks like failure.
+## 8. Errors and empty states
 
-## 10. Performance budgets
+Use the existing `LoadState`, toast, field-error, and confirmation patterns.
 
-- Interaction to visible feedback: **< 100ms**.
-- Filter/sort on already-loaded data: **< 200ms**, no server round trip.
-- Table renders 25 rows without jank; virtualize past 1000.
-- Do not refetch on every mount — cache per view and refresh on demand or on write.
-- Charts render from data already in state; they never trigger their own fetch.
-- Avoid layout shift after load: reserve height for tables, charts, and images.
+Distinguish API errors clearly and keep forms usable after failure. `api/client.ts`
+already parses ASP.NET validation errors and exposes useful messages.
 
-## Anti-patterns — reject these
+A 401 is handled globally through the unauthorized event and AuthContext.
 
-- A **"Search" / "Apply filters" button** next to inputs that could just fire themselves.
-- **Clearing the table to a spinner** on every keystroke, so the list flickers.
-- **Losing filters, sort, or page** after opening a row and coming back.
-- **Full-page loading overlays** for a single-row action.
-- **Optimistic clinical writes** — showing "Approved" before the server said so.
-- **Infinite scroll on a clinical worklist**, where position and totals matter.
-- **Sorting that only reorders the current page** while implying it sorted everything.
-- **Wiping a form** on a validation error.
-- **`window.confirm` / `alert`** for destructive actions — use a real dialog that names
-  the object and captures a reason.
-- **Toasts as the only channel** for an important error; if it needs action, it stays
-  on screen.
-- **Disabled buttons with no explanation** of what would enable them.
+## 9. Performance
+
+Current goals:
+
+- 25-row server-paged tables should render without jank.
+- Debounced search should avoid request spam.
+- Triage remains keyset-paged.
+- Avoid adding heavyweight libraries unless they solve a measured problem.
+- Charts use data already loaded through the current page/context flow.
+
+## 10. Connectivity
+
+When the hospital backend is temporarily unavailable, Web/API requests may fail and the
+UI should explain that the backend cannot be reached.
+
+The patient mobile app may likewise be unavailable when the hospital has no Internet
+connection; this is an accepted deployment characteristic, not a frontend sync defect.
+
+## Anti-patterns
+
+- hard-coded production API URLs scattered through pages/services;
+- optimistic clinical writes;
+- claiming a role/feature exists when backend authorization does not support it;
+- rewriting the whole frontend to Tailwind/TanStack/shadcn solely because older docs
+  named those libraries;
+- documenting HashRouter when the app uses BrowserRouter;
+- documenting page-number pagination for triage when it uses keyset pagination.

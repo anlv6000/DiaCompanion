@@ -35,7 +35,6 @@ weights/
 
 # Bỏ tất cả thư mục venv ở mọi cấp
 **/venv/
-
-
-**/publish/"__pycache__/" 
-"*.pyc" 
+**/publish/
+__pycache__/
+*.pyc

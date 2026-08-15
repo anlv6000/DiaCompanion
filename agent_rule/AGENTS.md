@@ -1,100 +1,227 @@
-# AGENTS.md — DiaCompanion Web (clinical console)
+# AGENTS.md — DiaCompanion Web (current-code aligned)
 
-Build conventions for AI coding agents. **Read `DESIGN.md` before generating any UI.**
-This file governs *how the code is built*; `DESIGN.md` governs *how it looks*.
+Build conventions for AI coding agents. Read `DESIGN.md` before generating or changing UI.
 
 ## Scope
 
-Web console for **doctor + admin** roles only. Patients use a separate Flutter app —
-do not build patient mobile screens here. This app is packaged into **Electron** as
-the LAST step; build and verify everything in the browser first.
+The Web console serves **Admin, Doctor, and Receptionist** roles.
 
-## Stack (fixed)
+Patients use the separate **React Native + Expo** application in
+`Frontend-App_Native`; do not add patient-mobile screens to this Web project.
 
-- **Vite + React 18 + TypeScript**
-- **Tailwind CSS**, mapped to `DESIGN.md` tokens via CSS variables (see below)
-- **shadcn/ui** for component primitives (Radix under the hood) — **restyled to the
-  tokens, never shipped with the default zinc/slate theme** (that default IS the slop)
-- **TanStack Query** for all server state (pairs with the REST backend)
-- **React Router** for routing + role gating
-- **Recharts** for standard charts; **visx/d3** only for the custom risk–coverage curve
-- **OpenSeadragon** (or a canvas layer) for the zoomable fundus viewer + lesion overlays
-- **lucide-react** for icons (one set, no emoji)
-- **@fontsource/ibm-plex-sans**, **-mono**, **-serif** for fonts (self-hosted → works offline in Electron)
+An Electron scaffold exists under `electron/`, but browser behavior remains the primary
+implementation and verification target.
 
-Do not add MUI or Ant Design — their default look is exactly what we are avoiding.
+## Current stack (source of truth)
 
-## Backend (already built)
+- Vite + React 18 + TypeScript
+- React Router DOM (`BrowserRouter`)
+- Custom CSS in `src/styles/app.css`
+- Custom UI primitives in `src/components/ui.tsx`
+- Custom lightweight SVG charts in `src/components/charts.tsx`
+- Context providers:
+  - `AuthContext`
+  - `DataContext`
+  - `ToastContext`
+- API layer:
+  - `src/api/client.ts`
+  - `src/api/services.ts`
+- Custom async/debounce hooks in `src/lib/hooks.ts`
+- Runtime Web API config intended through `public/config.js`
 
-- Base URL: `http://localhost:5080`, Swagger at `/swagger`.
-- Auth: `POST /api/auth/login` → JWT. Send `Authorization: Bearer <token>` on every call.
-- Role-gate routes by the `role` claim (Admin / Doctor / Nurse).
-- Key endpoints (full map in the backend README):
-  - Triage queue: `GET /api/aidiagnosis/triage`
-  - Run AI: `POST /api/aidiagnosis/run/{fundusImageId}`
-  - Progression: `GET /api/aidiagnosis/progression/{patientId}`
-  - Approve/Override: `POST /api/reviews/{aiDiagnosisId}`
-  - Disagreement export: `GET /api/reviews/conflicts`
-  - Dashboard: `GET /api/dashboard/stats`
+Do **not** require Tailwind, shadcn/ui, TanStack Query, Recharts, OpenSeadragon, or
+lucide-react as a prerequisite. They are not part of the current dependency set.
+Introduce a new library only when there is a concrete requirement and the change is
+worth the migration cost.
 
-## Folder structure
+## Backend contract
 
-```
+The backend is ASP.NET Core 8. The Web API mapping must follow the actual
+`src/api/services.ts` contract and backend controllers.
+
+Important current endpoints include:
+
+- Auth
+  - `POST /api/auth/login`
+  - `GET /api/auth/me`
+  - `POST /api/auth/refresh`
+  - `POST /api/auth/logout`
+  - `POST /api/auth/change-password`
+- Patients
+  - `GET /api/patients`
+  - `GET /api/patients/{id}`
+  - `POST /api/patients`
+  - `PUT /api/patients/{id}`
+- Visits
+  - `GET /api/visits`
+  - `GET /api/visits/assigned-to-me`
+  - `GET /api/visits/{id}`
+  - `POST /api/visits`
+  - `PUT /api/visits/{id}/close`
+- Images
+  - `GET /api/images`
+  - `POST /api/images`
+  - quality/content/void routes under `/api/images/{id}/...`
+- Diagnoses
+  - `POST /api/diagnoses/run/{imageId}`
+  - `GET /api/diagnoses/{id}`
+  - `GET /api/diagnoses/by-image/{imageId}`
+  - `GET /api/diagnoses/{id}/lesion-mask`
+  - `GET /api/diagnoses/{id}/fractal-image`
+  - `GET /api/diagnoses/progression/{patientId}`
+- Triage
+  - `GET /api/triage`
+  - `GET /api/triage/count`
+  - `POST /api/triage/{id}/approve`
+  - `POST /api/triage/{id}/override`
+- Reception
+  - `/api/reception/on-duty`
+  - `/api/reception/shifts...`
+- Admin
+  - `GET /api/admin/dashboard`
+  - `/api/admin/configs...`
+  - `/api/admin/models...`
+  - `GET /api/admin/audit`
+- Export
+  - `/api/export/...`
+
+When in doubt, use `src/api/services.ts` and the backend controller code as the
+authoritative contract instead of inventing endpoint names.
+
+## Roles
+
+Current role names:
+
+- Admin
+- Doctor
+- Receptionist
+- Patient
+
+The backend now uses `Roles` + `UserRoles`, and one user may possess multiple active
+roles. The Web normalizes `role` + `roles[]` for backward compatibility.
+
+Frontend route/menu checks must use helpers from:
+
+- `src/lib/roles.ts`
+- `src/lib/permissions.ts`
+
+Backend authorization remains authoritative.
+
+Important Web landing behavior:
+
+- Admin → `/dashboard`
+- Doctor → `/triage`
+- Receptionist → `/reception/visits/new`
+- Patient → not a normal Web-console destination
+
+## Folder structure (current)
+
+```text
 src/
-  app/                 # app shell, providers (QueryClient, Router, Auth)
-  routes/              # route definitions + role guards
-  features/
-    auth/              # login, token store, role gating
-    triage/            # worklist (DEFAULT view)
-    diagnosis/         # fundus viewer + lesion overlay + AI run
-    review/            # approve/override panel + risk-coverage curve
-    progression/       # DR + fractal + HbA1c timeline
-    patients/          # search, record
-    monitoring/        # glucose/HbA1c/BP (read views for doctor)
-    admin/             # staff, system config, model versions
-  components/ui/       # shadcn primitives, restyled to tokens
-  lib/api/             # typed fetch client + query hooks
-  lib/auth/            # jwt handling, useRole()
-  styles/tokens.css    # CSS variables from DESIGN.md
-tailwind.config.ts     # maps token vars → Tailwind theme
+  api/
+    client.ts
+    services.ts
+  app/
+    App.tsx
+  components/
+    AppShell.tsx
+    charts.tsx
+    ProtectedImage.tsx
+    ui.tsx
+  config/
+    index.ts
+  contexts/
+    AuthContext.tsx
+    DataContext.tsx
+    ToastContext.tsx
+  lib/
+    enums.ts
+    format.ts
+    hooks.ts
+    permissions.ts
+    roles.ts
+  pages/
+    AdminPages.tsx
+    AuthPages.tsx
+    DoctorVisitsPage.tsx
+    EngagementPages.tsx
+    FundusPage.tsx
+    PatientDetailPage.tsx
+    PatientsPage.tsx
+    ProgressionPage.tsx
+    ReceptionPages.tsx
+    RecheckPage.tsx
+    TriagePage.tsx
+    UsersPage.tsx
+    VisitReportPage.tsx
+  styles/
+    app.css
+  types/
+    api.ts
+  routes.tsx
 ```
 
-## Token wiring
+`AppointmentsPage.tsx` may remain as an unused legacy file, but new work must follow
+the current no-timeslot-appointment business flow unless routes/code explicitly bring
+that workflow back.
 
-Put every `DESIGN.md` color/space/radius into `styles/tokens.css` as CSS variables,
-then reference them from `tailwind.config.ts`. Components use Tailwind classes that
-resolve to tokens — no hard-coded hex anywhere in components.
+## API configuration
 
-## Auth & security
+Web runtime configuration is intended to work as:
 
-- Store the JWT in memory; in the Electron build use secure storage, not localStorage.
-- Attach the bearer token via a single fetch wrapper in `lib/api`.
-- Guard routes by role; a Nurse must not reach admin config.
+```text
+public/config.js
+  -> window.__DIACOMPANION_API__
+  -> src/config/index.ts
+  -> API_BASE
+  -> api/client.ts
+```
 
-## Electron packaging (LAST step)
+Do not hard-code backend URLs in pages or API services.
 
-- Use **electron-vite**. Renderer loads the built static bundle.
-- Secure defaults: `contextIsolation: true`, `nodeIntegration: false`, preload bridge
-  for any native needs. Fonts self-hosted so the app renders offline.
+Note: if `src/config/index.ts` still returns only `DEFAULT_API`, make the minimal fix to
+use `window.__DIACOMPANION_API__ || DEFAULT_API`. This is a deployment wiring fix, not a
+business rewrite.
 
-## Build order (small, verifiable steps — do NOT skip ahead)
+## Auth & session
 
-1. `styles/tokens.css` + `tailwind.config.ts` + fonts + one restyled shadcn button/badge
-   to prove the token pipeline (screenshot check against `DESIGN.md`).
-2. App shell + routing + login wired to `/api/auth/login` + role gating.
-3. **Triage worklist** (default view) from `/api/aidiagnosis/triage` — dense table,
-   severity chips, deferred badges, correct default sort. Include loading/empty/error states.
-4. Fundus viewer + lesion overlay + `POST .../run`.
-5. AI review panel (Approve/Override → `/api/reviews`) + risk–coverage curve.
-6. Progression panel from `/api/aidiagnosis/progression`.
-7. Remaining modules (patients, monitoring read views, admin config, dashboard).
-8. Electron wrapper.
+The current browser implementation stores the JWT in `sessionStorage` via `tokenStore`.
+Do not silently rewrite the project to an in-memory-only or secure Electron store unless
+that work is explicitly scheduled.
 
-Each step must run in the browser and be reviewed before the next.
+Every API call attaches `Authorization: Bearer <token>` through the shared client.
+
+A 401 dispatches the global unauthorized event handled by the auth layer.
+
+`MustChangePassword` is enforced by routing/middleware. Forced first password change
+does not require the current password when the backend marks the account accordingly.
+
+## Data access
+
+Pages should continue to access backend operations through `DataContext` / API services,
+not scattered raw `fetch()` calls.
+
+Use `useAsync` and `useDebounce` consistently with the current architecture unless a
+specific migration to another server-state library is approved.
+
+## Build order for incremental changes
+
+1. Keep the current CSS/token visual language stable.
+2. Keep auth + role normalization working.
+3. Verify staff route gating for all active roles.
+4. Verify patient creation and new `MedicalRecord`/`UserRole`-aware backend contracts.
+5. Verify reception visit creation.
+6. Verify triage / diagnosis / review.
+7. Verify admin/governance.
+8. Verify deployment runtime config.
+9. Electron packaging only after browser behavior is stable.
 
 ## Enforcement
 
-- If a generated screen violates the **Anti-slop** or **Clinical UX safety** sections
-  of `DESIGN.md`, treat it as a bug and redo it — those sections override "looks fine".
-- Never finalize a diagnosis in the UI without a human action.
-- Never encode status by color alone.
+- Do not invent a Nurse role.
+- Do not convert the patient app to Flutter in documentation or code.
+- Do not invent old endpoint names such as `/api/aidiagnosis/...`.
+- Do not replace the current component/state stack solely to match an architectural
+  preference document.
+- Clinical writes are never optimistic.
+- Role checks in the client are convenience/UX checks; backend authorization is final.
