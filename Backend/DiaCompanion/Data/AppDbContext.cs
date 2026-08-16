@@ -218,6 +218,13 @@ public class AppDbContext : DbContext
             e.Property(x => x.ConfidenceThreshold).HasPrecision(5, 4);
             e.Property(x => x.DisagreementThreshold).HasPrecision(5, 4);
             e.Property(x => x.FractalDimension).HasPrecision(6, 4);
+            e.Property(x => x.FractalSt).HasPrecision(6, 4);
+            e.Property(x => x.FractalSn).HasPrecision(6, 4);
+            e.Property(x => x.FractalIt).HasPrecision(6, 4);
+            e.Property(x => x.FractalIn).HasPrecision(6, 4);
+            e.Property(x => x.FractalAsymmetry).HasPrecision(6, 4);
+            e.Property(x => x.FractalTn).HasPrecision(7, 4);   // có dấu âm
+            e.Property(x => x.Lacunarity).HasPrecision(8, 4);
             foreach (var p in new[] { "AreaMA", "AreaHE", "AreaEX", "AreaSE" })
                 e.Property(p).HasPrecision(9, 6);
 

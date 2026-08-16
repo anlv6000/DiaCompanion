@@ -91,6 +91,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
             drModel!.FilePath,
             lesionModel!.FilePath,
             fractalModel!.FilePath,
+            image.Eye == Eye.Od ? "OD" : "OS",
             ct);
 
         var lesionGrade = result.LesionGradeImplied is byte lg ? (DrGrade)lg : (DrGrade?)null;
@@ -142,6 +143,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 ConfidenceThreshold = confThreshold,
                 DisagreementThreshold = disagreeThreshold,
                 FractalDimension = result.FractalDimension,
+                FractalSt = result.FractalSt,
+                FractalSn = result.FractalSn,
+                FractalIt = result.FractalIt,
+                FractalIn = result.FractalIn,
+                FractalAsymmetry = result.FractalAsymmetry,
+                FractalTn = result.FractalTn,
+                Lacunarity = result.Lacunarity,
                 VesselMaskPath = result.VesselMaskPath,
                 FractalNote = result.FractalNote,
                 InferenceMs = result.InferenceMs
@@ -157,6 +165,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 drModel = drModel!.Name,
                 lesionModel = lesionModel!.Name,
                 fractalModel = fractalModel!.Name,
+                fractalAsymmetry = diagnosis.FractalAsymmetry,
                 grade = diagnosis.DrGrade.ToString(),
                 confidence = diagnosis.Confidence,
                 disagreement = diagnosis.Disagreement,
@@ -336,6 +345,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
             DeferReason = (byte?)d.DeferReason,
             DeferReasonLabel = DeferLabel((byte?)d.DeferReason),
             FractalDimension = d.FractalDimension,
+            FractalSt = d.FractalSt,
+            FractalSn = d.FractalSn,
+            FractalIt = d.FractalIt,
+            FractalIn = d.FractalIn,
+            FractalAsymmetry = d.FractalAsymmetry,
+            FractalTn = d.FractalTn,
+            Lacunarity = d.Lacunarity,
             FractalNote = d.FractalNote,
             HasLesionMask = !string.IsNullOrWhiteSpace(d.LesionMaskPath),
             HasFractalImage = !string.IsNullOrWhiteSpace(d.VesselMaskPath),

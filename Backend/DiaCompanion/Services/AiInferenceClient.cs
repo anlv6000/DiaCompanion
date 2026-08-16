@@ -16,6 +16,7 @@ public interface IAiInferenceClient
         string drModelPath,
         string lesionModelPath,
         string fractalModelPath,
+        string? eye,
         CancellationToken ct = default);
 }
 
@@ -35,6 +36,13 @@ public class AiInferenceResponse
     [JsonPropertyName("area_ex")]           public decimal? AreaEX { get; set; }
     [JsonPropertyName("area_se")]           public decimal? AreaSE { get; set; }
     [JsonPropertyName("fractal_dimension")] public decimal? FractalDimension { get; set; }
+    [JsonPropertyName("fractal_st")] public decimal? FractalSt { get; set; }
+    [JsonPropertyName("fractal_sn")] public decimal? FractalSn { get; set; }
+    [JsonPropertyName("fractal_it")] public decimal? FractalIt { get; set; }
+    [JsonPropertyName("fractal_in")] public decimal? FractalIn { get; set; }
+    [JsonPropertyName("fractal_asymmetry")] public decimal? FractalAsymmetry { get; set; }
+    [JsonPropertyName("fractal_tn")] public decimal? FractalTn { get; set; }
+    [JsonPropertyName("lacunarity")] public decimal? Lacunarity { get; set; }
     [JsonPropertyName("vessel_mask_path")]  public string? VesselMaskPath { get; set; }
     [JsonPropertyName("fractal_note")]       public string? FractalNote { get; set; }
     [JsonPropertyName("inference_ms")]       public int? InferenceMs { get; set; }
@@ -66,6 +74,13 @@ file class LesionResult
 file class FractalResult
 {
     [JsonPropertyName("fractal_dimension")] public decimal? FractalDimension { get; set; }
+    [JsonPropertyName("fractal_st")] public decimal? FractalSt { get; set; }
+    [JsonPropertyName("fractal_sn")] public decimal? FractalSn { get; set; }
+    [JsonPropertyName("fractal_it")] public decimal? FractalIt { get; set; }
+    [JsonPropertyName("fractal_in")] public decimal? FractalIn { get; set; }
+    [JsonPropertyName("fractal_asymmetry")] public decimal? FractalAsymmetry { get; set; }
+    [JsonPropertyName("fractal_tn")] public decimal? FractalTn { get; set; }
+    [JsonPropertyName("lacunarity")] public decimal? Lacunarity { get; set; }
     [JsonPropertyName("fractal_note")]      public string? FractalNote { get; set; }
     [JsonPropertyName("vessel_mask_path")]  public string? VesselMaskPath { get; set; }
     [JsonPropertyName("inference_ms")]      public int? InferenceMs { get; set; }
@@ -87,6 +102,7 @@ public class AiInferenceClient : IAiInferenceClient
         string drModelPath,
         string lesionModelPath,
         string fractalModelPath,
+        string? eye,
         CancellationToken ct = default)
     {
         try
@@ -106,7 +122,8 @@ public class AiInferenceClient : IAiInferenceClient
             var fractalTask = PostAsync<FractalResult>("/infer/fractal", new
             {
                 image_path = imageRelativePath,
-                model_path = fractalModelPath
+                model_path = fractalModelPath,
+                eye = eye
             }, ct);
 
             await Task.WhenAll(drTask, lesionTask, fractalTask);
@@ -134,6 +151,13 @@ public class AiInferenceClient : IAiInferenceClient
                 AreaSE = lesion.AreaSE,
 
                 FractalDimension = fractal.FractalDimension,
+                FractalSt = fractal.FractalSt,
+                FractalSn = fractal.FractalSn,
+                FractalIt = fractal.FractalIt,
+                FractalIn = fractal.FractalIn,
+                FractalAsymmetry = fractal.FractalAsymmetry,
+                FractalTn = fractal.FractalTn,
+                Lacunarity = fractal.Lacunarity,
                 VesselMaskPath = fractal.VesselMaskPath,
                 FractalNote = fractal.FractalNote,
                 InferenceMs = totalMs > 0 ? totalMs : null
