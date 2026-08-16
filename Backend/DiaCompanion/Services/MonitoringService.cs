@@ -41,7 +41,7 @@ public class MonitoringService : BaseService, IMonitoringService
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
         [FromQuery] string? cursor, [FromQuery] int size = 50)
     {
-        var pid = ResolvePatientId(patientId);
+        var pid = ResolvePatientId(_me, patientId);
         size = size is < 1 or > 200 ? 50 : size;
 
         var decoded = Cursor.Decode(cursor);
@@ -113,7 +113,7 @@ public class MonitoringService : BaseService, IMonitoringService
     /// <summary>UC-41 — ghi glucose, HbA1c hoặc một cặp huyết áp.</summary>
     public async Task<ActionResult<HealthMetricDto>> CreateMetric(CreateMetricRequest req)
     {
-        var pid = ResolvePatientId(null);
+        var pid = RequireMyPatientId(_me);
         var recordedUtc = req.RecordedAtUtc ?? _clock.UtcNow;
         var diabetesType = await GetPatientDiabetesTypeAsync(pid);
         if (recordedUtc > _clock.UtcNow)
@@ -295,8 +295,11 @@ public class MonitoringService : BaseService, IMonitoringService
     {
 
         var m = await _repository.GetHealthMetricForUpdateAsync(id)
-            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
-        EnsureCanAccessPatient(_me, m.PatientId);
+            ?? throw AppException.NotFound(
+                Msg.LoadFailed,
+                "Không tìm thấy bản ghi.");
+
+        EnsureOwnPatient(_me, m.PatientId);
         var diabetesType = await GetPatientDiabetesTypeAsync(m.PatientId);
         if (m.VisitId is not null)
             throw AppException.Forbidden(Msg.Forbidden,
@@ -492,7 +495,7 @@ public class MonitoringService : BaseService, IMonitoringService
     {
         var m = await _repository.GetHealthMetricForUpdateAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy bản ghi.");
-        EnsureCanAccessPatient(_me, m.PatientId);
+        EnsureOwnPatient(_me, m.PatientId);
         if (m.VisitId is not null)
             throw AppException.Forbidden(Msg.Forbidden,
                 "Chỉ số này thuộc hồ sơ lượt khám nên bệnh nhân không được xóa.");
@@ -536,7 +539,7 @@ public class MonitoringService : BaseService, IMonitoringService
     /// <summary>UC-43 — tóm tắt để vẽ biểu đồ xu hướng.</summary>
     public async Task<ActionResult<MetricSummaryDto>> Summary(int patientId, [FromQuery] int days = 30)
     {
-        EnsureCanAccessPatient(_me, patientId);
+        EnsureCanReadPatient(_me, patientId);
 
         if (days is < 1 or > 365)
             throw AppException.BadRequest(Msg.RequiredFields, "Khoảng thời gian xem biểu đồ phải từ 1 đến 365 ngày.");
@@ -675,7 +678,7 @@ public class MonitoringService : BaseService, IMonitoringService
     public async Task<ActionResult<List<LifestyleLogDto>>> Lifestyle(
         [FromQuery] int? patientId, [FromQuery] int days = 14)
     {
-        var pid = ResolvePatientId(patientId);
+        var pid = ResolvePatientId(_me, patientId);
         var from = _clock.LocalToday.AddDays(-days);
 
         var rows = await _repository.GetLifestyleLogsAsync(pid, from);
@@ -785,7 +788,7 @@ public class MonitoringService : BaseService, IMonitoringService
     /// <summary>UC-44 — lịch uống thuốc hôm nay.</summary>
     public async Task<ActionResult<List<MedicationLogDto>>> Today([FromQuery] int? patientId)
     {
-        var pid = ResolvePatientId(patientId);
+        var pid = ResolvePatientId(_me, patientId);
         var today = _clock.LocalToday;
 
         var rows = await _repository.GetMedicationLogsForDateAsync(pid, today);
@@ -891,12 +894,7 @@ public class MonitoringService : BaseService, IMonitoringService
         RowVersion = metric.ToRowVersion()
     };
 
-    private int ResolvePatientId(int? requested)
-    {
-        if (IsPatientOnly(_me)) return RequireMyPatientId(_me);
-        var pid = requested ?? throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId.");
-        return pid;
-    }
+
     private async Task<byte> GetPatientDiabetesTypeAsync(int patientId)
     {
         var patient = await _repository.GetPatientByIdAsync(patientId, tracking: false)

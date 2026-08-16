@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-const DEFAULT_API = "https://localhost:55403";
+const DEFAULT_API = "https://diacompanion.io.vn";
 
 export const API_BASE: string = (
    DEFAULT_API
