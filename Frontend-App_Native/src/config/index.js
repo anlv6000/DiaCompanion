@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 
 const fromConfig = Constants.expoConfig?.extra?.apiBase;
 
-const DEFAULT_API = "https://localhost:55403";
+const DEFAULT_API = "https://diacompanion.io.vn";
 
 export const API_BASE = (fromConfig || DEFAULT_API).replace(/\/$/, "");
 

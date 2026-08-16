@@ -204,7 +204,6 @@ public sealed partial class EfRepository
         // DANH SÁCH PATIENT
         // ============================================================
         var query = _db.Patients
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(p => p.User)
             .AsQueryable();
