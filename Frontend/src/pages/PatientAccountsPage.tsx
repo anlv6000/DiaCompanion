@@ -2,17 +2,18 @@ import { useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAsync, useDebounce } from "@/lib/hooks";
 import {
-  PageHeader,
-  Panel,
-  Field,
   Button,
-  DataTable,
-  LoadState,
-  Pagination,
-  StatusBadge,
-  Modal,
   ConfirmDialog,
+  DataTable,
+  Field,
   Icon,
+  LoadState,
+  Modal,
+  PageHeader,
+  Pagination,
+  Panel,
+  StatusBadge,
+  useSort,
 } from "@/components/ui";
 import { genders, label } from "@/lib/enums";
 import { useToast } from "@/contexts/ToastContext";
@@ -38,6 +39,10 @@ export function PatientAccountsPage() {
   // DANH SÁCH BỆNH NHÂN
   // ============================================================
 
+  // Khoá sắp xếp khớp EfRepository.Patients (nhánh danh sách tài khoản):
+  // "code" | "created"; mặc định là FullName.
+  const { sort, desc, onSort } = useSort();
+
   const list = useAsync(
     () =>
       data.patients.adminList({
@@ -56,7 +61,8 @@ export function PatientAccountsPage() {
 
         page,
         pageSize: 25,
-        sort: "name",
+        sort,
+        desc,
       }),
     [dq, active, page],
   );
@@ -161,8 +167,11 @@ export function PatientAccountsPage() {
           onRetry={list.reload}
         >
           <DataTable
+            sort={sort}
+            desc={desc}
+            onSort={onSort}
             headers={[
-              "Mã BN",
+              { label: "Mã BN", sortKey: "code" },
               "Họ tên",
               "Giới tính",
               "Số điện thoại",

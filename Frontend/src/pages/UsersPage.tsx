@@ -2,17 +2,18 @@ import { useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAsync, useDebounce } from "@/lib/hooks";
 import {
-  PageHeader,
-  Panel,
-  Field,
   Button,
-  DataTable,
-  LoadState,
-  Pagination,
-  StatusBadge,
-  Modal,
   ConfirmDialog,
+  DataTable,
+  Field,
   Icon,
+  LoadState,
+  Modal,
+  PageHeader,
+  Pagination,
+  Panel,
+  StatusBadge,
+  useSort,
 } from "@/components/ui";
 import { roles } from "@/lib/enums";
 import { getRoles, rolesLabel } from "@/lib/roles";
@@ -32,6 +33,9 @@ export function UsersPage() {
   const [confirm, setConfirm] = useState<StaffUserDto | null>(null);
   const [cred, setCred] = useState<TempCredentialResponse | null>(null);
 
+  // Khoá sắp xếp khớp EfRepository.Users: "name" | "created".
+  const { sort, desc, onSort } = useSort("name");
+
   const list = useAsync(
     () =>
       data.users.list({
@@ -40,7 +44,8 @@ export function UsersPage() {
         isActive: active,
         page,
         pageSize: 25,
-        sort: "name",
+        sort,
+        desc,
       }),
     [dq, role, active, page],
   );
@@ -122,8 +127,11 @@ export function UsersPage() {
           onRetry={list.reload}
         >
           <DataTable
+            sort={sort}
+            desc={desc}
+            onSort={onSort}
             headers={[
-              "Họ tên",
+              { label: "Họ tên", sortKey: "name" },
               "Email",
               "Vai trò",
               "Chứng chỉ",
