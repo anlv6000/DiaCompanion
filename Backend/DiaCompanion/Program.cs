@@ -13,6 +13,12 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+Console.WriteLine("=== ENVIRONMENT ===");
+Console.WriteLine(builder.Environment.EnvironmentName);
+
+Console.WriteLine("=== STORAGE CONFIG ===");
+Console.WriteLine("FundusRoot = " + builder.Configuration["Storage:FundusRoot"]);
+Console.WriteLine("AiMasksRoot = " + builder.Configuration["Storage:AiMasksRoot"]);
 var connectionString =
     builder.Configuration.GetConnectionString("Default");
 
