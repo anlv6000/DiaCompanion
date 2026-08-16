@@ -45,7 +45,28 @@ public class AiDiagnosis : IVoidable, IHasRowVersion
     public decimal? DisagreementThreshold { get; set; }
 
     // ---- Fractal model ----
+    // ---- Gap 3: Sectorial Fractal Analysis ----
+    // FD_total tính trên toàn mask mạch máu, giữ để đối chiếu với y văn.
     public decimal? FractalDimension { get; set; }
+
+    // FD từng góc phần tư, đã chuẩn hoá theo mắt (ảnh OS được lật ngang trước
+    // khi chia) và đã loại vùng đĩa thị.
+    // KHÔNG so sánh trực tiếp với FractalDimension: dải hộp và diện tích khác
+    // nhau nên hai nhóm giá trị nằm trên hai thang khác nhau.
+    public decimal? FractalSt { get; set; }   // superotemporal
+    public decimal? FractalSn { get; set; }   // superonasal
+    public decimal? FractalIt { get; set; }   // inferotemporal
+    public decimal? FractalIn { get; set; }   // inferonasal
+
+    // Độ lệch chuẩn của bốn giá trị trên — chỉ dấu chính của hướng nghiên cứu.
+    // Là tỉ số nội ảnh nên ổn định hơn FD tuyệt đối khi so theo thời gian.
+    public decimal? FractalAsymmetry { get; set; }
+
+    // Chênh lệch temporal trừ nasal, có dấu. Dương = phía thái dương phức tạp hơn.
+    public decimal? FractalTn { get; set; }
+
+    public decimal? Lacunarity { get; set; }
+
     [MaxLength(400)] public string? VesselMaskPath { get; set; }
     [MaxLength(300)] public string? FractalNote { get; set; }
 

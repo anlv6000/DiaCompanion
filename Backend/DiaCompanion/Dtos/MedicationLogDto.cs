@@ -1,3 +1,6 @@
+using DiaCompanion.Api.Common;
+
+
 namespace DiaCompanion.Api.Dtos;
 
 public class MedicationLogDto

@@ -1,4 +1,7 @@
-namespace DiaCompanion.Api.Dtos;
+
+using DiaCompanion.Api.Common;
+
+namespace DiaCompanion.Api.Dtos;    
 
 public class AiDiagnosisDto
 {
@@ -34,6 +37,13 @@ public class AiDiagnosisDto
     public string? DeferReasonLabel { get; set; }
 
     public decimal? FractalDimension { get; set; }
+    public decimal? FractalSt { get; set; }
+    public decimal? FractalSn { get; set; }
+    public decimal? FractalIt { get; set; }
+    public decimal? FractalIn { get; set; }
+    public decimal? FractalAsymmetry { get; set; }
+    public decimal? FractalTn { get; set; }
+    public decimal? Lacunarity { get; set; }
     public string? FractalNote { get; set; }
     public bool HasLesionMask { get; set; }
     public bool HasFractalImage { get; set; }
@@ -42,4 +52,5 @@ public class AiDiagnosisDto
     public bool IsConfirmed { get; set; }
     public ReviewDto? Review { get; set; }
     public string? RowVersion { get; set; }
+
 }

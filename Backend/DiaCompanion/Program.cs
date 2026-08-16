@@ -13,6 +13,12 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+Console.WriteLine("=== ENVIRONMENT ===");
+Console.WriteLine(builder.Environment.EnvironmentName);
+
+Console.WriteLine("=== STORAGE CONFIG ===");
+Console.WriteLine("FundusRoot = " + builder.Configuration["Storage:FundusRoot"]);
+Console.WriteLine("AiMasksRoot = " + builder.Configuration["Storage:AiMasksRoot"]);
 var connectionString =
     builder.Configuration.GetConnectionString("Default");
 
@@ -141,7 +147,7 @@ builder.Services.AddRateLimiter(options =>
             ipAddress,
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 1,
                 Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 6,
                 QueueLimit = 0,

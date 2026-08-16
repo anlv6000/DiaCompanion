@@ -1,32 +1,61 @@
 using System.ComponentModel.DataAnnotations;
 using DiaCompanion.Api.Common;
+using DiaCompanion.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
 public class CreatePatientRequest
 {
-    [Required, MaxLength(200, ErrorMessage = "Họ và tên không được vượt quá 200 ký tự.")]
-    public string FullName { get; set; } = "";
+    private string _fullName = "";
+    private string _phone = "";
+    private string? _address;
+    private string? _note;
 
-    [Range(0, 2, ErrorMessage = "giới tính chỉ được chọn là nam hoặc nữ.")]
+    [Required]
+    [MaxLength(70, ErrorMessage = "Họ và tên không được vượt quá 70 ký tự.")]
+    public string FullName
+    {
+        get => _fullName;
+        set => _fullName = InputText.TrimRequired(value);
+    }
+
+    [Range(0, 2, ErrorMessage = "Giới tính không hợp lệ.")]
     public byte Gender { get; set; }
-    [Required] public DateOnly DateOfBirth { get; set; }
-    /// <summary>LI-6: bắt buộc và duy nhất — đây là định danh đăng nhập của bệnh nhân.</summary>
-    [Required, MaxLength(20)] public string Phone { get; set; } = "";
-    [MaxLength(300)] public string? Address { get; set; }
+
+    [Required]
+    public DateOnly DateOfBirth { get; set; }
+
+    [Required(ErrorMessage = "Vui lòng nhập số điện thoại.")]
+    [RegularExpression(
+     @"^\d{10,11}$",
+     ErrorMessage = "Số điện thoại phải gồm 10 đến 11 chữ số.")]
+    public string Phone
+    {
+        get => _phone;
+        set => _phone = InputText.TrimRequired(value);
+    }
+
+    [MaxLength(300)]
+    public string? Address
+    {
+        get => _address;
+        set => _address = InputText.TrimOptional(value);
+    }
+
     public byte DiabetesType { get; set; } = 2;
+
     public short? DiabetesDurationYears { get; set; }
+
     public decimal? BaselineHbA1c { get; set; }
-    [MaxLength(1000)] public string? Note { get; set; }
-    /// <summary>Mặc định true: tài khoản được cấp ngay lúc tạo hồ sơ.</summary>
+
+    [MaxLength(1000)]
+    public string? Note
+    {
+        get => _note;
+        set => _note = InputText.TrimOptional(value);
+    }
+
     public bool CreateAccount { get; set; } = true;
 
-
-    // NULL:
-    //   nếu CreateAccount=true -> tạo User Patient mới.
-    //
-    // Có giá trị:
-    //   chỉ dùng để liên kết một User staff đang tồn tại
-    //   (Doctor/Receptionist) và kích hoạt thêm role Patient.
     public int? ExistingUserId { get; set; }
 }

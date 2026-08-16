@@ -3,6 +3,8 @@ using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
+
+
 public class BlogPostDto
 {
     public int Id { get; set; }

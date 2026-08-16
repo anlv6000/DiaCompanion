@@ -22,6 +22,7 @@ import base64
 import importlib.util
 import sys
 import threading
+import inspect
 import uuid
 from functools import lru_cache
 
@@ -197,13 +198,27 @@ def run_lesion(image_path: str) -> dict:
 # ============================================================================
 #  MODEL 3 — Fractal / vessel
 # ============================================================================
-def run_fractal(image_path: str) -> dict:
-    """Trả: fractal_dimension, fractal_note, vessel_mask_path."""
+def run_fractal(image_path: str, eye: str | None = None) -> dict:
+    """Trả các chỉ số fractal theo vùng dưới dạng số.
+
+    eye: "OD" (mắt phải) | "OS" (mắt trái) | None.
+         None thì chỉ có FD_total; các chỉ số theo vùng trả None vì trục
+         nasal-temporal đảo chiều giữa hai mắt, gán nhầm còn tệ hơn bỏ trống.
+    """
     predict = _load_predict(3)
     real_path = resolve_image(image_path)
     output_dir = os.path.join(MASK_OUTPUT_ROOT, "fractal", uuid.uuid4().hex)
-    raw = predict(real_path, output_dir)
-    # raw: {FD_total, FD_thick, FD_thin, delta_FD, vesselMaskPath, skeletonImagePath}
+
+    # predict.py mới nhận thêm tham số eye. Dùng inspect để vẫn chạy được với
+    # bản predict.py cũ (2 tham số) trong lúc chuyển đổi.
+    try:
+        sig = inspect.signature(predict)
+        if len(sig.parameters) >= 3:
+            raw = predict(real_path, output_dir, eye)
+        else:
+            raw = predict(real_path, output_dir)
+    except (TypeError, ValueError):
+        raw = predict(real_path, output_dir)
 
     vessel_path = raw.get("vesselMaskPath")
     vessel_rel = (
@@ -212,24 +227,39 @@ def run_fractal(image_path: str) -> dict:
     )
 
     fd_total = raw.get("FD_total")
-    fd_thick = raw.get("FD_thick")
-    fd_thin = raw.get("FD_thin")
-    delta = raw.get("delta_FD")
+    fd_st = raw.get("FD_ST")
+    fd_sn = raw.get("FD_SN")
+    fd_it = raw.get("FD_IT")
+    fd_in = raw.get("FD_IN")
+    fd_asym = raw.get("FD_asym")
+    fd_tn = raw.get("FD_TN")
+    lac = raw.get("lacunarity")
 
-    # Ghi chú gọn để bác sĩ tham khảo (backend lưu vào FractalNote).
+    # Chú thích ngắn cho bác sĩ đọc. KHÔNG phải nơi lưu dữ liệu — mọi chỉ số
+    # đều đã có trường số riêng ở dưới.
     note = None
     if fd_total is not None:
         parts = [f"FD tổng={fd_total}"]
-        if fd_thick is not None:
-            parts.append(f"mạch lớn={fd_thick}")
-        if fd_thin is not None:
-            parts.append(f"mạch nhỏ={fd_thin}")
-        if delta is not None:
-            parts.append(f"chênh lệch={delta}")
-        note = "; ".join(parts)
+        if fd_asym is not None:
+            parts.append(f"bất đối xứng giữa vùng={fd_asym}")
+        if fd_tn is not None:
+            huong = "thái dương" if fd_tn > 0 else "mũi"
+            parts.append(f"lệch về phía {huong}={abs(fd_tn)}")
+        if all(v is not None for v in (fd_st, fd_sn, fd_it, fd_in)):
+            parts.append(f"ST={fd_st}, SN={fd_sn}, IT={fd_it}, IN={fd_in}")
+        note = "; ".join(parts)[:300]  # khớp MaxLength(300) của cột FractalNote
 
     return {
         "fractal_dimension": fd_total,
+        "fractal_st": fd_st,
+        "fractal_sn": fd_sn,
+        "fractal_it": fd_it,
+        "fractal_in": fd_in,
+        "fractal_asymmetry": fd_asym,
+        "fractal_tn": fd_tn,
+        "lacunarity": lac,
         "fractal_note": note,
         "vessel_mask_path": vessel_rel,
     }
+
+

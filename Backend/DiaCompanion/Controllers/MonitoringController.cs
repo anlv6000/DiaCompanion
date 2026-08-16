@@ -34,9 +34,12 @@ public class MonitoringController : BaseApiController
     public async Task<IActionResult> UpdateMetric(int id, CreateMetricRequest req) =>
         await _service.UpdateMetric(id, req);
 
+    // [FromQuery] chứ KHÔNG phải body: DELETE mang body bị nhiều tầng mạng bỏ
+    // qua (RN networking, proxy ngược, IIS), khiến req rỗng và trả về lỗi
+    // "Thiếu RowVersion" dù client đã gửi đúng.
     [HttpDelete("metrics/{id:int}")]
     [Authorize(Roles = Roles.Patient)]
-    public async Task<IActionResult> DeleteMetric(int id, ConcurrencyRequest req) =>
+    public async Task<IActionResult> DeleteMetric(int id, [FromQuery] ConcurrencyRequest req) =>
         await _service.DeleteMetric(id, req);
 
     [HttpGet("metrics/summary/{patientId:int}")]
@@ -59,9 +62,10 @@ public class MonitoringController : BaseApiController
     public async Task<ActionResult<LifestyleLogDto>> UpdateLifestyle(int id, CreateLifestyleRequest req) =>
         await _service.UpdateLifestyle(id, req);
 
+    // [FromQuery] — xem ghi chú ở DeleteMetric.
     [HttpDelete("lifestyle/{id:int}")]
     [Authorize(Roles = Roles.Patient)]
-    public async Task<IActionResult> DeleteLifestyle(int id, ConcurrencyRequest req) =>
+    public async Task<IActionResult> DeleteLifestyle(int id, [FromQuery] ConcurrencyRequest req) =>
         await _service.DeleteLifestyle(id, req);
 
     [HttpGet("medications/today")]

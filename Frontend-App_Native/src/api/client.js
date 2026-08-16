@@ -102,5 +102,17 @@ export const http = {
   get: (p) => request(p),
   post: (p, body) => request(p, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
   put: (p, body) => request(p, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
-  del: (p, body) => request(p, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) }),
+  /**
+   * DELETE KHÔNG mang body.
+   *
+   * RFC 9110 cho phép DELETE có body nhưng nói rõ ngữ nghĩa của nó là KHÔNG
+   * XÁC ĐỊNH, nên nhiều tầng mạng bỏ qua phần thân: lớp networking của React
+   * Native, proxy ngược, và một số cấu hình IIS/nginx. Khi body bị bỏ, backend
+   * nhận req rỗng và trả lỗi "Thiếu RowVersion" — đúng triệu chứng nút xoá
+   * nhật ký và xoá chỉ số không hoạt động.
+   *
+   * Tham số đồng thời giờ đi qua query string, nơi mọi tầng mạng đều giữ
+   * nguyên. Backend nhận bằng [FromQuery].
+   */
+  del: (p) => request(p, { method: "DELETE" }),
 };

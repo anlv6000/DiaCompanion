@@ -57,7 +57,7 @@ public class ImagesService : BaseService, IImagesService
         var visit = await _repository.GetVisitForPatientAsync(req.VisitId, req.PatientId);
 
         if (visit is null)
-            throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng chọn lượt khám của bệnh nhân.");
+            throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng tải lại lượt khám!");
 
         if (file is null || file.Length == 0)
             throw AppException.BadRequest(Msg.RequiredFields, "Vui lòng chọn tệp ảnh.");

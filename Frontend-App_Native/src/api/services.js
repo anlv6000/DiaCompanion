@@ -42,8 +42,12 @@ export const metricsApi = {
   list: (params) => http.get("/api/monitoring/metrics" + query(params)),
   create: (body) => http.post("/api/monitoring/metrics", body),
   update: (id, body) => http.put(`/api/monitoring/metrics/${id}`, body),
+  // rowVersion đi qua query string, không qua body — xem ghi chú ở http.del.
+  // pairRowVersion dùng cho huyết áp: một lần đo là hai dòng (tâm thu, tâm trương).
   remove: (id, rowVersion, pairRowVersion) =>
-    http.del(`/api/monitoring/metrics/${id}`, { rowVersion, pairRowVersion }),
+    http.del(
+      `/api/monitoring/metrics/${id}` + query({ rowVersion, pairRowVersion }),
+    ),
   summary: (patientId, days) =>
     http.get(`/api/monitoring/metrics/summary/${patientId}` + query({ days })),
 };
@@ -54,7 +58,7 @@ export const lifestyleApi = {
   create: (body) => http.post("/api/monitoring/lifestyle", body),
   update: (id, body) => http.put(`/api/monitoring/lifestyle/${id}`, body),
   remove: (id, rowVersion) =>
-    http.del(`/api/monitoring/lifestyle/${id}`, { rowVersion }),
+    http.del(`/api/monitoring/lifestyle/${id}` + query({ rowVersion })),
 };
 
 // Thuốc hôm nay.

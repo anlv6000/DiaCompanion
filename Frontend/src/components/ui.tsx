@@ -476,21 +476,107 @@ export function Tabs({
     </div>
   );
 }
+/**
+ * Trạng thái sắp xếp dùng chung cho các bảng có cột bấm được.
+ *
+ * Bấm lần đầu vào một cột: sắp tăng dần theo cột đó.
+ * Bấm lại chính cột đó: đảo sang giảm dần.
+ * Bấm sang cột khác: về lại tăng dần theo cột mới.
+ *
+ * Không có trạng thái "bỏ sắp xếp": backend luôn có thứ tự mặc định, nên để
+ * người dùng rơi vào trạng thái không xác định sẽ gây bối rối hơn là giúp ích.
+ */
+export function useSort(initialKey = "", initialDesc = false) {
+  const [sort, setSort] = useState(initialKey);
+  const [desc, setDesc] = useState(initialDesc);
+
+  const onSort = (key: string) => {
+    if (key === sort) {
+      setDesc((d) => !d);
+    } else {
+      setSort(key);
+      setDesc(false);
+    }
+  };
+
+  return { sort, desc, onSort };
+}
+
+export type SortableHeader = {
+  label: string;
+  /** Khoá gửi lên backend. Phải khớp nhánh switch trong repository tương ứng. */
+  sortKey: string;
+};
+
+/**
+ * Bảng dữ liệu.
+ *
+ * headers nhận hai dạng, trộn lẫn được trong cùng một bảng:
+ *   - chuỗi                        -> cột thường, không bấm được
+ *   - { label, sortKey }           -> cột sắp xếp được
+ *
+ * Cột sắp xếp được chỉ hoạt động khi trang truyền vào onSort. Nhờ vậy 15 bảng
+ * hiện có không phải sửa dòng nào — chúng vẫn truyền mảng chuỗi như cũ.
+ */
 export function DataTable({
   headers,
   children,
+  sort,
+  desc,
+  onSort,
 }: {
-  headers: any[];
+  headers: (string | SortableHeader)[];
   children?: any;
+  sort?: string;
+  desc?: boolean;
+  onSort?: (key: string) => void;
 }) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            {headers.map((h, i) => (
-              <th key={i}>{h}</th>
-            ))}
+            {headers.map((h, i) => {
+              const sortable =
+                typeof h === "object" && h !== null && !!h.sortKey && !!onSort;
+
+              if (!sortable) {
+                return <th key={i}>{typeof h === "object" ? h.label : h}</th>;
+              }
+
+              const col = h as SortableHeader;
+              const active = sort === col.sortKey;
+              return (
+                <th
+                  key={i}
+                  className={`sortable ${active ? "sorted" : ""}`}
+                  onClick={() => onSort!(col.sortKey)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e: any) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSort!(col.sortKey);
+                    }
+                  }}
+                  aria-sort={
+                    active ? (desc ? "descending" : "ascending") : "none"
+                  }
+                  title={
+                    active
+                      ? desc
+                        ? "Đang sắp giảm dần — bấm để sắp tăng dần"
+                        : "Đang sắp tăng dần — bấm để sắp giảm dần"
+                      : "Bấm để sắp xếp theo cột này"
+                  }
+                >
+                  {col.label}
+                  <span className="sort-arrow" aria-hidden="true">
+                    {active ? (desc ? "\u25BC" : "\u25B2") : "\u21C5"}
+                  </span>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>{children}</tbody>

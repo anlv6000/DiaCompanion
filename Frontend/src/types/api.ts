@@ -265,6 +265,13 @@ export interface AiDiagnosisDto {
   deferReason?: number | null;
   deferReasonLabel?: string | null;
   fractalDimension?: number | null;
+  fractalSt?: number | null;
+  fractalSn?: number | null;
+  fractalIt?: number | null;
+  fractalIn?: number | null;
+  fractalAsymmetry?: number | null;
+  fractalTn?: number | null;
+  lacunarity?: number | null;
   fractalNote?: string | null;
   hasLesionMask: boolean;
   hasFractalImage: boolean;

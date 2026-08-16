@@ -3,18 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
 import { useAsync, useDebounce } from "@/lib/hooks";
 import {
-  PageHeader,
-  Panel,
-  Field,
+  ActionLink,
   Button,
   DataTable,
-  LoadState,
-  Pagination,
+  Field,
   GradeBadge,
-  StatusBadge,
-  ActionLink,
-  Modal,
   Icon,
+  LoadState,
+  Modal,
+  PageHeader,
+  Pagination,
+  Panel,
+  StatusBadge,
+  useSort,
 } from "@/components/ui";
 import { genders, diabetesTypes, grades, label } from "@/lib/enums";
 import { clinicToday, fmtDate } from "@/lib/format";
@@ -38,6 +39,9 @@ export function PatientsPage() {
   const [type, setType] = useState("");
   const [grade, setGrade] = useState("");
   const [page, setPage] = useState(1);
+  // Khoá sắp xếp phải khớp nhánh switch trong EfRepository.Patients:
+  // "name" | "code"; mặc định (chuỗi rỗng) là CreatedAt giảm dần.
+  const { sort, desc, onSort } = useSort();
 
   const list = useAsync(
     () =>
@@ -47,10 +51,17 @@ export function PatientsPage() {
         grade: isReceptionist ? undefined : grade,
         page,
         pageSize: 25,
-        sort: "name",
+        sort,
+        desc,
       }),
-    [dq, type, grade, page, isReceptionist],
+    [dq, type, grade, page, isReceptionist, sort, desc],
   );
+
+  // Đổi cách sắp xếp thì phải về trang 1: thứ tự mới làm bản ghi ở trang đang
+  // đứng không còn liên quan gì tới vị trí cũ.
+  useEffect(() => {
+    setPage(1);
+  }, [sort, desc]);
 
   // Nếu sau khi lọc/xóa dữ liệu mà trang hiện tại vượt quá tổng số trang,
   // tự đưa UI về trang hợp lệ cuối cùng.
@@ -150,11 +161,14 @@ export function PatientsPage() {
           onRetry={list.reload}
         >
           <DataTable
+            sort={sort}
+            desc={desc}
+            onSort={onSort}
             headers={
               isReceptionist
                 ? [
-                    "Mã",
-                    "Họ tên",
+                    { label: "Mã", sortKey: "code" },
+                    { label: "Họ tên", sortKey: "name" },
                     "Tuổi",
                     "Giới tính",
                     "Số điện thoại",
@@ -162,8 +176,8 @@ export function PatientsPage() {
                     "Hồ sơ",
                   ]
                 : [
-                    "Mã",
-                    "Họ tên",
+                    { label: "Mã", sortKey: "code" },
+                    { label: "Họ tên", sortKey: "name" },
                     "Tuổi",
                     "Giới tính",
                     "Số điện thoại",

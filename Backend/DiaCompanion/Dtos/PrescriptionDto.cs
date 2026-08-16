@@ -1,3 +1,7 @@
+using DiaCompanion.Api.Common;
+
+
+
 namespace DiaCompanion.Api.Dtos;
 
 /* ========================= PRESCRIPTION (UC-36..40) ===================== */

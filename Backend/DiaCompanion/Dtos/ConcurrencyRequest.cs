@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
