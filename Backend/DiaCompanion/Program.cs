@@ -141,7 +141,7 @@ builder.Services.AddRateLimiter(options =>
             ipAddress,
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 1,
                 Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 6,
                 QueueLimit = 0,

@@ -1,3 +1,6 @@
+using DiaCompanion.Api.Common;
+
+
 namespace DiaCompanion.Api.Dtos;
 
 /// <summary>Thông tin hồ sơ cá nhân của Doctor/Receptionist đang đăng nhập.</summary>

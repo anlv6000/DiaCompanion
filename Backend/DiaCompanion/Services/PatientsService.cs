@@ -762,9 +762,16 @@ public class PatientsService : BaseService, IPatientsService
 
     private static string NormalizePhone(string value)
     {
-        var phone = value.Trim().Replace(" ", "").Replace("-", "");
-        if (phone.Length < 9 || phone.Length > 20 || phone.Any(c => !char.IsDigit(c) && c != '+'))
-            throw AppException.BadRequest(Msg.RequiredFields, "Số điện thoại không đúng định dạng.");
+        var phone = value.Trim();
+
+        if (phone.Length < 10 ||
+            phone.Length > 11 ||
+            phone.Any(c => !char.IsDigit(c)))
+        {
+            throw AppException.BadRequest(
+                Msg.RequiredFields,
+                "Số điện thoại phải gồm 10 đến 11 chữ số.");
+        }
         return phone;
     }
 

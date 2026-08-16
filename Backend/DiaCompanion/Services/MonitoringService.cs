@@ -814,7 +814,6 @@ public class MonitoringService : BaseService, IMonitoringService
 
         if (log.Status == MedicationStatus.Cancelled)
             throw AppException.BadRequest(Msg.ApptImmutable, "Liều thuốc này đã bị hủy theo đơn đã thu hồi.");
-
         _repository.ApplyOriginalRowVersion(log, req.RowVersion);
         var oldStatus = log.Status;
         log.Status = req.Status;
@@ -826,7 +825,6 @@ public class MonitoringService : BaseService, IMonitoringService
             new { status = oldStatus.ToString() },
             new { status = log.Status.ToString(), log.TakenAt });
         await _repository.CommitAsync();
-
         return Ok(MapMedication(log));
     }
 

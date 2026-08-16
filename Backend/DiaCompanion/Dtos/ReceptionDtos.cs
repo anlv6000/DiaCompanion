@@ -3,6 +3,7 @@
 //  (hoặc để riêng file này trong thư mục Dtos, cùng namespace)
 // ============================================================================
 using System.ComponentModel.DataAnnotations;
+using DiaCompanion.Api.Common;
 
 namespace DiaCompanion.Api.Dtos;
 

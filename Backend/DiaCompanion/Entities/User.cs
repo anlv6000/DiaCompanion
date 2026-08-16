@@ -17,7 +17,7 @@ public class User : IHasRowVersion
 
     [Required, MaxLength(256)] public string PasswordHash { get; set; } = "";
 
-    [MaxLength(200)]
+    [MaxLength(70)]
     public string FullName { get; set; } = "";
 
     /// <summary>BR-10: bắt buộc khi user được gán role Doctor; kiểm ở tầng nghiệp vụ vì Users không còn cột Role.</summary>

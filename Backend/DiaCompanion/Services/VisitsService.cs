@@ -288,8 +288,7 @@ public class VisitsService : BaseService, IVisitsService
         var referralNote = visit.Referral.HasValue && visit.Referral.Value >= ReferralType.Ophthalmology
             ? " Bạn cũng cần đến Khoa Mắt theo chỉ định của bác sĩ." : "";
         _notify.PushToPatient(patient, NotificationType.Recheck, "Lịch tái tầm soát tiếp theo",
-            $"Bạn cần tái tầm soát võng mạc trước ngày {dueDate:dd/MM/yyyy} " +
-            $"(sau {visit.RecheckMonths} tháng). Vui lòng đến phòng khám trong giờ làm việc.{referralNote}",
+            $"Đã có lịch tái tầm soát võng mạc. Vui lòng đến phòng khám trong giờ làm việc.{referralNote}",
             nameof(Visit), visit.Id);
 
         await _audit.LogAsync(AuditAction.VisitClose, nameof(Visit), visit.Id, null, new
@@ -328,9 +327,9 @@ public class VisitsService : BaseService, IVisitsService
         if (!allowedAsDoctor && !allowedAsReceptionist)
         {
             if (_me.IsInRole(Roles.Receptionist) && visit.Status != VisitStatus.InProgress)
-                throw AppException.Forbidden(Msg.Forbidden, "Lượt khám đã hoàn tất, chỉ bác sĩ phụ trách mới được thu hồi.");
+                throw AppException.Forbidden(Msg.Forbidden, "Lượt khám đã hoàn tất, chỉ sửa hồ sơ bệnh nhân và không thu hồi");
             if (_me.IsInRole(Roles.Receptionist) && await _repository.VisitHasClinicalDataAsync(id))
-                throw AppException.Forbidden(Msg.Forbidden, "Lượt khám đã có dữ liệu lâm sàng, chỉ bác sĩ phụ trách mới được thu hồi.");
+                throw AppException.Forbidden(Msg.Forbidden, "Lượt khám đã có dữ liệu lâm sàng, chỉ sửa hồ sơ bệnh nhân và không thu hồi.");
             throw AppException.Forbidden(Msg.Forbidden, "Bạn không có quyền thu hồi lượt khám này.");
         }
 
