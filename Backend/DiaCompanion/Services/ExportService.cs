@@ -47,6 +47,13 @@ public class ExportService : BaseService, IExportService
         var reviewRows = await _repository.GetVisitDiagnosisReviewsForExportAsync(visitId);
         var findings = reviewRows.Select(r => new
         {
+            DiagnosisId = r.AiDiagnosis!.Id,
+            // Id của bản ghi AI. Frontend cần nó để gọi
+            // /api/diagnoses/{id}/lesion-mask và /fractal-image.
+            // Thiếu trường này thì ReportAiImage không có gì để gọi và luôn
+            // hiện "Chưa có ảnh", dù mask vẫn nằm nguyên trên đĩa — đúng lý do
+            // trang xem kết quả AI hiển thị được còn trang báo cáo thì không.
+            
             Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
             ImageId = r.AiDiagnosis.FundusImageId,
             FinalGrade = (byte)r.FinalGrade,
@@ -115,6 +122,7 @@ public class ExportService : BaseService, IExportService
             },
             findings = findings.Select(f => new
             {
+                f.DiagnosisId,
                 //urlImageLesionAfterMedical = r.AiDiagnosis.LesionMaskPath,
                 //urlImageVesselAfterMedical = r.AiDiagnosis.VesselMaskPath,
                 //urlImgBeforeMEDICAL = r.AiDiagnosis.FundusImage.FilePath
