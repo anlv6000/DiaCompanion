@@ -1,4 +1,8 @@
-﻿namespace DiaCompanion.Dtos
+﻿using DiaCompanion.Api.Common;
+
+
+
+namespace DiaCompanion.Dtos
 {
     public class LinkableUserDto
     {

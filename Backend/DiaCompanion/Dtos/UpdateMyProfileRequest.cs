@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using DiaCompanion.Api.Common;
+using DiaCompanion.Common;
 
 namespace DiaCompanion.Api.Dtos;
 
@@ -8,18 +10,29 @@ namespace DiaCompanion.Api.Dtos;
 /// </summary>
 public class UpdateMyProfileRequest
 {
-    
-    [Required, MaxLength(200, ErrorMessage = "Họ và tên không được vượt quá 200 ký tự.")]
-    public string FullName { get; set; } = "";
 
-    [Range(0, 2, ErrorMessage = "giới tính chỉ được chọn là nam hoặc nữ.")]
+    private string _fullName = "";
+    private string? _address;
+
+    [Required, MaxLength(70, ErrorMessage = "Họ và tên không được vượt quá 70 ký tự.")]
+    public string FullName
+    {
+        get => _fullName;
+        set => _fullName = InputText.TrimRequired(value);
+    }
+
+    [Range(0, 2, ErrorMessage = "Giới tính không hợp lệ.")]
     public byte Gender { get; set; }
 
     [Required]
     public DateOnly DateOfBirth { get; set; }
 
     [MaxLength(300)]
-    public string? Address { get; set; }
+    public string? Address
+    {
+        get => _address;
+        set => _address = InputText.TrimOptional(value);
+    }
 
     [Required]
     public string RowVersion { get; set; } = "";
