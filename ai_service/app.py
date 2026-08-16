@@ -39,6 +39,10 @@ class InferRequest(BaseModel):
     # nghiệm dùng weight đóng gói sẵn trong models/model_N/weights nên bỏ qua,
     # nhưng vẫn khai báo để không lỗi khi backend gửi kèm.
     model_path: str | None = None
+    # Chỉ Module 3 dùng: "OD" (mắt phải) | "OS" (mắt trái).
+    # Trục nasal-temporal đảo chiều giữa hai mắt, nên không có giá trị này thì
+    # các chỉ số fractal theo vùng bị bỏ qua thay vì trả số sai lệch.
+    eye: str | None = None
 
 
 @app.get("/health")
@@ -67,7 +71,11 @@ def infer_lesion(req: InferRequest):
 @app.post("/infer/fractal")
 def infer_fractal(req: InferRequest):
     t0 = time.time()
-    result = mr.run_fractal(req.image_path)
+    result = mr.run_fractal(req.image_path, req.eye)
     result["inference_ms"] = int((time.time() - t0) * 1000)
-    log.info("Fractal %s -> FD=%s", req.image_path, result["fractal_dimension"])
+    log.info(
+        "Fractal %s eye=%s -> FD=%s asym=%s",
+        req.image_path, req.eye,
+        result["fractal_dimension"], result.get("fractal_asymmetry"),
+    )
     return result
