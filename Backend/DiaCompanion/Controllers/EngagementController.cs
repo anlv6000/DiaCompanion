@@ -31,6 +31,13 @@ public class EngagementController : BaseApiController
     public async Task<ActionResult<SymptomReportDto>> ReportSymptom(CreateSymptomRequest req) =>
         await _service.ReportSymptom(req);
 
+    [HttpGet("symptoms/me")]
+    [Authorize(Roles = Roles.Patient)]
+    public async Task<ActionResult<PagedResult<SymptomReportDto>>> MySymptoms(
+    [FromQuery] bool pendingOnly = false,
+    [FromQuery] PageQuery? paging = null) =>
+    await _service.MySymptoms(pendingOnly, paging);
+
     [HttpGet("symptoms")]
     [Authorize(Roles = Roles.DoctorOrPatient)]
     public async Task<ActionResult<PagedResult<SymptomReportDto>>> Symptoms(

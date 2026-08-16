@@ -18,4 +18,7 @@ public interface IEngagementService
     Task<ActionResult<PagedResult<FeedbackDto>>> Feedbacks(
         byte? rating, string? q, DateOnly? from, DateOnly? to, PageQuery page);
     Task<IActionResult> FeedbackSummary();
+    Task<ActionResult<PagedResult<SymptomReportDto>>> MySymptoms(
+    bool pendingOnly = false,
+    PageQuery? page = null);
 }

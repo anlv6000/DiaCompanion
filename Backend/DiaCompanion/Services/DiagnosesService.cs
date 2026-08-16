@@ -197,7 +197,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
         if (diagnosis.FundusImage is null)
             throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt liên quan.");
 
-        EnsureCanAccessPatient(_me, diagnosis.FundusImage.PatientId);
+        EnsureCanReadPatient(
+    _me,
+    diagnosis.FundusImage.PatientId);
 
         var path = useLesionMask ? diagnosis.LesionMaskPath : diagnosis.VesselMaskPath;
         if (string.IsNullOrWhiteSpace(path))
@@ -254,7 +256,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)
     {
-        EnsureCanAccessPatient(_me, patientId);
+        EnsureCanReadPatient(_me, patientId);
         var from = _clock.UtcNow.AddMonths(-months);
 
         // Chỉ lấy mức đã được bác sĩ xác nhận — không đưa kết quả AI thô vào

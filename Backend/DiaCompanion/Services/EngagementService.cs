@@ -373,4 +373,31 @@ public class EngagementService : BaseService, IEngagementService
             ? "Bác sĩ đã trả lời"
             : report.ResponsibleDoctorId is null ? "Chưa xác định bác sĩ phụ trách" : "Chờ bác sĩ xem"
     };
+
+    public async Task<ActionResult<PagedResult<SymptomReportDto>>> MySymptoms(
+    bool pendingOnly = false,
+    PageQuery? page = null)
+    {
+        page ??= new PageQuery();
+
+        var patientId = RequireMyPatientId(_me);
+
+        var result = await _repository.GetSymptomPageAsync(
+            patientId,
+            null,
+            pendingOnly,
+            page);
+
+        var items = result.Items
+            .Select(x => MapSymptom(x.Report, x.ReplierName))
+            .ToList();
+
+        return Ok(new PagedResult<SymptomReportDto>
+        {
+            Items = items,
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = result.Total
+        });
+    }
 }

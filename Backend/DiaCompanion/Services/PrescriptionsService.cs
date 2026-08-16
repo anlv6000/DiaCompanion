@@ -41,11 +41,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         bool? voided,
         PageQuery page)
     {
-        var pid = IsPatientOnly(_me) ? RequireMyPatientId(_me) : patientId;
-        if (pid is null)
-            throw AppException.BadRequest(Msg.RequiredFields, "Cần chỉ định patientId.");
-
-        EnsureCanAccessPatient(_me, pid.Value);
+        var pid = ResolvePatientId(_me, patientId);
         DateTime? fromUtc = from is DateOnly fromDate
             ? _clock.ToUtc(fromDate.ToDateTime(TimeOnly.MinValue))
             : null;
@@ -54,7 +50,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
             : null;
 
         var result = await _repository.GetPrescriptionPageAsync(
-            pid.Value, q, fromUtc, toExclusiveUtc, voided, page);
+            pid, q, fromUtc, toExclusiveUtc, voided, page);
         var stats = await _repository.GetPrescriptionMedicationStatsAsync(result.Items.Select(p => p.Id));
         var items = result.Items.Select(p => Map(p, stats.GetValueOrDefault(p.Id))).ToList();
 
@@ -71,7 +67,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
     {
         var prescription = await _repository.GetPrescriptionAsync(id, tracking: false)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy đơn thuốc.");
-        EnsureCanAccessPatient(_me, prescription.PatientId);
+        EnsureCanReadPatient(_me, prescription.PatientId);
         var stats = await _repository.GetPrescriptionMedicationStatsAsync(new[] { prescription.Id });
         return Ok(Map(prescription, stats.GetValueOrDefault(prescription.Id)));
     }
@@ -263,7 +259,7 @@ public class PrescriptionsService : BaseService, IPrescriptionsService
         DateOnly? from = null,
         DateOnly? to = null)
     {
-        EnsureCanAccessPatient(_me, patientId);
+        EnsureCanReadPatient(_me, patientId);
         var summary = await _adherence.GetAsync(patientId, days, prescriptionId, from, to);
         return Ok(new
         {

@@ -37,7 +37,9 @@ public class ExportService : BaseService, IExportService
         var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
-        EnsureCanAccessPatient(_me, visit.MedicalRecord.PatientId);
+        EnsureCanReadPatient(
+    _me,
+    visit.MedicalRecord.PatientId);
 
         // Báo cáo khám chỉ được phát hành sau khi bác sĩ phụ trách đóng lượt khám.
         if (visit.Status != VisitStatus.Completed)
@@ -191,7 +193,9 @@ public class ExportService : BaseService, IExportService
         var visit = await _repository.GetVisitForExportAsync(visitId)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
 
-        EnsureCanAccessPatient(_me, visit.MedicalRecord.PatientId);
+        EnsureCanReadPatient(
+    _me,
+    visit.MedicalRecord.PatientId);
         if (visit.Status != VisitStatus.Completed)
             throw AppException.Forbidden(Msg.Forbidden,
                 "Lượt khám chưa hoàn tất nên chưa thể xuất báo cáo PDF.");

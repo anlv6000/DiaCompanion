@@ -121,8 +121,9 @@ public class ImagesService : BaseService, IImagesService
         var image = await _repository.GetFundusImageAsync(id)
             ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
 
-        // Bệnh nhân chỉ xem được ảnh của chính mình
-        EnsureCanAccessPatient(_me, image.PatientId);
+        // Kiểm tra phạm vi đọc hồ sơ.
+        // User có staff role được sử dụng quyền staff.
+        EnsureCanReadPatient(_me, image.PatientId);
 
         if (!_storage.Exists(image.FilePath))
             throw AppException.NotFound(Msg.LoadFailed, "Tệp ảnh không còn trên hệ thống.");
