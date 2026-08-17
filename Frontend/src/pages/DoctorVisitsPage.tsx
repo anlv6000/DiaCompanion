@@ -861,8 +861,13 @@ function VisitImages({
                   />
                 </td>
                 <td>{label(eyes, img.eye)}</td>
-                <td>{img.qualityStatus === 1 ? "Đạt" : "Chưa đạt"}</td>
                 <td>
+                  {img.qualityStatus === 0
+                    ? "Chưa duyệt"
+                    : img.qualityStatus === 1
+                      ? "Đạt"
+                      : "Chưa đạt"}
+                </td>                <td>
                   {img.latestDiagnosis ? (
                     <span>
                       <GradeBadge grade={img.latestDiagnosis.drGrade} />
@@ -895,7 +900,7 @@ function VisitImages({
                         Thu hồi
                       </Button>
                     )}
-                    
+
                   </div>
                 </td>
               </tr>
@@ -1073,78 +1078,78 @@ function PrescriptionPanel({
           Lượt khám đã đóng. Đơn thuốc của lượt này chỉ được xem.
         </div>
       ) : (
-      <Panel title="Kê đơn thuốc">
-        <p className="muted">
-          Nhập thuốc cho lượt khám này. Mỗi dòng gồm tên thuốc, liều dùng, số lần/ngày và số ngày.
-        </p>
-        <DataTable headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}>
-          {items.map((x, i) => (
-            <tr key={i}>
-              <td>
-                <input value={x.drugName} onChange={(e) => patch(i, "drugName", e.target.value)} />
-              </td>
-              <td>
-                <input value={x.dose} onChange={(e) => patch(i, "dose", e.target.value)} />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  min="1"
-                  max="6"
-                  value={x.timesPerDay}
-                  onChange={(e) => patch(i, "timesPerDay", Number(e.target.value))}
-                />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={x.durationDays}
-                  onChange={(e) => patch(i, "durationDays", Number(e.target.value))}
-                />
-              </td>
-              <td>
-                <input value={x.instruction || ""} onChange={(e) => patch(i, "instruction", e.target.value)} />
-              </td>
-              <td>
-                <Button
-                  kind="danger"
-                  disabled={items.length === 1}
-                  onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))}
-                >
-                  ×
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </DataTable>
-        <Button
-          onClick={() =>
-            setItems((xs) => [
-              ...xs,
-              {
-                drugName: "",
-                dose: "",
-                timesPerDay: 1,
-                durationDays: 30,
-                instruction: "",
-              },
-            ])
-          }
-        >
-          <Icon name="plus" />
-          Thêm thuốc
-        </Button>
-        <Field labelText="Ghi chú">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} />
-        </Field>
-        <div className="modal-actions">
-          <Button kind="primary" busy={busy} onClick={save}>
-            Lưu đơn thuốc
+        <Panel title="Kê đơn thuốc">
+          <p className="muted">
+            Nhập thuốc cho lượt khám này. Mỗi dòng gồm tên thuốc, liều dùng, số lần/ngày và số ngày.
+          </p>
+          <DataTable headers={["Tên thuốc", "Liều", "Lần/ngày", "Số ngày", "Hướng dẫn", ""]}>
+            {items.map((x, i) => (
+              <tr key={i}>
+                <td>
+                  <input value={x.drugName} onChange={(e) => patch(i, "drugName", e.target.value)} />
+                </td>
+                <td>
+                  <input value={x.dose} onChange={(e) => patch(i, "dose", e.target.value)} />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="1"
+                    max="6"
+                    value={x.timesPerDay}
+                    onChange={(e) => patch(i, "timesPerDay", Number(e.target.value))}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={x.durationDays}
+                    onChange={(e) => patch(i, "durationDays", Number(e.target.value))}
+                  />
+                </td>
+                <td>
+                  <input value={x.instruction || ""} onChange={(e) => patch(i, "instruction", e.target.value)} />
+                </td>
+                <td>
+                  <Button
+                    kind="danger"
+                    disabled={items.length === 1}
+                    onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))}
+                  >
+                    ×
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+          <Button
+            onClick={() =>
+              setItems((xs) => [
+                ...xs,
+                {
+                  drugName: "",
+                  dose: "",
+                  timesPerDay: 1,
+                  durationDays: 30,
+                  instruction: "",
+                },
+              ])
+            }
+          >
+            <Icon name="plus" />
+            Thêm thuốc
           </Button>
-        </div>
-      </Panel>
+          <Field labelText="Ghi chú">
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+          <div className="modal-actions">
+            <Button kind="primary" busy={busy} onClick={save}>
+              Lưu đơn thuốc
+            </Button>
+          </div>
+        </Panel>
       )}
 
       <Panel title="Đơn thuốc của lượt khám">
@@ -1159,32 +1164,32 @@ function PrescriptionPanel({
               {prescriptions.data.items
                 .filter((p) => p.visitId === visit.id)
                 .map((p) => (
-                <tr key={p.id}>
-                  <td>{fmtDate(p.issuedAt, true)}</td>
-                  <td>{p.doctorName}</td>
-                  <td className="wrap-text">
-                    {p.items
-                      .map(
-                        (x) =>
-                          `${x.drugName} ${x.dose} · ${x.timesPerDay} lần/ngày · ${x.durationDays} ngày`,
-                      )
-                      .join("; ")}
-                  </td>
-                  <td className="wrap-text">{p.note || "—"}</td>
-                  <td>
-                    <div className="actions">
-                      {!closed && can.prescribe(user) && (
-                        <Button onClick={() => setEditor(p)}>Sửa</Button>
-                      )}
-                      {!closed && can.voidPrescription(user) && (
-                        <Button kind="danger" onClick={() => setVoiding(p)}>
-                          Thu hồi
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                  <tr key={p.id}>
+                    <td>{fmtDate(p.issuedAt, true)}</td>
+                    <td>{p.doctorName}</td>
+                    <td className="wrap-text">
+                      {p.items
+                        .map(
+                          (x) =>
+                            `${x.drugName} ${x.dose} · ${x.timesPerDay} lần/ngày · ${x.durationDays} ngày`,
+                        )
+                        .join("; ")}
+                    </td>
+                    <td className="wrap-text">{p.note || "—"}</td>
+                    <td>
+                      <div className="actions">
+                        {!closed && can.prescribe(user) && (
+                          <Button onClick={() => setEditor(p)}>Sửa</Button>
+                        )}
+                        {!closed && can.voidPrescription(user) && (
+                          <Button kind="danger" onClick={() => setVoiding(p)}>
+                            Thu hồi
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </DataTable>
           )}
         </LoadState>

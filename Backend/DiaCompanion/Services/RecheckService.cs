@@ -143,7 +143,7 @@ public class RecheckService : BaseService, IRecheckService
 
     private async Task<RecheckDto?> BuildAsync(int patientId)
     {
-        EnsureCanAccessPatient(_me, patientId);
+        EnsureCanReadPatient(_me, patientId);
         var candidate = await _repository.GetRecheckCandidateAsync(patientId);
         if (candidate is null) return null;
         var closedAtLocal = _clock.ToLocal(candidate.ClosedAt)!.Value;

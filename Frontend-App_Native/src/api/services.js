@@ -89,7 +89,7 @@ export const progressionApi = {
 // Triệu chứng.
 export const symptomApi = {
   report: (body) => http.post("/api/engagement/symptoms", body),
-  list: (params) => http.get("/api/engagement/symptoms" + query(params)),
+  list: (params) => http.get("/api/engagement/symptoms/me" + query(params)),
 };
 
 // Thông báo.

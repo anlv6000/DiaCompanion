@@ -74,7 +74,6 @@ public class VisitsService : BaseService, IVisitsService
                 "Không thể tạo lượt khám: bác sĩ không được phụ trách lượt khám của chính mình.");
         }
 
-
         if (await _repository.HasOpenVisitAsync(req.PatientId))
             throw AppException.BadRequest(Msg.SlotTaken,
                 "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");

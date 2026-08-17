@@ -91,6 +91,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
             drModel!.FilePath,
             lesionModel!.FilePath,
             fractalModel!.FilePath,
+            // Mắt trái/phải cho Module 3: trục nasal-temporal đảo chiều giữa hai
+            // mắt, nên không truyền giá trị này thì các chỉ số fractal theo vùng
+            // bị bỏ qua (trả null) thay vì gán sai vùng giải phẫu.
             image.Eye == Eye.Od ? "OD" : "OS",
             ct);
 
@@ -143,13 +146,6 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 ConfidenceThreshold = confThreshold,
                 DisagreementThreshold = disagreeThreshold,
                 FractalDimension = result.FractalDimension,
-                FractalSt = result.FractalSt,
-                FractalSn = result.FractalSn,
-                FractalIt = result.FractalIt,
-                FractalIn = result.FractalIn,
-                FractalAsymmetry = result.FractalAsymmetry,
-                FractalTn = result.FractalTn,
-                Lacunarity = result.Lacunarity,
                 VesselMaskPath = result.VesselMaskPath,
                 FractalNote = result.FractalNote,
                 InferenceMs = result.InferenceMs
@@ -165,7 +161,6 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 drModel = drModel!.Name,
                 lesionModel = lesionModel!.Name,
                 fractalModel = fractalModel!.Name,
-                fractalAsymmetry = diagnosis.FractalAsymmetry,
                 grade = diagnosis.DrGrade.ToString(),
                 confidence = diagnosis.Confidence,
                 disagreement = diagnosis.Disagreement,
@@ -202,7 +197,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
         if (diagnosis.FundusImage is null)
             throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh đáy mắt liên quan.");
 
-        EnsureCanAccessPatient(_me, diagnosis.FundusImage.PatientId);
+        EnsureCanReadPatient(
+    _me,
+    diagnosis.FundusImage.PatientId);
 
         var path = useLesionMask ? diagnosis.LesionMaskPath : diagnosis.VesselMaskPath;
         if (string.IsNullOrWhiteSpace(path))
@@ -210,12 +207,24 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 Msg.LoadFailed,
                 useLesionMask ? "Lần chạy AI này chưa tạo ảnh mask tổn thương." : "Lần chạy AI này chưa tạo ảnh fractal.");
 
+        // Đường dẫn trong DB là đường dẫn TƯƠNG ĐỐI do ai_service sinh ra, tính
+        // từ MASK_OUTPUT_ROOT của nó (dạng "lesion/<guid>/annotated.png").
+        //
+        // Trước đây chỗ này ép thêm tiền tố "ai_masks/", giả định ai_service ghi
+        // vào storage/ai_masks. Thực tế MASK_OUTPUT_ROOT trỏ thẳng vào storage,
+        // nên file nằm ở storage/lesion/... — tiền tố ép thêm làm mọi ảnh mask
+        // trả về 404 dù file vẫn còn nguyên trên đĩa.
+        //
+        // Thử đúng đường dẫn đã lưu trước, rồi mới thử biến thể có tiền tố, để
+        // bản ghi cũ sinh ra dưới cấu hình khác vẫn đọc được.
         var normalized = path.Replace('\\', '/').TrimStart('/');
-        var storagePath = normalized.StartsWith("ai_masks/", StringComparison.OrdinalIgnoreCase)
-            ? normalized
-            : $"ai_masks/{normalized}";
 
-        if (!_storage.Exists(storagePath))
+        var candidates = normalized.StartsWith("ai_masks/", StringComparison.OrdinalIgnoreCase)
+            ? new[] { normalized, normalized["ai_masks/".Length..] }
+            : new[] { normalized, $"ai_masks/{normalized}" };
+
+        var storagePath = candidates.FirstOrDefault(_storage.Exists);
+        if (storagePath is null)
             throw AppException.NotFound(Msg.LoadFailed, "Tệp kết quả AI không còn trên hệ thống.");
 
         var stream = _storage.OpenRead(storagePath);
@@ -247,7 +256,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
     public async Task<ActionResult<ProgressionDto>> Progression(int patientId, [FromQuery] int months = 24)
     {
-        EnsureCanAccessPatient(_me, patientId);
+        EnsureCanReadPatient(_me, patientId);
         var from = _clock.UtcNow.AddMonths(-months);
 
         // Chỉ lấy mức đã được bác sĩ xác nhận — không đưa kết quả AI thô vào
@@ -345,13 +354,6 @@ public class DiagnosesService : BaseService, IDiagnosesService
             DeferReason = (byte?)d.DeferReason,
             DeferReasonLabel = DeferLabel((byte?)d.DeferReason),
             FractalDimension = d.FractalDimension,
-            FractalSt = d.FractalSt,
-            FractalSn = d.FractalSn,
-            FractalIt = d.FractalIt,
-            FractalIn = d.FractalIn,
-            FractalAsymmetry = d.FractalAsymmetry,
-            FractalTn = d.FractalTn,
-            Lacunarity = d.Lacunarity,
             FractalNote = d.FractalNote,
             HasLesionMask = !string.IsNullOrWhiteSpace(d.LesionMaskPath),
             HasFractalImage = !string.IsNullOrWhiteSpace(d.VesselMaskPath),

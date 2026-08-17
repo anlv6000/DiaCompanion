@@ -218,7 +218,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddCors(o => o.AddPolicy("app", p => p
 
-    .WithOrigins("http://localhost:5173", "http://localhost:8082","http://localhost:9001", "http://localhost:8081", "http://10.33.69.77:8081", "app://.")
+    .WithOrigins("http://localhost:5173", "http://localhost:8082","http://localhost:9001", "http://localhost:8081", "http://10.33.69.77:8081", "http://diacompanion.io.vn", "https://diacompanion.io.vn")
     .AllowAnyHeader().AllowAnyMethod()));
 
 
