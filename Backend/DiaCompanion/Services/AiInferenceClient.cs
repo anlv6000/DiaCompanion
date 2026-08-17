@@ -5,9 +5,6 @@ namespace DiaCompanion.Api.Services;
 
 /// <summary>
 /// Cầu nối tới dịch vụ suy luận Python. Một lần chạy dùng ba model độc lập:
-///   POST /infer/dr      + đường dẫn DR model
-///   POST /infer/lesion  + đường dẫn Lesion model
-///   POST /infer/fractal + đường dẫn Fractal model
 /// </summary>
 public interface IAiInferenceClient
 {
@@ -97,6 +94,15 @@ public class AiInferenceClient : IAiInferenceClient
         _log = log;
     }
 
+    /// <summary>
+    /// Gọi dịch vụ AI để phân tích một ảnh đáy mắt bằng 3 mô hình:
+    /// 1. DR model      -> phân loại mức độ bệnh võng mạc tiểu đường.
+    /// 2. Lesion model  -> phát hiện/tính toán các tổn thương.
+    /// 3. Fractal model -> phân tích đặc trưng hệ mạch võng mạc.
+    ///
+    /// Ba request được gửi song song để giảm thời gian chờ.
+    /// Sau khi cả 3 hoàn thành, kết quả được gộp thành AiInferenceResponse.
+    /// </summary>
     public async Task<AiInferenceResponse> RunAsync(
         string imageRelativePath,
         string drModelPath,
@@ -107,18 +113,47 @@ public class AiInferenceClient : IAiInferenceClient
     {
         try
         {
+            // ================================================================
+            // 1. Gọi model DR
+            // ================================================================
+            // Gửi đường dẫn ảnh và model DR sang AI Server.
+            //
+            // Ví dụ request:
+            // POST /infer/dr
+            // {
+            //     "image_path": "...",
+            //     "model_path": "..."
+            // }
+            //
+            // Không await ngay để request này có thể chạy song song
+            // với Lesion và Fractal bên dưới.
             var drTask = PostAsync<DrResult>("/infer/dr", new
             {
                 image_path = imageRelativePath,
                 model_path = drModelPath
             }, ct);
 
+            // ================================================================
+            // 2. Gọi model Lesion
+            // ================================================================
+            // Model này phân tích các tổn thương trên võng mạc như:
+            // MA - Microaneurysm
+            // HE - Hemorrhage
+            // EX - Exudate
+            // SE - Soft Exudate / Cotton-wool spot (tùy định nghĩa model)
             var lesionTask = PostAsync<LesionResult>("/infer/lesion", new
             {
                 image_path = imageRelativePath,
                 model_path = lesionModelPath
             }, ct);
 
+            // ================================================================
+            // 3. Gọi model Fractal
+            // ================================================================
+            // Phân tích hệ mạch và các chỉ số fractal.
+            //
+            // eye được truyền thêm vì một số chỉ số/phân vùng có thể phụ thuộc
+            // ảnh mắt phải (OD) hay mắt trái (OS).
             var fractalTask = PostAsync<FractalResult>("/infer/fractal", new
             {
                 image_path = imageRelativePath,
@@ -126,29 +161,73 @@ public class AiInferenceClient : IAiInferenceClient
                 eye = eye
             }, ct);
 
-            await Task.WhenAll(drTask, lesionTask, fractalTask);
+            // ================================================================
+            // 4. Chờ cả 3 model hoàn tất
+            // ================================================================
+            // DR, Lesion và Fractal đang chạy song song.
+            //
+            // Nếu một trong ba task lỗi thì WhenAll cũng sẽ lỗi và
+            // không tiếp tục tạo AiInferenceResponse.
+            await Task.WhenAll(
+                drTask,
+                lesionTask,
+                fractalTask);
 
+            // Lấy kết quả từng model sau khi chắc chắn cả 3 đã hoàn tất.
             var dr = await drTask;
             var lesion = await lesionTask;
             var fractal = await fractalTask;
-            var totalMs = (dr.InferenceMs ?? 0) + (lesion.InferenceMs ?? 0) + (fractal.InferenceMs ?? 0);
 
+            // Tổng thời gian inference mà từng AI service báo về.
+            //
+            // LƯU Ý:
+            // Đây là tổng thời gian xử lý của 3 model,
+            // KHÔNG phải thời gian thực tế người dùng phải chờ,
+            // vì 3 model đang chạy song song.
+            var totalMs =
+                (dr.InferenceMs ?? 0)
+                + (lesion.InferenceMs ?? 0)
+                + (fractal.InferenceMs ?? 0);
+
+            // ================================================================
+            // 5. Gộp kết quả của 3 model về một object chung
+            // ================================================================
             return new AiInferenceResponse
             {
+                // ---------------- DR ----------------
+
+                // Mức độ DR mà model dự đoán.
                 DrGrade = dr.DrGrade,
+
+                // Độ tin cậy của dự đoán DR.
                 Confidence = dr.Confidence,
+
+                // Xác suất của từng class DR.
                 Probabilities = dr.Probabilities,
 
+
+                // ---------------- Lesion ----------------
+
+                // Grade được suy ra từ kết quả tổn thương.
                 LesionGradeImplied = lesion.LesionGrade,
+
+                // Đường dẫn mask tổn thương do AI tạo.
                 LesionMaskPath = lesion.LesionMaskPath,
+
+                // Số lượng từng loại tổn thương.
                 CountMA = lesion.CountMA,
                 CountHE = lesion.CountHE,
                 CountEX = lesion.CountEX,
                 CountSE = lesion.CountSE,
+
+                // Diện tích từng loại tổn thương.
                 AreaMA = lesion.AreaMA,
                 AreaHE = lesion.AreaHE,
                 AreaEX = lesion.AreaEX,
                 AreaSE = lesion.AreaSE,
+
+
+                // ---------------- Fractal ----------------
 
                 FractalDimension = fractal.FractalDimension,
                 FractalSt = fractal.FractalSt,
@@ -158,15 +237,41 @@ public class AiInferenceClient : IAiInferenceClient
                 FractalAsymmetry = fractal.FractalAsymmetry,
                 FractalTn = fractal.FractalTn,
                 Lacunarity = fractal.Lacunarity,
+
+                // Mask hệ mạch do model Fractal tạo ra.
                 VesselMaskPath = fractal.VesselMaskPath,
+
+                // Ghi chú bổ sung từ model Fractal.
                 FractalNote = fractal.FractalNote,
-                InferenceMs = totalMs > 0 ? totalMs : null
+
+                // Nếu AI Server không trả thời gian thì lưu null.
+                InferenceMs = totalMs > 0
+                    ? totalMs
+                    : null
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex)
+            when (ex is HttpRequestException or TaskCanceledException)
         {
-            _log.LogError(ex, "Không gọi được dịch vụ suy luận AI cho ảnh {Path}", imageRelativePath);
-            throw AppException.BadRequest(Msg.AiUnavailable,
+            // HttpRequestException:
+            // - AI server không chạy
+            // - sai địa chỉ/port
+            // - mất kết nối
+            // - connection refused...
+            //
+            // TaskCanceledException:
+            // - request bị timeout
+            // - request bị cancellation
+
+            _log.LogError(
+                ex,
+                "Không gọi được dịch vụ suy luận AI cho ảnh {Path}",
+                imageRelativePath);
+
+            // Không đưa lỗi kỹ thuật của AI Server trực tiếp ra frontend.
+            // Chuyển thành lỗi nghiệp vụ dễ hiểu hơn.
+            throw AppException.BadRequest(
+                Msg.AiUnavailable,
                 "Không kết nối được dịch vụ suy luận AI. Vui lòng thử lại.");
         }
     }

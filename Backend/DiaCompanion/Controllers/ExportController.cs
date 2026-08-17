@@ -12,7 +12,7 @@ public class ExportController : BaseApiController
     private readonly IExportService _service;
     public ExportController(IExportService service) => _service = service;
 
-    [HttpGet("visit-report/{visitId:int}")]
+    [HttpGet("visit-report/{visitId:int}")] 
     public async Task<IActionResult> VisitReport(int visitId) =>
         await _service.VisitReport(visitId);
 

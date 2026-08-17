@@ -47,6 +47,7 @@ public class ExportService : BaseService, IExportService
         var reviewRows = await _repository.GetVisitDiagnosisReviewsForExportAsync(visitId);
         var findings = reviewRows.Select(r => new
         {
+            DiagnosisId = r.AiDiagnosis!.Id,
             Eye = (byte)r.AiDiagnosis!.FundusImage!.Eye,
             ImageId = r.AiDiagnosis.FundusImageId,
             FinalGrade = (byte)r.FinalGrade,
@@ -115,6 +116,7 @@ public class ExportService : BaseService, IExportService
             },
             findings = findings.Select(f => new
             {
+                f.DiagnosisId,
                 //urlImageLesionAfterMedical = r.AiDiagnosis.LesionMaskPath,
                 //urlImageVesselAfterMedical = r.AiDiagnosis.VesselMaskPath,
                 //urlImgBeforeMEDICAL = r.AiDiagnosis.FundusImage.FilePath

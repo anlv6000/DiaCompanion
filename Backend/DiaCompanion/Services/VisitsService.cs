@@ -63,6 +63,18 @@ public class VisitsService : BaseService, IVisitsService
         //    throw AppException.NotFound(Msg.PatientNotFound, "Không tìm thấy hồ sơ bệnh nhân.");
         if (!await _repository.IsActiveUserInRoleAsync(req.DoctorId, Roles.Doctor))
             throw AppException.BadRequest(Msg.InvalidData, "Bác sĩ phụ trách không tồn tại, bị khóa hoặc role Doctor không còn active.");
+
+        // Không cho phép bác sĩ khám chính mình.
+        // Một User có thể đồng thời có role Doctor và Patient.
+        // Patient.UserId chính là User.Id của người bệnh.
+        if (patient.UserId is int patientUserId && patientUserId == req.DoctorId)
+        {
+            throw AppException.BadRequest(
+                Msg.InvalidData,
+                "Không thể tạo lượt khám: bác sĩ không được phụ trách lượt khám của chính mình.");
+        }
+
+
         if (await _repository.HasOpenVisitAsync(req.PatientId))
             throw AppException.BadRequest(Msg.SlotTaken,
                 "Bệnh nhân này đang có lượt khám chưa đóng. Vui lòng đóng lượt khám cũ trước khi tạo lượt khám mới.");
