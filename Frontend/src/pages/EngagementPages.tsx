@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useData } from "@/contexts/DataContext";
-import { useAsync } from "@/lib/hooks";
+import { useAsync, useDebounce } from "@/lib/hooks";
 import {
   PageHeader,
   Panel,
@@ -28,6 +28,10 @@ export function BlogPage() {
   const data = useData();
   const toast = useToast();
   const [published, setPublished] = useState("");
+  // BE /api/blog/manage nhận q + category, trước đây FE chỉ gửi published.
+  const [q, setQ] = useState("");
+  const dq = useDebounce(q);
+  const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
   const [editor, setEditor] = useState<BlogPostDto | "new" | null>(null);
   const [confirm, setConfirm] = useState<{
@@ -36,9 +40,22 @@ export function BlogPage() {
   } | null>(null);
 
   const list = useAsync(
-    () => data.blog.manage({ published, page, pageSize: 25 }),
-    [published, page],
+    () =>
+      data.blog.manage({
+        q: dq.trim() || undefined,
+        category: category || undefined,
+        published,
+        page,
+        pageSize: 25,
+      }),
+    [dq, category, published, page],
   );
+
+  // Đổi bộ lọc thì phải về trang 1, nếu không sẽ hiện trang trống khi kết quả
+  // mới ít hơn trang đang đứng.
+  useEffect(() => {
+    setPage(1);
+  }, [dq, category]);
 
   const act = async () => {
     if (!confirm) return;
@@ -75,6 +92,28 @@ export function BlogPage() {
       />
       <Panel>
         <div className="toolbar">
+          <Field labelText="Tìm kiếm" className="inline">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Tiêu đề hoặc nội dung"
+            />
+          </Field>
+          <Field labelText="Chủ đề" className="inline">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">Tất cả chủ đề</option>
+              {blogCategories.map((c, i) =>
+                i === 0 ? null : (
+                  <option value={i} key={i}>
+                    {c}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
           <Field labelText="Trạng thái" className="inline">
             <select
               value={published}
@@ -88,6 +127,19 @@ export function BlogPage() {
               <option value="false">Bản nháp</option>
             </select>
           </Field>
+          {(q || category || published) && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setQ("");
+                setCategory("");
+                setPublished("");
+                setPage(1);
+              }}
+            >
+              Xoá lọc
+            </Button>
+          )}
         </div>
         <LoadState
           loading={list.loading}
@@ -314,11 +366,28 @@ function useSyncBlog(detail: any, setForm: any) {
 export function FeedbackPage() {
   const data = useData();
   const [rating, setRating] = useState("");
+  // BE /api/engagement/feedback nhận q + from + to, trước đây FE chỉ gửi rating.
+  const [q, setQ] = useState("");
+  const dq = useDebounce(q);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const list = useAsync(
-    () => data.engagement.feedback({ rating, page, pageSize: 50 }),
-    [rating, page],
+    () =>
+      data.engagement.feedback({
+        rating,
+        q: dq.trim() || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        page,
+        pageSize: 50,
+      }),
+    [rating, dq, from, to, page],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [dq, from, to]);
   const summary = useAsync(() => data.engagement.feedbackSummary(), []);
   const csv = () =>
     downloadText(
@@ -357,22 +426,59 @@ export function FeedbackPage() {
         ))}
       </div>
       <Panel>
-        <Field labelText="Lọc theo điểm" className="inline">
-          <select
-            value={rating}
-            onChange={(e) => {
-              setRating(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">Tất cả</option>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <option value={i} key={i}>
-                {i} sao
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div className="toolbar">
+          <Field labelText="Tìm kiếm" className="inline">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Tên bệnh nhân, mã hoặc nội dung nhận xét"
+            />
+          </Field>
+          <Field labelText="Lọc theo điểm" className="inline">
+            <select
+              value={rating}
+              onChange={(e) => {
+                setRating(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Tất cả</option>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <option value={i} key={i}>
+                  {i} sao
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field labelText="Từ ngày" className="inline">
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </Field>
+          <Field labelText="Đến ngày" className="inline">
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </Field>
+          {(q || rating || from || to) && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setQ("");
+                setRating("");
+                setFrom("");
+                setTo("");
+                setPage(1);
+              }}
+            >
+              Xoá lọc
+            </Button>
+          )}
+        </div>
         <LoadState
           loading={list.loading}
           error={list.error}

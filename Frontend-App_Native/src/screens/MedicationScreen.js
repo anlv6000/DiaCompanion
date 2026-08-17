@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, TextInput } from "react-native";
+import AppModal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useData } from "../contexts/DataContext";
 import { useToast } from "../contexts/ToastContext";
@@ -110,13 +111,17 @@ export default function MedicationScreen() {
     (m) => m.status === 0 && m.scheduledAt && new Date(m.scheduledAt) < now,
   ).length;
 
+  /**
+   * Bệnh nhân chỉ được đặt ba trạng thái: 0 Chờ uống, 1 Đã uống, 3 Bỏ qua liều.
+   * Backend từ chối mọi giá trị khác (2 Bỏ lỡ và 4 Đã hủy là do hệ thống đặt).
+   */
   const setMedicationStatus = async (item, status) => {
     try {
       await data.medication.setStatus(item.id, status, item.rowVersion);
       toast.push(
         status === 1
           ? "Đã xác nhận uống thuốc."
-          : status === 4
+          : status === 3
             ? "Đã ghi nhận bỏ qua liều."
             : "Đã hoàn tác về chưa uống.",
         "success",
@@ -266,8 +271,7 @@ export default function MedicationScreen() {
                   {m.status === 0 && (
                     <TouchableOpacity
                       style={styles.skipButton}
-                      onPress={() => setMedicationStatus(m, 4)}
-
+                      onPress={() => setMedicationStatus(m, 3)}
                     >
                       <Text style={styles.skipButtonText}>Bỏ qua liều</Text>
                     </TouchableOpacity>
@@ -323,7 +327,7 @@ function TimeEditModal({ slot, onClose, onSave, onReset }) {
   };
 
   return (
-    <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+    <AppModal visible animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.timeModalWrap}>
         <View style={styles.timeModalCard}>
           <Text style={styles.timeModalTitle}>Chỉnh giờ nhắc</Text>
@@ -374,7 +378,7 @@ function TimeEditModal({ slot, onClose, onSave, onReset }) {
           </View>
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

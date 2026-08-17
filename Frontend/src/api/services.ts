@@ -252,8 +252,20 @@ export const recheckApi = {
 
 // Nghiệp vụ lễ tân: bác sĩ đang trực + quản lý ca trực cố định theo tuần.
 export const receptionApi = {
-  onDuty: (date?: string, shift?: number) =>
-    http.get<T.OnDutyResponse>("/api/reception/on-duty" + query({ date, shift })),
+  /**
+   * Bác sĩ đang trực.
+   *
+   * `q` lọc theo họ tên hoặc số chứng chỉ hành nghề — backend nhận cùng
+   * endpoint này, không có API tìm kiếm riêng.
+   *
+   * Lưu ý: backend hiện BỎ QUA `date` và `shift`; ca trực luôn được suy ra từ
+   * giờ hệ thống theo cấu hình ShiftMorningStart/AfternoonStart/NightStart.
+   * Hai tham số giữ lại để không phá lời gọi cũ.
+   */
+  onDuty: (date?: string, shift?: number, q?: string) =>
+    http.get<T.OnDutyResponse>(
+      "/api/reception/on-duty" + query({ date, shift, q }),
+    ),
   listShifts: (doctorId?: number) =>
     http.get<T.DoctorShiftDto[]>(
       "/api/reception/shifts" + query({ doctorId }),

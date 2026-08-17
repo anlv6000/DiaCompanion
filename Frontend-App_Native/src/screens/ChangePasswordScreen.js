@@ -20,16 +20,10 @@ export default function ChangePasswordScreen({ navigation, route }) {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!force && !current) {
-      toast.push("Vui lòng nhập mật khẩu hiện tại.", "error");
-      return;
-    }
-
-    if (!next || !confirm) {
-      toast.push("Vui lòng nhập và xác nhận mật khẩu mới.", "error");
-      return;
-    }
-
+    // Chỉ giữ đúng một kiểm tra ở FE: hai ô mật khẩu mới phải khớp.
+    // Backend không nhận ô "nhập lại" nên không thể tự kiểm được.
+    // Các luật còn lại (bắt buộc nhập, độ mạnh, mật khẩu hiện tại đúng/sai)
+    // do backend quyết định và trả về thông điệp.
     if (next !== confirm) {
       toast.push("Hai mật khẩu mới chưa trùng khớp.", "error");
       return;
@@ -50,9 +44,12 @@ export default function ChangePasswordScreen({ navigation, route }) {
         "success",
       );
 
+      // Khi force: KHÔNG điều hướng thủ công. mustChangePassword đã thành false
+      // nên RootNavigation tự thay ForceChangePasswordStack bằng MainStack,
+      // vào thẳng Trang chủ.
       if (!force && navigation.canGoBack()) {
-  navigation.goBack();
-}
+        navigation.goBack();
+      }
     } catch (e) {
       toast.push(e.message, "error");
     } finally {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import AppModal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useData } from "../contexts/DataContext";
 import { useToast } from "../contexts/ToastContext";
@@ -193,22 +194,16 @@ function MetricForm({ value, onClose, onSaved }) {
     try {
       // HUYẾT ÁP (tạo mới hoặc sửa): luôn gửi metricType=3 + cả systolic + diastolic.
       if (isBp) {
-        const s = Number(systolic);
-        const d = Number(diastolic);
-        if (!systolic || !diastolic || isNaN(s) || isNaN(d)) {
-          toast.push("Nhập cả huyết áp tâm thu và tâm trương.", "error");
-          setBusy(false);
-          return;
-        }
-        if (s <= d) {
-          toast.push("Tâm thu phải lớn hơn tâm trương.", "error");
-          setBusy(false);
-          return;
-        }
+        // Chỉ ép kiểu, không phán xét giá trị. Luật "phải có đủ hai chỉ số" và
+        // "tâm thu > tâm trương" thuộc về backend.
+        // Chuỗi rỗng phải thành null, vì Number("") = 0 sẽ gửi huyết áp 0 lên
+        // server và qua được mọi ràng buộc "có giá trị".
+        const s = systolic === "" || systolic == null ? null : Number(systolic);
+        const d = diastolic === "" || diastolic == null ? null : Number(diastolic);
         const bpPayload = {
           metricType: 3,
-          systolicValue: s,
-          diastolicValue: d,
+          systolicValue: Number.isNaN(s) ? null : s,
+          diastolicValue: Number.isNaN(d) ? null : d,
           note: note || null,
           rowVersion: isNew ? undefined : value._rowVersion,
           pairRowVersion: isNew ? undefined : value._pairRowVersion,
@@ -221,12 +216,9 @@ function MetricForm({ value, onClose, onSaved }) {
       }
 
       // Đường huyết (tạo/sửa).
-      const numVal = Number(val);
-      if (!val || isNaN(numVal)) {
-        toast.push("Nhập giá trị hợp lệ.", "error");
-        setBusy(false);
-        return;
-      }
+      // Như trên: chỉ ép kiểu, ngưỡng hợp lệ do backend quyết định.
+      const parsed = val === "" || val == null ? null : Number(val);
+      const numVal = Number.isNaN(parsed) ? null : parsed;
       const payload = {
         metricType: type,
         value: numVal,
@@ -250,7 +242,7 @@ function MetricForm({ value, onClose, onSaved }) {
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+    <AppModal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalWrap}>
         <View style={styles.modalCard}>
           <View style={styles.modalHead}>
@@ -290,11 +282,11 @@ function MetricForm({ value, onClose, onSaved }) {
           {isGlucose && (
             <Field label="Thời điểm đo">
               <View style={styles.chipWrap}>
-                <FilterChip label="—" active={context === null} onPress={() => setContext(null)} />
                 {contextOptions.map((c) => (
                   <FilterChip key={c.value} label={c.label} active={context === c.value} onPress={() => setContext(c.value)} />
                 ))}
               </View>
+              <Text style={styles.fieldHint}>Lưu ý: Sau ăn thì nên đo sau 2 tiếng</Text>
             </Field>
           )}
 
@@ -305,7 +297,7 @@ function MetricForm({ value, onClose, onSaved }) {
           <Button title="Lưu" onPress={save} busy={busy} />
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 
@@ -342,6 +334,7 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bpRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   bpSlash: { ...font.h2, color: colors.muted, marginBottom: 14 },
+  fieldHint: { ...font.tiny, color: colors.muted, marginTop: spacing.sm, fontStyle: "italic" },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { ...font.small, color: colors.muted, fontWeight: "600" },

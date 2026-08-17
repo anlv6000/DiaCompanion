@@ -20,7 +20,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
 
   const sendCode = async () => {
-    if (!phone.trim()) { toast.push("Nhập số điện thoại.", "error"); return; }
+    // Số điện thoại rỗng: backend trả thông điệp.
     setBusy(true);
     try {
       const res = await authApi.forgotPassword(phone.trim());
@@ -39,7 +39,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   };
 
   const reset = async () => {
-    if (!code.trim() || !newPass) { toast.push("Nhập mã và mật khẩu mới.", "error"); return; }
+    // Chỉ giữ khớp mật khẩu xác nhận — backend không nhận ô "nhập lại".
     if (newPass !== confirm) { toast.push("Hai mật khẩu chưa trùng khớp.", "error"); return; }
     setBusy(true);
     try {

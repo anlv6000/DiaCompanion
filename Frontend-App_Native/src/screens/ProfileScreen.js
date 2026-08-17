@@ -1,13 +1,6 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  Platform,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from "react-native";
+import AppModal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
@@ -203,11 +196,11 @@ function PersonalInfoForm({ profile, onClose, onSaved, onConflict }) {
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!fullName.trim()) {
-      toast.push("Vui lòng nhập họ tên.", "error");
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+    // Giữ kiểm tra ĐỊNH DẠNG ngày: ô nhập là text tự do, sai định dạng thì
+    // backend không parse được và trả lỗi 400 khó hiểu. Đây là kiểm tra kiểu
+    // dữ liệu, không phải luật nghiệp vụ.
+    // "Họ tên bắt buộc" thì để backend quyết định.
+    if (dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
       toast.push("Ngày sinh phải có định dạng YYYY-MM-DD.", "error");
       return;
     }
@@ -315,16 +308,9 @@ function PhoneChangeForm({ profile, onClose, onSaved, onConflict }) {
   const [busy, setBusy] = useState(false);
 
   const requestOtp = async () => {
+    // "Số mới phải khác số cũ" và "bắt buộc nhập" là luật nghiệp vụ — backend
+    // kiểm và trả thông điệp, tránh hai nơi cùng định nghĩa rồi lệch nhau.
     const phone = newPhone.trim();
-    if (!phone) {
-      toast.push("Vui lòng nhập số điện thoại mới.", "error");
-      return;
-    }
-    if (phone === profile.phone) {
-      toast.push("Số mới phải khác số đang sử dụng.", "error");
-      return;
-    }
-
     setBusy(true);
     try {
       const res = await data.profile.requestPhoneChangeOtp(phone);
@@ -343,7 +329,8 @@ function PhoneChangeForm({ profile, onClose, onSaved, onConflict }) {
   };
 
   const confirm = async () => {
-    if (!/^\d{6}$/.test(code.trim())) {
+    // Giữ lại: 6 chữ số là ĐỊNH DẠNG của mã OTP, kiểm ở FE tránh gọi API thừa.
+    if (code.trim() && !/^\d{6}$/.test(code.trim())) {
       toast.push("Mã xác minh phải gồm 6 chữ số.", "error");
       return;
     }
@@ -441,7 +428,7 @@ function PhoneChangeForm({ profile, onClose, onSaved, onConflict }) {
 
 function BottomModal({ title, onClose, children }) {
   return (
-    <Modal
+    <AppModal
       visible
       animationType="slide"
       transparent
@@ -458,7 +445,7 @@ function BottomModal({ title, onClose, children }) {
           {children}
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

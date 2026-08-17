@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import AppModal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useData } from "../contexts/DataContext";
 import { useToast } from "../contexts/ToastContext";
@@ -105,7 +106,8 @@ function LifestyleForm({ value, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!mealNote.trim() && !exerciseMinutes) { toast.push("Ghi ít nhất bữa ăn hoặc vận động.", "error"); return; }
+    // Luật nội dung (phải có bữa ăn hoặc vận động, phút vận động 0-600) do
+            // backend kiểm trong EnsureLifestyleHasContent và trả thông điệp về.
     setBusy(true);
     try {
       const body = {
@@ -132,7 +134,7 @@ function LifestyleForm({ value, onClose, onSaved }) {
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+    <AppModal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalWrap}>
         <View style={styles.modalCard}>
           <View style={styles.modalHead}>
@@ -159,7 +161,7 @@ function LifestyleForm({ value, onClose, onSaved }) {
           <Button title="Lưu nhật ký" onPress={save} busy={busy} />
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

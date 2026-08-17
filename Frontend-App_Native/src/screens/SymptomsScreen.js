@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import AppModal from "../components/AppModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useData } from "../contexts/DataContext";
 import { useToast } from "../contexts/ToastContext";
@@ -100,7 +101,7 @@ function SymptomForm({ onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!symptoms.trim()) { toast.push("Nhập triệu chứng bạn gặp.", "error"); return; }
+    // Trường bắt buộc do backend kiểm và trả thông điệp.
     setBusy(true);
     try {
       await data.symptom.report({ symptoms: symptoms.trim(), severity, description: description || null, onsetNote: onsetNote || null });
@@ -114,7 +115,7 @@ function SymptomForm({ onClose, onSaved }) {
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+    <AppModal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalWrap}>
         <View style={styles.modalCard}>
           <View style={styles.modalHead}>
@@ -148,7 +149,7 @@ function SymptomForm({ onClose, onSaved }) {
           <Button title="Gửi báo cáo" onPress={save} busy={busy} />
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

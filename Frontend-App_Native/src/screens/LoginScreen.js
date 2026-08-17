@@ -25,7 +25,7 @@ export default function LoginScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
 
   const submitPassword = async () => {
-    if (!phone.trim() || !password) { toast.push("Nhập số điện thoại và mật khẩu.", "error"); return; }
+    // Thiếu thông tin đăng nhập: backend trả thông điệp thống nhất.
     setBusy(true);
     try {
       await loginPassword(phone, password);
@@ -37,7 +37,7 @@ export default function LoginScreen({ navigation }) {
   };
 
   const requestOtp = async () => {
-    if (!phone.trim()) { toast.push("Nhập số điện thoại trước.", "error"); return; }
+    // Số điện thoại rỗng: backend trả thông điệp.
     setBusy(true);
     try {
       const res = await authApi.requestOtp(phone.trim());
@@ -57,7 +57,7 @@ export default function LoginScreen({ navigation }) {
   };
 
   const submitOtp = async () => {
-    if (!phone.trim() || !code.trim()) { toast.push("Nhập số điện thoại và mã xác minh.", "error"); return; }
+    // Thiếu số điện thoại hoặc mã: backend trả thông điệp.
     setBusy(true);
     try {
       await loginOtp(phone, code);
