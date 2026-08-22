@@ -116,7 +116,7 @@ export function TriagePage() {
                 "Bệnh nhân",
                 "Mắt",
                 "DR",
-                "Tin cậy",
+                "Nguy cơ",
                 "Bất đồng",
                 "Defer",
                 "Chuyển tuyến",
@@ -145,8 +145,8 @@ export function TriagePage() {
                   <td>
                     <GradeBadge grade={x.drGrade} />
                   </td>
-                  <td>
-                    <Meter value={x.confidence} />
+                  <td className="mono">
+                    {x.clinicalRiskScore == null ? "—" : x.clinicalRiskScore}
                   </td>
                   <td>
                     <Meter value={x.disagreement} kind="defer" />
@@ -289,8 +289,12 @@ function ReviewRail({
                 </div>
               </div>
               <Info
-                k="Tin cậy"
-                v={`${Math.round(detail.data.confidence * 100)}%`}
+                k="Nguy cơ nền"
+                v={
+                  detail.data.clinicalRiskScore == null
+                    ? "—"
+                    : `${detail.data.clinicalRiskScore} điểm`
+                }
               />
               <Info k="Bất đồng" v={num(detail.data.disagreement, 3)} />
               <Info k="Fractal" v={num(detail.data.fractalDimension, 4)} />

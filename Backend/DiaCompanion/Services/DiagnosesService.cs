@@ -19,11 +19,11 @@ public class DiagnosesService : BaseService, IDiagnosesService
     private readonly IVoidService _void;
     private readonly IFileStorageService _storage;
     private readonly IClinicClock _clock;
-
+    private readonly IClinicalRiskService _risk;
     public DiagnosesService(IRepository repository, ICurrentUser me, IAuditService audit,
-                               IAiInferenceClient ai, IDeferralService deferral,
+                               IAiInferenceClient ai, IDeferralService deferral, IClinicalRiskService risk,
                                IConfigService cfg, IVoidService voidSvc, IFileStorageService storage, IClinicClock clock)
-    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _cfg = cfg; _void = voidSvc; _storage = storage; _clock = clock; }
+    { _repository = repository; _me = me; _audit = audit; _ai = ai; _deferral = deferral; _risk = risk;  _cfg = cfg; _void = voidSvc; _storage = storage; _clock = clock; }
 
     /// <summary>
     /// UC-25 + UC-27 + UC-28 — chạy suy luận cho một ảnh.
@@ -81,7 +81,6 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
         // Đọc ngưỡng TẠI THỜI ĐIỂM CHẠY và lưu vào bản ghi. Admin đổi ngưỡng
         // sau này không được làm thay đổi kết quả đã sinh ra (BR-17).
-        var confThreshold = await _cfg.GetDecimalAsync(ConfigKeys.ConfidenceThreshold, 0.75m);
         var disagreeThreshold = await _cfg.GetDecimalAsync(ConfigKeys.DisagreementThreshold, 0.35m);
 
         // Nếu dịch vụ suy luận lỗi thì ném ra ngoài — KHÔNG tạo bản ghi rỗng
@@ -98,9 +97,15 @@ public class DiagnosesService : BaseService, IDiagnosesService
             ct);
 
         var lesionGrade = result.LesionGradeImplied is byte lg ? (DrGrade)lg : (DrGrade?)null;
+
+        // Điểm nguy cơ nền tính theo loại đái tháo đường (chỉ hạ ngưỡng, không đổi grade).
+        var risk = await _risk.EvaluateAsync(image.PatientId, ct);
+
         var deferral = _deferral.Evaluate(
-            (DrGrade)result.DrGrade, result.Confidence, lesionGrade,
-            confThreshold, disagreeThreshold);
+            (DrGrade)result.DrGrade, lesionGrade, risk.Score, disagreeThreshold);
+
+        var factorsText = risk.Factors.Count == 0 ? null : string.Join(" · ", risk.Factors);
+        if (factorsText is { Length: > 500 }) factorsText = factorsText[..500];
 
         var diagnosisId = 0;
         await _repository.ExecuteInTransactionAsync(async () =>
@@ -143,8 +148,10 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 Disagreement = deferral.Disagreement,
                 IsDeferred = deferral.IsDeferred,
                 DeferReason = deferral.Reason,
-                ConfidenceThreshold = confThreshold,
                 DisagreementThreshold = disagreeThreshold,
+                EffectiveDisagreementThreshold = deferral.EffectiveThreshold,
+                ClinicalRiskScore = (byte)Math.Clamp(risk.Score, 0, 255),
+                ClinicalRiskFactors = factorsText,
                 FractalDimension = result.FractalDimension,
                 VesselMaskPath = result.VesselMaskPath,
                 FractalNote = result.FractalNote,
@@ -162,7 +169,8 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 lesionModel = lesionModel!.Name,
                 fractalModel = fractalModel!.Name,
                 grade = diagnosis.DrGrade.ToString(),
-                confidence = diagnosis.Confidence,
+                clinicalRiskScore = diagnosis.ClinicalRiskScore,
+                effectiveThreshold = diagnosis.EffectiveDisagreementThreshold,
                 disagreement = diagnosis.Disagreement,
                 deferred = diagnosis.IsDeferred
             });
@@ -343,7 +351,9 @@ public class DiagnosesService : BaseService, IDiagnosesService
             FractalModelVersion = d.FractalModelVersion?.Name,
             DrGrade = (byte)d.DrGrade,
             DrGradeLabel = GradeLabel((byte)d.DrGrade),
-            Confidence = d.Confidence,
+            ClinicalRiskScore = d.ClinicalRiskScore,
+            EffectiveDisagreementThreshold = d.EffectiveDisagreementThreshold,
+            ClinicalRiskFactors = d.ClinicalRiskFactors,
             LesionGradeImplied = (byte?)d.LesionGradeImplied,
             CountMA = d.CountMA,
             CountHE = d.CountHE,

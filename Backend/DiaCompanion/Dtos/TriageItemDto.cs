@@ -14,7 +14,7 @@ public class TriageItemDto
     public int? VisitId { get; set; }
     public byte Eye { get; set; }
     public byte DrGrade { get; set; }
-    public decimal Confidence { get; set; }
+    public byte? ClinicalRiskScore { get; set; }
     public decimal? Disagreement { get; set; }
     public bool IsDeferred { get; set; }
     public byte? DeferReason { get; set; }

@@ -23,7 +23,9 @@ public class AiDiagnosisDto
 
     public byte DrGrade { get; set; }
     public string DrGradeLabel { get; set; } = "";
-    public decimal Confidence { get; set; }
+    public byte? ClinicalRiskScore { get; set; }
+    public decimal? EffectiveDisagreementThreshold { get; set; }
+    public string? ClinicalRiskFactors { get; set; }
 
     public byte? LesionGradeImplied { get; set; }
     public int? CountMA { get; set; }

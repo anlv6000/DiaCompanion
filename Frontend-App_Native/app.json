@@ -27,7 +27,8 @@
         "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE"
-      ]
+      ],
+      "package": "com.qielli.diacompanion"
     },
     "extra": {
       "apiBase": "https://diacompanion.io.vn",

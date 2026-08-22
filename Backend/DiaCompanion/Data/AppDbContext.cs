@@ -217,6 +217,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Disagreement).HasPrecision(5, 4);
             e.Property(x => x.ConfidenceThreshold).HasPrecision(5, 4);
             e.Property(x => x.DisagreementThreshold).HasPrecision(5, 4);
+            e.Property(x => x.EffectiveDisagreementThreshold).HasPrecision(4, 3);
             e.Property(x => x.FractalDimension).HasPrecision(6, 4);
             e.Property(x => x.FractalSt).HasPrecision(6, 4);
             e.Property(x => x.FractalSn).HasPrecision(6, 4);
@@ -236,6 +237,10 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.IsDeferred, x.Disagreement, x.CreatedAt })
                 .HasFilter("[IsVoided] = 0")
                 .HasDatabaseName("IX_AiDx_Triage");
+            e.HasIndex(x => new { x.IsDeferred, x.Disagreement, x.ClinicalRiskScore })
+                .HasDatabaseName("IX_AiDiagnoses_TriagePriority")
+                .HasFilter("[IsVoided] = 0");
+
             e.HasIndex(x => x.FundusImageId);
 
             e.HasOne(x => x.FundusImage).WithMany(f => f.Diagnoses)

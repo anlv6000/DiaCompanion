@@ -39,6 +39,9 @@ public class AiDiagnosis : IVoidable, IHasRowVersion
 
     // ---- Gap 2: tín hiệu bất đồng chéo ----
     public decimal? Disagreement { get; set; }
+    public decimal? EffectiveDisagreementThreshold { get; set; }
+    public byte? ClinicalRiskScore { get; set; }
+    [MaxLength(500)] public string? ClinicalRiskFactors { get; set; }
     public bool IsDeferred { get; set; }
     public DeferReason? DeferReason { get; set; }
     public decimal? ConfidenceThreshold { get; set; }

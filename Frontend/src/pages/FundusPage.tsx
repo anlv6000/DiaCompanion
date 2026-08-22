@@ -249,11 +249,19 @@ export function FundusPage({ imageId }: { imageId: number }) {
                     </div>
 
                     <div className="detail-grid ai-detail-grid">
-                      <Info
-                        k="Tin cậy"
-                        v={`${Math.round(selected.confidence * 100)}%`}
-                      />
                       <Info k="Bất đồng" v={num(selected.disagreement, 3)} />
+                      <Info
+                        k="Ngưỡng áp dụng"
+                        v={num(selected.effectiveDisagreementThreshold, 2)}
+                      />
+                      <Info
+                        k="Nguy cơ nền"
+                        v={
+                          selected.clinicalRiskScore == null
+                            ? "—"
+                            : `${selected.clinicalRiskScore} điểm`
+                        }
+                      />
                       <Info
                         k="Fractal"
                         v={num(selected.fractalDimension, 4)}
@@ -314,6 +322,11 @@ export function FundusPage({ imageId }: { imageId: number }) {
                       >
                         <b>Chuyển bác sĩ</b>
                         <div>{selected.deferReasonLabel}</div>
+                        {selected.clinicalRiskFactors && (
+                          <div className="small faint">
+                            {selected.clinicalRiskFactors}
+                          </div>
+                        )}
                       </div>
                     )}
 

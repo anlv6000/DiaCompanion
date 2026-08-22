@@ -254,7 +254,9 @@ export interface AiDiagnosisDto {
   fractalModelVersion?: string | null;
   drGrade: number;
   drGradeLabel: string;
-  confidence: number;
+  clinicalRiskScore?: number | null;
+  effectiveDisagreementThreshold?: number | null;
+  clinicalRiskFactors?: string | null;
   lesionGradeImplied?: number | null;
   countMA?: number | null;
   countHE?: number | null;
@@ -288,7 +290,7 @@ export interface TriageItemDto {
   visitId?: number | null;
   eye: number;
   drGrade: number;
-  confidence: number;
+  clinicalRiskScore?: number | null;
   disagreement?: number | null;
   isDeferred: boolean;
   deferReason?: number | null;

@@ -74,14 +74,48 @@ def build_model():
     return model
 
 
-def load_ensemble():
-    """Load up to 5 fold checkpoints. Returns list of eval()-mode models."""
-    models_list = []
-    if not os.path.exists(WEIGHTS_DIR):
-        return models_list
+def _resolve_weights(weights_path):
+    """Xác định thư mục/tệp trọng số sẽ nạp.
 
-    for fold in range(5):
-        path = os.path.join(WEIGHTS_DIR, f"efficientnet_b4_fold{fold}_best.pth")
+    weights_path đến từ ModelVersion.FilePath mà Admin đăng ký ở màn Model
+    Governance. Nếu không truyền hoặc đường dẫn không tồn tại thì quay về
+    WEIGHTS_DIR mặc định, để hệ thống vẫn chạy được như trước.
+
+    Model 1 là ensemble 5 fold nên FilePath có thể là:
+      - một THƯ MỤC chứa các tệp efficientnet_b4_fold*.pth  (khuyến nghị)
+      - một TỆP .pth đơn lẻ, khi đó ensemble chỉ có một thành viên
+    """
+    if weights_path:
+        p = weights_path if os.path.isabs(weights_path) else os.path.join(SCRIPT_DIR, "..", "..", weights_path)
+        p = os.path.normpath(p)
+        if os.path.exists(p):
+            return p
+    return WEIGHTS_DIR
+
+
+# Cache theo đường dẫn trọng số. Trước đây toàn bộ ensemble được nạp lại ở MỖI
+# lần suy luận, tốn vài giây cho một thao tác đáng lẽ tức thời.
+_ENSEMBLE_CACHE = {}
+
+
+def load_ensemble(weights_path=None):
+    """Load fold checkpoints. Returns (list of eval()-mode models, source path)."""
+    target = _resolve_weights(weights_path)
+    if target in _ENSEMBLE_CACHE:
+        return _ENSEMBLE_CACHE[target]
+
+    models_list = []
+    if os.path.isfile(target):
+        files = [target]
+    elif os.path.isdir(target):
+        files = [
+            os.path.join(target, f"efficientnet_b4_fold{fold}_best.pth")
+            for fold in range(5)
+        ]
+    else:
+        files = []
+
+    for path in files:
         if os.path.exists(path):
             model = build_model()
             checkpoint = torch.load(path, map_location=DEVICE, weights_only=False)
@@ -89,13 +123,15 @@ def load_ensemble():
             model.to(DEVICE)
             model.eval()
             models_list.append(model)
-    return models_list
+
+    _ENSEMBLE_CACHE[target] = (models_list, target)
+    return models_list, target
 
 
-def predict(image_path):
-    ensemble_models = load_ensemble()
+def predict(image_path, weights_path=None):
+    ensemble_models, weights_used = load_ensemble(weights_path)
     if len(ensemble_models) == 0:
-        raise RuntimeError(f"No model weights found in {WEIGHTS_DIR}")
+        raise RuntimeError(f"No model weights found in {weights_used}")
 
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
@@ -131,7 +167,10 @@ def predict(image_path):
         "grade": f"R{final_class}",
         "gradeLabel": CLASS_LABELS[final_class],
         "rawScore": round(raw_score, 4),
-        "modelsUsed": len(ensemble_models)
+        "modelsUsed": len(ensemble_models),
+        # Trả về nguồn trọng số thật sự được nạp, để đối chiếu với phiên bản
+        # đang active trong màn Model Governance.
+        "weightsUsed": weights_used,
     }
 
 
