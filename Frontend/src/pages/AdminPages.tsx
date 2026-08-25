@@ -19,12 +19,9 @@ import {
 } from "@/components/ui";
 import { GradeBars, LineChart } from "@/components/charts";
 import { fmtDate, num, pct, downloadText, toCsv } from "@/lib/format";
-import { modelTypes, modelTypeShortLabel } from "@/lib/enums";
 import { useToast } from "@/contexts/ToastContext";
 import type {
   SystemConfigDto,
-  ModelVersionDto,
-  RegisterModelRequest,
   ThresholdImpactDto,
 } from "@/types/api";
 
@@ -35,22 +32,15 @@ export function DashboardPage() {
   const isAdmin = hasRole(user, "Admin");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [model, setModel] = useState("");
   const dash = useAsync(
     () =>
       data.admin.dashboard({
         from: from || undefined,
         to: to || undefined,
-        modelVersionId: model ? Number(model) : undefined,
       }),
-    [from, to, model],
-  );
-  const models = useAsync(
-    async () => (isAdmin ? data.admin.models() : [] as ModelVersionDto[]),
-    [isAdmin],
+    [from, to],
   );
   const impacts = useAsyncImpacts(data, isAdmin);
-  const active = parseActiveModelSet(dash.data?.activeModel);
   const filteredPeriod = Boolean(from || to);
 
   return (
@@ -68,20 +58,8 @@ export function DashboardPage() {
           <Field labelText="Đến ngày" className="inline">
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
-          {isAdmin && (
-            <Field labelText="Lọc theo model" className="inline">
-              <select value={model} onChange={(e) => setModel(e.target.value)}>
-                <option value="">Tất cả model</option>
-                {models.data?.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {modelTypeShortLabel(m.modelType)} · {m.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          {(from || to || model) && (
-            <Button onClick={() => { setFrom(""); setTo(""); setModel(""); }}>
+          {(from || to) && (
+            <Button onClick={() => { setFrom(""); setTo(""); }}>
               Xóa bộ lọc
             </Button>
           )}
@@ -140,61 +118,18 @@ export function DashboardPage() {
                   {isAdmin && (
                     <div className="faint" style={{ marginTop: 6 }}>
                       Biểu đồ này sử dụng dữ liệu lịch sử toàn hệ thống để ước tính ảnh hưởng của ngưỡng;
-                      không áp dụng bộ lọc ngày/model phía trên.
+                      không áp dụng bộ lọc ngày phía trên.
                     </div>
                   )}
                 </LoadState>
               </Panel>
             </div>
 
-            <Panel title="Bộ 3 model đang hoạt động">
-              <div className="grid3 model-active-grid">
-                {(["DR", "Lesion", "Fractal"] as const).map((kind) => (
-                  <div className="model-active-card" key={kind}>
-                    <div className="split">
-                      <b>{kind}</b>
-                      <StatusBadge
-                        text={active[kind] ? "Active" : "Thiếu"}
-                        kind={active[kind] ? "ok" : "alert"}
-                      />
-                    </div>
-                    <code>{active[kind] || "Chưa kích hoạt"}</code>
-                  </div>
-                ))}
-              </div>
-              {!active.DR || !active.Lesion || !active.Fractal ? (
-                <div className="state error" style={{ marginTop: 10 }}>
-                  Chưa đủ 3 mô hình đang hoạt động nên hệ thống chưa thể chạy phân tích AI.
-                </div>
-              ) : (
-                <div className="state ok" style={{ marginTop: 10 }}>
-                  Đủ 3/3 model. Luồng suy luận AI sẵn sàng.
-                </div>
-              )}
-            </Panel>
           </>
         )}
       </LoadState>
     </>
   );
-}
-
-function parseActiveModelSet(value?: string | null) {
-  const result: Record<"DR" | "Lesion" | "Fractal", string> = {
-    DR: "",
-    Lesion: "",
-    Fractal: "",
-  };
-  if (!value) return result;
-  for (const part of value.split("|")) {
-    const [rawKey, ...rest] = part.split(":");
-    const key = rawKey.trim().toLowerCase();
-    const name = rest.join(":").trim();
-    if (key === "dr") result.DR = name;
-    else if (key === "lesion") result.Lesion = name;
-    else if (key === "fractal") result.Fractal = name;
-  }
-  return result;
 }
 
 function useAsyncImpacts(data: ReturnType<typeof useData>, isAdmin: boolean) {
@@ -225,15 +160,10 @@ function Stat({ k, v }: { k: string; v: React.ReactNode }) {
 /* ---------------- Conflicts ---------------- */
 export function ConflictsPage() {
   const data = useData();
-  const [model, setModel] = useState("");
-  const models = useAsync(() => data.admin.models(), []);
-  const report = useAsync(
-    () => data.exports.conflicts(model ? Number(model) : null),
-    [model],
-  );
+  const report = useAsync(() => data.exports.conflicts(), []);
 
   const download = async () => {
-    const blob = await data.exports.conflictsCsv(model ? Number(model) : null);
+    const blob = await data.exports.conflictsCsv();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "disagreement-cases.csv";
@@ -255,18 +185,6 @@ export function ConflictsPage() {
           </Button>
         }
       />
-      <Panel>
-        <Field labelText="Phiên bản model" className="inline">
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">Tất cả phiên bản</option>
-            {models.data?.map((m) => (
-              <option key={m.id} value={m.id}>
-                {modelTypeShortLabel(m.modelType)} · {m.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </Panel>
       <LoadState
         loading={report.loading}
         error={report.error}
@@ -298,7 +216,6 @@ export function ConflictsPage() {
                   "Ca",
                   "Bệnh nhân",
                   "Mắt",
-                  "Model",
                   "AI",
                   "Bác sĩ",
                   "Lệch bậc",
@@ -316,7 +233,6 @@ export function ConflictsPage() {
                     <td>
                       <EyeBadge eye={x.eye} />
                     </td>
-                    <td className="mono">{x.modelVersion}</td>
                     <td>
                       <GradeBadge grade={x.aiGrade} />
                     </td>
@@ -483,305 +399,6 @@ function ConfigEditor({
           <p>{impact.note}</p>
         </div>
       )}
-    </Modal>
-  );
-}
-
-/* ---------------- Models ---------------- */
-export function ModelsPage() {
-  const data = useData();
-  const toast = useToast();
-  const list = useAsync(() => data.admin.models(), []);
-  const [editor, setEditor] = useState(false);
-  const [confirm, setConfirm] = useState<{
-    item: ModelVersionDto;
-    action: "activate" | "delete";
-  } | null>(null);
-
-  const activeByType = new Map(
-    (list.data || []).filter((m) => m.isActive).map((m) => [m.modelType, m]),
-  );
-  const ready = modelTypes.every((t) => activeByType.has(t.value));
-
-  const act = async () => {
-    if (!confirm) return;
-    try {
-      if (confirm.action === "activate")
-        await data.admin.activate(confirm.item.id, confirm.item.rowVersion);
-      else await data.admin.deleteModel(confirm.item.id, confirm.item.rowVersion);
-      toast.push(
-        confirm.action === "activate"
-          ? `Đã kích hoạt ${modelTypeShortLabel(confirm.item.modelType)} model.`
-          : "Đã xóa model.",
-        "success",
-      );
-      setConfirm(null);
-      list.reload();
-    } catch (e) {
-      toast.push((e as Error).message, "error");
-    }
-  };
-
-  return (
-    <>
-      <PageHeader
-        title="Phiên bản model"
-        subtitle="Mỗi loại DR, Lesion và Fractal có tối đa một phiên bản active; một lượt AI cần đủ cả 3 loại."
-        actions={
-          <Button kind="primary" onClick={() => setEditor(true)}>
-            <Icon name="plus" />
-            Đăng ký model
-          </Button>
-        }
-      />
-
-      <div className="grid3 model-active-grid">
-        {modelTypes.map((t) => {
-          const active = activeByType.get(t.value);
-          return (
-            <div className="model-active-card" key={t.value}>
-              <div className="split">
-                <b>{t.label}</b>
-                <StatusBadge
-                  text={active ? "Đang dùng" : "Chưa active"}
-                  kind={active ? "ok" : "alert"}
-                />
-              </div>
-              <div className="mono wrap-text">{active?.name || "—"}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className={`state ${ready ? "ok" : "error"}`} style={{ marginBottom: 12 }}>
-        {ready
-          ? "Đủ 3/3 mô hình đang hoạt động. Hệ thống sẵn sàng chạy phân tích AI."
-          : "Thiếu mô hình đang hoạt động. Cần đủ DR, Lesion và Fractal trước khi bác sĩ chạy phân tích AI."}
-      </div>
-
-      <Panel>
-        <LoadState
-          loading={list.loading}
-          error={list.error}
-          empty={!list.data?.length}
-          onRetry={list.reload}
-        >
-          <DataTable
-            headers={[
-              "Loại",
-              "Tên",
-              "Đường dẫn",
-              "SHA-256",
-              "QWK",
-              "Dice",
-              "IoU",
-              "Lượt AI tham chiếu",
-              "Trạng thái",
-              "Kích hoạt lúc",
-              "Thao tác",
-            ]}
-          >
-            {list.data?.map((m) => (
-              <tr key={m.id}>
-                <td>
-                  <StatusBadge text={m.modelTypeLabel || modelTypeShortLabel(m.modelType)} />
-                </td>
-                <td>
-                  <b>{m.name}</b>
-                </td>
-                <td className="mono wrap-text">{m.filePath}</td>
-                <td className="mono">{m.sha256.slice(0, 12)}…</td>
-                <td className="mono">{num(m.qwk, 4)}</td>
-                <td className="mono">{num(m.dice, 4)}</td>
-                <td className="mono">{num(m.ioU, 4)}</td>
-                <td className="mono">{m.diagnosisCount}</td>
-                <td>
-                  <StatusBadge
-                    text={
-                      m.isActive
-                        ? "Đang dùng"
-                        : m.wasActivated
-                          ? "Đã từng dùng"
-                          : "Chưa dùng"
-                    }
-                    kind={m.isActive ? "ok" : m.wasActivated ? "watch" : ""}
-                  />
-                </td>
-                <td className="mono">{fmtDate(m.activatedAt, true)}</td>
-                <td>
-                  <div className="actions">
-                    <Button
-                      disabled={m.isActive}
-                      onClick={() => setConfirm({ item: m, action: "activate" })}
-                    >
-                      {activeByType.has(m.modelType) && !m.isActive ? "Thay thế" : "Kích hoạt"}
-                    </Button>
-                    <Button
-                      kind="danger"
-                      disabled={m.wasActivated || m.isActive || m.diagnosisCount > 0}
-                      onClick={() => setConfirm({ item: m, action: "delete" })}
-                    >
-                      Xóa
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        </LoadState>
-      </Panel>
-
-      {editor && (
-        <ModelEditor
-          onClose={() => setEditor(false)}
-          onSaved={() => {
-            setEditor(false);
-            list.reload();
-          }}
-        />
-      )}
-      {confirm && (
-        <ConfirmDialog
-          title={confirm.action === "activate" ? "Kích hoạt model" : "Xóa model"}
-          message={
-            confirm.action === "activate"
-              ? activeByType.has(confirm.item.modelType)
-                ? `Thay model ${modelTypeShortLabel(confirm.item.modelType)} hiện tại bằng ${confirm.item.name}? Model cũ cùng loại sẽ tự tắt; DR/Lesion/Fractal loại khác không bị ảnh hưởng.`
-                : `Kích hoạt ${confirm.item.name} cho loại ${modelTypeShortLabel(confirm.item.modelType)}?`
-              : `Xóa phiên bản ${confirm.item.name}?`
-          }
-          danger={confirm.action === "delete"}
-          onClose={() => setConfirm(null)}
-          onConfirm={act}
-        />
-      )}
-    </>
-  );
-}
-
-function ModelEditor({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const data = useData();
-  const toast = useToast();
-  const [form, setForm] = useState<RegisterModelRequest>({
-    modelType: 1,
-    name: "",
-    filePath: "",
-    sha256: "",
-    qwk: null,
-    dice: null,
-    ioU: null,
-    note: "",
-  });
-  const [busy, setBusy] = useState(false);
-  const p = (k: keyof RegisterModelRequest, v: unknown) =>
-    setForm((x) => ({ ...x, [k]: v }));
-
-  const save = async () => {
-    const hasMetric = form.qwk != null || form.dice != null || form.ioU != null;
-    const metrics = [form.qwk, form.dice, form.ioU].filter((x): x is number => x != null);
-    if (!form.name.trim() || !form.filePath.trim() || form.sha256.trim().length !== 64) {
-      toast.push("Tên, đường dẫn và SHA-256 đủ 64 ký tự là bắt buộc.", "error");
-      return;
-    }
-    if (!/^[0-9a-fA-F]{64}$/.test(form.sha256.trim())) {
-      toast.push("SHA-256 phải gồm đúng 64 ký tự hệ 16.", "error");
-      return;
-    }
-    if (!hasMetric) {
-      toast.push("Cần nhập ít nhất một chỉ số QWK, Dice hoặc IoU.", "error");
-      return;
-    }
-    if (metrics.some((x) => x < 0 || x > 1)) {
-      toast.push("QWK, Dice và IoU phải nằm trong khoảng 0 đến 1.", "error");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await data.admin.registerModel({
-        ...form,
-        name: form.name.trim(),
-        filePath: form.filePath.trim(),
-        sha256: form.sha256.trim().toLowerCase(),
-      });
-      toast.push(`Đã đăng ký ${modelTypeShortLabel(form.modelType)} model.`, "success");
-      onSaved();
-    } catch (e) {
-      toast.push((e as Error).message, "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      title="Đăng ký phiên bản model"
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Hủy</Button>
-          <Button kind="primary" busy={busy} onClick={save}>
-            Đăng ký
-          </Button>
-        </>
-      }
-    >
-      <Field
-        labelText="Loại model"
-        required
-        help="Mỗi loại có tối đa một phiên bản active."
-      >
-        <select
-          value={form.modelType}
-          onChange={(e) => p("modelType", Number(e.target.value) as 1 | 2 | 3)}
-        >
-          {modelTypes.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
-      </Field>
-
-      <div className="form-row">
-        <Field labelText="Tên" required>
-          <input value={form.name} onChange={(e) => p("name", e.target.value)} />
-        </Field>
-        <Field labelText="Đường dẫn" required>
-          <input value={form.filePath} onChange={(e) => p("filePath", e.target.value)} />
-        </Field>
-      </div>
-      <Field labelText="SHA-256" required>
-        <input
-          className="mono"
-          maxLength={64}
-          value={form.sha256}
-          onChange={(e) => p("sha256", e.target.value)}
-        />
-      </Field>
-      <div className="form-row three">
-        {(["qwk", "dice", "ioU"] as const).map((k) => (
-          <Field key={k} labelText={k.toUpperCase()}>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.0001"
-              value={(form[k] as number | null) ?? ""}
-              onChange={(e) => p(k, e.target.value === "" ? null : Number(e.target.value))}
-            />
-          </Field>
-        ))}
-      </div>
-      <div className="faint" style={{ marginBottom: 8 }}>
-        Gợi ý: DR thường đánh giá bằng QWK; Lesion/Fractal thường dùng Dice/IoU. Cần có ít nhất một chỉ số đánh giá.
-      </div>
-      <Field labelText="Ghi chú">
-        <textarea value={form.note || ""} onChange={(e) => p("note", e.target.value)} />
-      </Field>
     </Modal>
   );
 }

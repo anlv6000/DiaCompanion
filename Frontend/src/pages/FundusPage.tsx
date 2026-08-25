@@ -228,7 +228,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
           />
 
           <section className="panel ai-diagnosis-square">
-            <div className="panel-h">Chẩn đoán AI</div>
+            <div className="panel-h">AI hỗ trợ chẩn đoán AI</div>
             <div className="panel-b ai-diagnosis-scroll">
               <LoadState
                 loading={diagnoses.loading}
@@ -266,9 +266,6 @@ export function FundusPage({ imageId }: { imageId: number }) {
                         k="Fractal"
                         v={num(selected.fractalDimension, 4)}
                       />
-                      <Info k="DR model" v={selected.drModelVersion || selected.modelVersion} />
-                      <Info k="Lesion model" v={selected.lesionModelVersion || "—"} />
-                      <Info k="Fractal model" v={selected.fractalModelVersion || "—"} />
                       <Info
                         k="Thời điểm"
                         v={fmtDate(selected.createdAt, true)}
@@ -309,6 +306,37 @@ export function FundusPage({ imageId }: { imageId: number }) {
                       <div className="ai-section">
                         <b>Ghi chú fractal</b>
                         <p>{selected.fractalNote}</p>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Ký hiệu</th>
+                              <th>Tên</th>
+                              <th>Vị trí</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>ST</td>
+                              <td>Superotemporal</td>
+                              <td>Trên, phía thái dương</td>
+                            </tr>
+                            <tr>
+                              <td>SN</td>
+                              <td>Superonasal</td>
+                              <td>Trên, phía mũi</td>
+                            </tr>
+                            <tr>
+                              <td>IT</td>
+                              <td>Inferotemporal</td>
+                              <td>Dưới, phía thái dương</td>
+                            </tr>
+                            <tr>
+                              <td>IN</td>
+                              <td>Inferonasal</td>
+                              <td>Dưới, phía mũi</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     )}
 

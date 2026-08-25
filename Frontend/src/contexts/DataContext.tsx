@@ -34,7 +34,7 @@ import type * as T from "@/types/api";
  *  - Không page nào import trực tiếp @/api/services — luôn qua useData().
  *
  * DataContext bọc toàn bộ nhóm service thành "action" trả Promise, kèm vài
- * mẩu state dùng chung (doctors, dashboard, triageCount, activeModels) nạp sẵn.
+ * mẩu state dùng chung (doctors, dashboard, triageCount) nạp sẵn.
  */
 
 interface DataValue {
@@ -42,11 +42,9 @@ interface DataValue {
   doctors: T.DoctorDto[] | null;
   dashboard: T.DashboardDto | null;
   triageCount: T.TriageCountDto | null;
-  activeModels: T.ModelVersionDto[] | null;
   loadDoctors: () => Promise<T.DoctorDto[]>;
   loadDashboard: () => Promise<T.DashboardDto>;
   loadTriageCount: () => Promise<T.TriageCountDto>;
-  loadActiveModels: () => Promise<T.ModelVersionDto[]>;
   // nhóm action theo nghiệp vụ
   auth: ReturnType<typeof buildAuth>;
   users: ReturnType<typeof buildUsers>;
@@ -233,20 +231,12 @@ const buildAdmin = () => ({
   updateConfig: (key: string, v: string, rowVersion: string) =>
     adminApi.updateConfig(key, v, rowVersion),
   impact: (key: string, proposed: number) => adminApi.impact(key, proposed),
-  models: () => adminApi.models(),
-  registerModel: (b: T.RegisterModelRequest) => adminApi.registerModel(b),
-  activate: (id: number, rowVersion: string) =>
-    adminApi.activate(id, rowVersion),
-  deleteModel: (id: number, rowVersion: string) =>
-    adminApi.deleteModel(id, rowVersion),
   audit: (p: Record<string, unknown>) => adminApi.audit(p),
 });
 const buildExports = () => ({
   visitReport: (id: number) => exportApi.visitReport(id),
-  conflicts: (modelVersionId?: number | null) =>
-    exportApi.conflicts(modelVersionId),
-  conflictsCsv: (modelVersionId?: number | null) =>
-    exportApi.conflictsCsv(modelVersionId),
+  conflicts: () => exportApi.conflicts(),
+  conflictsCsv: () => exportApi.conflictsCsv(),
 });
 
 const DataContext = createContext<DataValue | null>(null);
@@ -255,9 +245,6 @@ export function DataProvider({ children }: { children?: ReactNode }) {
   const [doctors, setDoctors] = useState<T.DoctorDto[] | null>(null);
   const [dashboard, setDashboard] = useState<T.DashboardDto | null>(null);
   const [triageCount, setTriageCount] = useState<T.TriageCountDto | null>(null);
-  const [activeModels, setActiveModels] = useState<T.ModelVersionDto[] | null>(
-    null,
-  );
 
   const loadDoctors = useCallback(async () => {
     const d = await usersApi.doctors();
@@ -274,23 +261,14 @@ export function DataProvider({ children }: { children?: ReactNode }) {
     setTriageCount(c);
     return c;
   }, []);
-  const loadActiveModels = useCallback(async () => {
-    const list = await adminApi.models();
-    const active = list.filter((m) => m.isActive);
-    setActiveModels(active);
-    return active;
-  }, []);
-
   const value = useMemo<DataValue>(
     () => ({
       doctors,
       dashboard,
       triageCount,
-      activeModels,
       loadDoctors,
       loadDashboard,
       loadTriageCount,
-      loadActiveModels,
       auth: buildAuth(),
       users: buildUsers(),
       patients: buildPatients(),
@@ -311,11 +289,9 @@ export function DataProvider({ children }: { children?: ReactNode }) {
       doctors,
       dashboard,
       triageCount,
-      activeModels,
       loadDoctors,
       loadDashboard,
       loadTriageCount,
-      loadActiveModels,
     ],
   );
 
