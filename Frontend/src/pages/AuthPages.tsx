@@ -284,9 +284,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <p>Console lâm sàng hỗ trợ sàng lọc bệnh võng mạc đái tháo đường.</p>
           <div className="stack">
             <StatusBadge text="AI chỉ hỗ trợ quyết định" kind="defer" />
-            <span>• Ca chưa xác nhận luôn được chuyển bác sĩ.</span>
-            <span>• Tin cậy và bất đồng hiển thị trực tiếp.</span>
-            <span>• Hồ sơ lâm sàng dùng cơ chế void, không xóa cứng.</span>
+            <span>• Tin cậy và bất đồng hiển thị trực tiếp.</span>  
           </div>
         </div>
         <form className="login-form" onSubmit={submit}>
@@ -339,9 +337,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             Đăng nhập
           </Button>
           <div className="split" style={{ marginTop: 10 }}>
-            <span className="faint small">
-              Quên mật khẩu? Liên hệ quản trị viên để cấp lại.
-            </span>
+
           </div>
         </form>
       </div>

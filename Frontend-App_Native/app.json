@@ -30,7 +30,7 @@
       ]
     },
     "extra": {
-      "apiBase": "https://diacompanion.io.vn",
+      "apiBase": "https://localhost:55403",
       "eas": {
         "projectId": "9acb91ca-b817-44d7-8b43-c3e2eb167847"
       }
