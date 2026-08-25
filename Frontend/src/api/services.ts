@@ -358,28 +358,15 @@ export const adminApi = {
     http.get<T.ThresholdImpactDto>(
       "/api/admin/configs/threshold-impact" + query({ key, proposed }),
     ),
-  models: () => http.get<T.ModelVersionDto[]>("/api/admin/models"),
-  registerModel: (b: T.RegisterModelRequest) =>
-    http.post<T.ModelVersionDto>("/api/admin/models", b),
-  activate: (id: number, rowVersion: string) =>
-    http.put<T.ApiMessage>(`/api/admin/models/${id}/activate`, {
-      rowVersion,
-    }),
-  deleteModel: (id: number, rowVersion: string) =>
-    http.delete<T.ApiMessage>(
-      `/api/admin/models/${id}?rowVersion=${encodeURIComponent(rowVersion)}`,
-    ),
   audit: (p: Record<string, unknown>) =>
     http.get<T.KeysetResult<T.AuditLogDto>>("/api/admin/audit" + query(p)),
 };
 export const exportApi = {
   visitReport: (id: number) =>
     http.get<T.VisitReport>(`/api/export/visit-report/${id}`),
-  conflicts: (modelVersionId?: number | null) =>
-    http.get<T.DisagreementExport>(
-      "/api/export/disagreement-cases" + query({ modelVersionId }),
-    ),
-  conflictsCsv: (modelVersionId?: number | null) =>
-    http.blob("/api/export/disagreement-cases.csv" + query({ modelVersionId })),
+  conflicts: () =>
+    http.get<T.DisagreementExport>("/api/export/disagreement-cases"),
+  conflictsCsv: () =>
+    http.blob("/api/export/disagreement-cases.csv"),
 };
 

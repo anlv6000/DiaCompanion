@@ -3,13 +3,13 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
 import { useAsync } from "@/lib/hooks";
-import { Icon, Modal, LoadState, Button, StatusBadge } from "@/components/ui";
+import { Icon, Modal, LoadState, Button } from "@/components/ui";
 import { fmtDate, initials } from "@/lib/format";
 import type { Role, NotificationDto } from "@/types/api";
 import { hasAnyRole, rolesLabel } from "@/lib/roles";
 
 /* Khung ứng dụng: điều hướng trái + thanh trên. AppShell là container cấp cao
-   của layout nên được phép gọi useData (nạp thông báo, chip model). Các trang
+  của layout nên được phép gọi useData (nạp thông báo). Các trang
    con render trong <main> qua <Outlet/> ở routes.
 
    nav lọc theo vai trò — chỉ hiện mục người dùng có quyền. Đây là web bệnh
@@ -128,17 +128,10 @@ const NAV: [string, NavItem[]][] = [
       },
       { to: "/audit", label: "Nhật ký", icon: "lock", roles: ["Admin"] },
       { to: "/configs", label: "Cấu hình", icon: "settings", roles: ["Admin"] },
-      { to: "/models", label: "Model", icon: "settings", roles: ["Admin"] },
     ],
   ],
 ];
 
-
-function modelPipelineStatus(activeModel: string) {
-  const text = activeModel.toLowerCase();
-  const count = ["dr:", "lesion:", "fractal:"].filter((x) => text.includes(x)).length;
-  return `AI models ${count}/3 active`;
-}
 
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -150,14 +143,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
 
   const unread = useAsync(() => data.engagement.unread(), [user?.userId]);
-  const dash = useAsync(
-    () =>
-      hasAnyRole(user, ["Admin", "Doctor"])
-        ? data.admin.dashboard()
-        : Promise.resolve(null),
-    [user?.roles, user?.role],
-  );
-
   return (
     <div className={`app ${navOpen ? "nav-open" : ""}`.trim()}>
       {navOpen && (
@@ -222,12 +207,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           </button>
           <small>Console lâm sàng — sàng lọc võng mạc ĐTĐ</small>
           <div className="top-actions">
-            {dash.data?.activeModel && (
-              <StatusBadge
-                text={modelPipelineStatus(dash.data.activeModel)}
-                kind={modelPipelineStatus(dash.data.activeModel).includes("3/3") ? "ok" : "alert"}
-              />
-            )}
             <button
               className="notification-button"
               title="Thông báo"

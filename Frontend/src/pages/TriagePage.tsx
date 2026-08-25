@@ -298,7 +298,6 @@ function ReviewRail({
               />
               <Info k="Bất đồng" v={num(detail.data.disagreement, 3)} />
               <Info k="Fractal" v={num(detail.data.fractalDimension, 4)} />
-              <Info k="Model" v={detail.data.modelVersion} />
               <Info k="Thời điểm" v={fmtDate(detail.data.createdAt, true)} />
             </div>
             {detail.data.isDeferred && (

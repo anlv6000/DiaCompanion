@@ -34,7 +34,6 @@ import {
   DashboardPage,
   ConflictsPage,
   ConfigsPage,
-  ModelsPage,
   AuditPage,
 } from "@/pages/AdminPages";
 
@@ -327,14 +326,6 @@ export function AppRoutes() {
         element={
           <RequireAuth roles={["Admin"]}>
             <ConfigsPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/models"
-        element={
-          <RequireAuth roles={["Admin"]}>
-            <ModelsPage />
           </RequireAuth>
         }
       />

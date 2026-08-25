@@ -442,7 +442,6 @@ function RetinalImageCard({
                   <GradeBadge grade={finding.ai.grade} />
                   <span>Confidence: {pct(finding.ai.confidence)}</span>
                 </div>
-                <small>Model: {finding.ai.model || "—"}</small>
                 {finding.ai.isDeferred && (
                   <small>
                     AI đánh dấu cần bác sĩ xem xét do độ tin cậy/bất đồng.

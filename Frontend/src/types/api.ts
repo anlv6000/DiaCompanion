@@ -2,7 +2,6 @@ export type Role = "Admin" | "Doctor" | "Patient" | "Receptionist";
 export type StaffRole = Exclude<Role, "Patient">;
 export type DoctorOrReceptionist = "Doctor" | "Receptionist";
 
-export type ModelType = 1 | 2 | 3;
 export type Nullable<T> = T | null | undefined;
 export interface PagedResult<T> {
   items: T[];
@@ -244,14 +243,6 @@ export interface AiDiagnosisDto {
   visitId?: number | null;
   visitStatus?: number | null;
   eye: number;
-  /** Field tương thích cũ; backend trả tên DR model. */
-  modelVersion: string;
-  drModelVersionId: number;
-  drModelVersion: string;
-  lesionModelVersionId?: number | null;
-  lesionModelVersion?: string | null;
-  fractalModelVersionId?: number | null;
-  fractalModelVersion?: string | null;
   drGrade: number;
   drGradeLabel: string;
   clinicalRiskScore?: number | null;
@@ -324,7 +315,6 @@ export interface DisagreementCaseDto {
   aiDiagnosisId: number;
   patientCode: string;
   eye: number;
-  modelVersion: string;
   aiGrade: number;
   doctorGrade: number;
   gradeDistance: number;
@@ -592,7 +582,6 @@ export interface SaveBlogRequest {
 export interface DashboardDto {
   periodFrom: string;
   periodTo: string;
-  modelVersionId?: number | null;
   scope: string;
   totalPatients: number;
   visitsThisMonth: number;
@@ -602,8 +591,6 @@ export interface DashboardDto {
   referralRate: number;
   overrideRate: number;
   gradeDistribution: Record<string, number>;
-  /** Chuỗi backend: "Dr: ... | Lesion: ... | Fractal: ...". */
-  activeModel: string;
 }
 export interface SystemConfigDto {
   key: string;
@@ -628,33 +615,6 @@ export interface ThresholdImpactDto {
   currentRate: number;
   projectedRate: number;
   note: string;
-}
-export interface ModelVersionDto {
-  id: number;
-  modelType: ModelType;
-  modelTypeLabel: string;
-  name: string;
-  filePath: string;
-  sha256: string;
-  qwk?: number | null;
-  dice?: number | null;
-  ioU?: number | null;
-  note?: string | null;
-  isActive: boolean;
-  wasActivated: boolean;
-  activatedAt?: string | null;
-  diagnosisCount: number;
-  rowVersion: string;
-}
-export interface RegisterModelRequest {
-  modelType: ModelType;
-  name: string;
-  filePath: string;
-  sha256: string;
-  qwk?: number | null;
-  dice?: number | null;
-  ioU?: number | null;
-  note?: string | null;
 }
 export interface AuditLogDto {
   id: number;
@@ -734,7 +694,6 @@ export interface VisitReportFinding {
     confidence: number;
     disagreement?: number | null;
     isDeferred: boolean;
-    model: string;
     wasOverridden: boolean;
     overrideReason?: string | null;
   };

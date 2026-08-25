@@ -266,9 +266,6 @@ export function FundusPage({ imageId }: { imageId: number }) {
                         k="Fractal"
                         v={num(selected.fractalDimension, 4)}
                       />
-                      <Info k="DR model" v={selected.drModelVersion || selected.modelVersion} />
-                      <Info k="Lesion model" v={selected.lesionModelVersion || "—"} />
-                      <Info k="Fractal model" v={selected.fractalModelVersion || "—"} />
                       <Info
                         k="Thời điểm"
                         v={fmtDate(selected.createdAt, true)}

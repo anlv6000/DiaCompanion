@@ -1876,25 +1876,6 @@ input:disabled, select:disabled, textarea:disabled {
   cursor: not-allowed;
 }
 
-/* 3-model AI status */
-.model-active-grid {
-  margin-bottom: 12px;
-}
-.model-active-card {
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 12px;
-  min-width: 0;
-}
-.model-active-card code,
-.model-active-card .mono {
-  display: block;
-  margin-top: 8px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
 .chart .grid-line {
   stroke: var(--hairline);
   stroke-width: 0.7;
