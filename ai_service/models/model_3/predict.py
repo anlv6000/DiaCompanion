@@ -83,13 +83,33 @@ def dice_loss(y_true, y_pred):
     return 1 - dice_coef(y_true, y_pred)
 
 
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError(f"Model weights not found at {MODEL_PATH}")
-    return tf.keras.models.load_model(
-        MODEL_PATH,
+def _resolve_weights(weights_path):
+    """weights_path đến từ ModelVersion.FilePath do Admin đăng ký. Không truyền
+    hoặc đường dẫn không tồn tại thì dùng MODEL_PATH mặc định."""
+    if weights_path:
+        p = weights_path if os.path.isabs(weights_path) else os.path.join(SCRIPT_DIR, "..", "..", weights_path)
+        p = os.path.normpath(p)
+        if os.path.exists(p):
+            return p
+    return MODEL_PATH
+
+
+# Cache theo đường dẫn: đổi phiên bản ở màn Admin thì nạp trọng số mới.
+_MODEL_CACHE = {}
+
+
+def load_model(weights_path=None):
+    target = _resolve_weights(weights_path)
+    if target in _MODEL_CACHE:
+        return _MODEL_CACHE[target], target
+    if not os.path.exists(target):
+        raise RuntimeError(f"Model weights not found at {target}")
+    model = tf.keras.models.load_model(
+        target,
         custom_objects={"dice_coef": dice_coef, "dice_loss": dice_loss},
     )
+    _MODEL_CACHE[target] = model
+    return model, target
 
 
 # ---------------------------------------------------------------- tiền xử lý
@@ -200,7 +220,7 @@ def quadrant_slices(shape, cy, cx):
 
 
 # ---------------------------------------------------------------- pipeline
-def predict(image_path, output_dir, eye=None):
+def predict(image_path, output_dir, eye=None, weights_path=None):
     """
     eye: "OD" (mắt phải) | "OS" (mắt trái) | None.
 
@@ -212,7 +232,7 @@ def predict(image_path, output_dir, eye=None):
         raise FileNotFoundError(f"Image not found: {image_path}")
     os.makedirs(output_dir, exist_ok=True)
 
-    model = load_model()
+    model, weights_used = load_model(weights_path)
 
     image = cv2.imread(image_path)
     if image is None:
@@ -287,6 +307,7 @@ def predict(image_path, output_dir, eye=None):
             "boxSizesFull": BOX_SIZES_FULL,
             "boxSizesQuadrant": BOX_SIZES_QUAD,
             "computedOn": "mask",
+            "weightsUsed": weights_used,
         },
     }
 

@@ -54,24 +54,37 @@ inference_tf = A.Compose([
     ToTensorV2()
 ])
 
-_model = None
+def _resolve_weights(weights_path):
+    """weights_path đến từ ModelVersion.FilePath do Admin đăng ký. Không truyền
+    hoặc đường dẫn không tồn tại thì dùng MODEL_PATH mặc định."""
+    if weights_path:
+        p = weights_path if os.path.isabs(weights_path) else os.path.join(SCRIPT_DIR, "..", "..", weights_path)
+        p = os.path.normpath(p)
+        if os.path.isfile(p):
+            return p
+    return MODEL_PATH
 
 
-def load_model():
-    global _model
-    if _model is not None:
-        return _model
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError(f"Model weights not found at {MODEL_PATH}")
+# Cache theo đường dẫn, không phải một biến toàn cục duy nhất: đổi phiên bản
+# model ở màn Admin phải nạp trọng số mới chứ không dùng lại bản cũ.
+_MODEL_CACHE = {}
+
+
+def load_model(weights_path=None):
+    target = _resolve_weights(weights_path)
+    if target in _MODEL_CACHE:
+        return _MODEL_CACHE[target], target
+    if not os.path.exists(target):
+        raise RuntimeError(f"Model weights not found at {target}")
     model = smp.Unet(
         encoder_name=ENCODER_NAME, encoder_weights=None,
         in_channels=3, classes=NUM_CLASSES
     )
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.load_state_dict(torch.load(target, map_location=device))
     model.to(device)
     model.eval()
-    _model = model
-    return _model
+    _MODEL_CACHE[target] = model
+    return model, target
 
 
 def count_lesion_regions(binary_mask):
@@ -126,12 +139,12 @@ def draw_annotated_overlay(original_bgr, pred_mask, original_w, original_h):
     return np.vstack([legend, overlay])
 
 
-def predict(image_path, output_dir):
+def predict(image_path, output_dir, weights_path=None):
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
     os.makedirs(output_dir, exist_ok=True)
 
-    model = load_model()
+    model, weights_used = load_model(weights_path)
 
     image_bgr = cv2.imread(image_path)
     if image_bgr is None:
@@ -169,7 +182,8 @@ def predict(image_path, output_dir):
         "lesionCounts": lesion_counts,
         "pixelCounts": pixel_counts,
         "maskPath": mask_path,
-        "annotatedPath": annotated_path
+        "annotatedPath": annotated_path,
+        "weightsUsed": weights_used
     }
 
 

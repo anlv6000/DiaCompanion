@@ -50,7 +50,9 @@ public class TriageService : BaseService, ITriageService
         {
             AiDiagnosisId = x.Id, PatientId = x.PatientId, PatientCode = x.PatientCode,
             PatientName = x.PatientName, VisitId = x.VisitId, Eye = (byte)x.Eye,
-            DrGrade = (byte)x.DrGrade, Confidence = x.Confidence, Disagreement = x.Disagreement,
+            DrGrade = (byte)x.DrGrade,
+            ClinicalRiskScore = x.ClinicalRiskScore,
+            Disagreement = x.Disagreement,
             IsDeferred = x.IsDeferred, DeferReason = (byte?)x.DeferReason,
             NeedsReferral = (byte)x.DrGrade >= referableGrade, CreatedAt = _clock.ToLocal(x.CreatedAt)!.Value,
             DoctorName = x.DoctorName, RowVersion = x.RowVer.Length == 0 ? null : Convert.ToBase64String(x.RowVer)

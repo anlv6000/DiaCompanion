@@ -6,7 +6,11 @@ namespace DiaCompanion.Api.Repositories;
 public sealed record TriageQueueRow(
     int Id, DrGrade DrGrade, decimal Confidence, decimal? Disagreement, bool IsDeferred,
     DeferReason? DeferReason, DateTime CreatedAt, byte[] RowVer, Eye Eye, int? VisitId,
-    int PatientId, string PatientCode, string PatientName, int? DoctorId, string? DoctorName);
+    int PatientId, string PatientCode, string PatientName, int? DoctorId, string? DoctorName)
+{
+    public byte? ClinicalRiskScore { get; internal set; }
+}
+
 public sealed record TriageQueuePage(IReadOnlyList<TriageQueueRow> Items, bool HasMore);
 public sealed record TriageCounts(int Pending, int Deferred);
 

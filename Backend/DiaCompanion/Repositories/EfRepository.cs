@@ -322,5 +322,27 @@ public sealed partial class EfRepository : IRepository
                 u => u.Id == userId,
                 ct);
     }
+    public Task<Patient?> GetPatientForRiskAsync(int patientId, CancellationToken ct = default) =>
+    _db.Patients.AsNoTracking().FirstOrDefaultAsync(p => p.Id == patientId, ct);
 
+    public async Task<decimal?> GetLatestHba1cAsync(int patientId, CancellationToken ct = default) =>
+        await _db.HealthMetrics.AsNoTracking()
+            .Where(m => m.PatientId == patientId && m.MetricType == MetricType.HbA1c)
+            .OrderByDescending(m => m.RecordedAtUtc).ThenByDescending(m => m.Id)
+            .Select(m => (decimal?)m.Value)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<decimal?> GetRecentSystolicAverageAsync(
+        int patientId, int sampleSize, CancellationToken ct = default)
+    {
+        var values = await _db.HealthMetrics.AsNoTracking()
+            .Where(m => m.PatientId == patientId && m.MetricType == MetricType.SystolicBp)
+            .OrderByDescending(m => m.RecordedAtUtc).ThenByDescending(m => m.Id)
+            .Take(sampleSize)
+            .Select(m => m.Value)
+            .ToListAsync(ct);
+
+        // Dưới 3 lần đo thì không đủ cơ sở kết luận kiểm soát HA -> trả null (fail-safe).
+        return values.Count < sampleSize ? null : values.Average();
+    }
 }

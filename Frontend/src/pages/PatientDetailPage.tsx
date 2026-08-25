@@ -550,7 +550,7 @@ function ImagesTab({ patientId }: { patientId: number }) {
               "Lượt khám",
               "Chất lượng",
               "AI gần nhất",
-              "Tin cậy",
+              "Nguy cơ",
               "Bất đồng",
               "Xác nhận",
               "Ngày nạp",
@@ -596,12 +596,10 @@ function ImagesTab({ patientId }: { patientId: number }) {
                 <td>
                   <GradeBadge grade={img.latestDiagnosis?.drGrade} />
                 </td>
-                <td>
-                  {img.latestDiagnosis ? (
-                    <Meter value={img.latestDiagnosis.confidence} />
-                  ) : (
-                    "—"
-                  )}
+                <td className="mono">
+                  {img.latestDiagnosis?.clinicalRiskScore == null
+                    ? "—"
+                    : img.latestDiagnosis.clinicalRiskScore}
                 </td>
                 <td>
                   {img.latestDiagnosis ? (

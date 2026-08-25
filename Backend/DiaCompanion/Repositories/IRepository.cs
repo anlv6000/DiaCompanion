@@ -48,4 +48,7 @@ public partial interface IRepository : IUnitOfWork
         int patientId,
         bool tracking,
         CancellationToken ct = default);
+    Task<Patient?> GetPatientForRiskAsync(int patientId, CancellationToken ct = default);
+    Task<decimal?> GetLatestHba1cAsync(int patientId, CancellationToken ct = default);
+    Task<decimal?> GetRecentSystolicAverageAsync(int patientId, int sampleSize, CancellationToken ct = default);
 }

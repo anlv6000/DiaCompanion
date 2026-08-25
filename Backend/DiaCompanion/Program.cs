@@ -56,6 +56,7 @@ builder.Services.AddScoped<IConfigService, ConfigService>();
 builder.Services.AddScoped<IVoidService, VoidService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAdherenceService, AdherenceService>();
+builder.Services.AddScoped<IClinicalRiskService, ClinicalRiskService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddHttpClient<ISmsSender, SmsGatewaySender>(c =>
 {
