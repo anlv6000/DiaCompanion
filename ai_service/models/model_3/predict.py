@@ -246,27 +246,38 @@ def predict(image_path, output_dir, eye=None, weights_path=None):
     mask = (pred > 0.5)
     mask = mask[:, :, 0] if mask.ndim == 3 else mask
 
-    # --- chuẩn hoá theo mắt
+    # --- chuẩn hoá theo mắt CHỈ để phân tích vùng, KHÔNG đụng ảnh xuất ra.
+    # Lỗi cũ: lật cả mask/image tại chỗ rồi lưu bản ĐÃ LẬT -> mask chồng lên ảnh
+    # gốc mắt trái (OS) bị soi gương ngược. Nay giữ mask ở đúng chiều ảnh đầu vào
+    # để lưu/hiển thị, và chỉ lật MỘT BẢN SAO để gán nhãn temporal/nasal cho
+    # đồng nhất giữa hai mắt (trục nasal-temporal đảo chiều giữa OD và OS).
     eye_norm = (eye or "").strip().upper()
     flipped = eye_norm == "OS"
-    if flipped:
-        mask = np.fliplr(mask)
-        image = np.fliplr(image)
 
-    # --- FD toàn ảnh, tính trên MASK (không skeleton)
+    mask_norm = np.fliplr(mask) if flipped else mask
+    image_norm = np.fliplr(image) if flipped else image
+
+    # --- FD toàn ảnh + lacunarity: bất biến với lật ngang (512 chia hết cho mọi
+    # cạnh hộp) nên tính thẳng trên mask GỐC.
     fd_total, _ = box_count_fd(mask, BOX_SIZES_FULL)
     lac = lacunarity(mask)
 
-    # --- loại đĩa thị rồi chia vùng
-    disc_y, disc_x = locate_optic_disc(mask)
-    mask_no_disc = remove_disc(mask, disc_y, disc_x)
+    # --- loại đĩa thị rồi chia vùng, TẤT CẢ trong không gian đã chuẩn hoá.
+    disc_y, disc_x = locate_optic_disc(mask_norm)
+    mask_no_disc = remove_disc(mask_norm, disc_y, disc_x)
 
-    cy, cx = fov_center(image)
+    cy, cx = fov_center(image_norm)
     quads = {}
     if eye_norm in ("OD", "OS"):
-        for name, (sy, sx) in quadrant_slices(mask.shape, cy, cx).items():
+        for name, (sy, sx) in quadrant_slices(mask_norm.shape, cy, cx).items():
             fd, _ = box_count_fd(mask_no_disc[sy, sx], BOX_SIZES_QUAD)
             quads[name] = round(fd, 4) if fd is not None else None
+
+    # discCenter/fovCenter suy trong không gian chuẩn hoá -> ánh xạ NGƯỢC về toạ
+    # độ ảnh gốc để trùng với mask đã lưu (điểm x lật quanh mép phải).
+    w_full = mask.shape[1]
+    disc_x_orig = (w_full - 1 - disc_x) if flipped else disc_x
+    cx_orig = (w_full - 1 - cx) if flipped else cx
 
     values = [v for v in quads.values() if v is not None]
     complete = len(values) == 4
@@ -278,7 +289,8 @@ def predict(image_path, output_dir, eye=None, weights_path=None):
         if complete else None
     )
 
-    # --- ảnh xuất ra (skeleton chỉ để hiển thị)
+    # --- ảnh xuất ra Ở ĐÚNG CHIỀU ẢNH GỐC (skeleton chỉ để hiển thị).
+    # Dùng mask GỐC, không phải mask_norm, để chồng khớp ảnh đáy mắt đầu vào.
     skeleton = skeletonize(mask)
     mask_path = os.path.join(output_dir, "vessel_mask.png")
     skeleton_path = os.path.join(output_dir, "skeleton.png")
@@ -302,8 +314,8 @@ def predict(image_path, output_dir, eye=None, weights_path=None):
             "flipped": flipped,
             "imgSize": IMG_SIZE,
             "discRadius": DISC_RADIUS,
-            "discCenter": [disc_y, disc_x],
-            "fovCenter": [cy, cx],
+            "discCenter": [disc_y, disc_x_orig],
+            "fovCenter": [cy, cx_orig],
             "boxSizesFull": BOX_SIZES_FULL,
             "boxSizesQuadrant": BOX_SIZES_QUAD,
             "computedOn": "mask",

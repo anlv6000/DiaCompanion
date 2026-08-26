@@ -25,7 +25,8 @@ public enum DeferReason : byte
     LowConfidence = 1,
     HighDisagreement = 2,
     Both = 3,
-    MissingBranch = 4
+    MissingBranch = 4,
+    Referable = 5
 }
 
 public enum MedicationStatus : byte { Pending = 0, Taken = 1, Missed = 2, Skipped = 3, Cancelled = 4 }
@@ -83,7 +84,6 @@ public static class AuditAction
 
 public static class ConfigKeys
 {
-    public const string ConfidenceThreshold = "ai.confidence_threshold";
     public const string DisagreementThreshold = "ai.disagreement_threshold";
     public const string ReferableGrade = "screening.referable_grade";
     /// <summary>Giờ làm việc — dùng cho thông báo, không còn để đặt lịch theo khung giờ.</summary>
@@ -91,9 +91,6 @@ public static class ConfigKeys
     public const string CloseHour = "clinic.close_hour";
     public const string OtpTtlSeconds = "otp.ttl_seconds";
     public const string OtpMaxAttempts = "otp.max_attempts";
-    public const string GlucoseFastingMax = "metric.glucose_fasting_max";
-    public const string GlucosePostMealMax = "metric.glucose_postmeal_max";
-    public const string GlucoseMin = "metric.glucose_min";
     public const string ShiftMorningStart = "clinic.shift_morning_start";
     public const string ShiftAfternoonStart = "clinic.shift_afternoon_start";
     public const string ShiftNightStart = "clinic.shift_night_start";

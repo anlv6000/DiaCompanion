@@ -52,6 +52,7 @@ pip install -r requirements.txt
 cp .env.example .env          # sửa FUNDUS_ROOT trỏ đúng thư mục ảnh backend
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+venv\Scripts\python.exe -m uvicorn app:app --host 0.0.0.0 --port 8000
 
 Kiểm tra sống: `curl http://localhost:8000/health` → `{"status":"ok"}`.
 

@@ -440,11 +440,10 @@ function RetinalImageCard({
                 <b>AI DR</b>
                 <div className="report-inline-value">
                   <GradeBadge grade={finding.ai.grade} />
-                  <span>Confidence: {pct(finding.ai.confidence)}</span>
                 </div>
                 {finding.ai.isDeferred && (
                   <small>
-                    AI đánh dấu cần bác sĩ xem xét do độ tin cậy/bất đồng.
+                    AI đánh dấu cần bác sĩ xem xét do bất đồng chéo hoặc thiếu nhánh.
                   </small>
                 )}
               </div>

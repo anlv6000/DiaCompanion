@@ -11,17 +11,21 @@ namespace DiaCompanion.Api.Services;
 /// không đầu ra nào tự nó mang được: nó cho biết ảnh khó thật, hoặc mô hình
 /// đang chạy ngoài vùng năng lực.
 ///
-/// THIẾT KẾ MỚI (bỏ độ tin cậy):
-///   Độ tin cậy Module 1 không phải xác suất (mô hình hồi quy, không softmax),
-///   nên đã NGHỈ HƯU khỏi quyết định. Defer nay chỉ dựa trên (a) bất đồng chéo
-///   và (b) thiếu nhánh. Điểm nguy cơ nền của bệnh nhân HẠ ngưỡng bất đồng:
-///   bệnh nhân nguy cơ cao thì chỉ cần chênh một bậc đã cần bác sĩ xem.
-///   Điểm nguy cơ KHÔNG đụng DR grade và không thay Doctor confirmation.
+/// THIẾT KẾ (lưới an toàn referable):
+///   Kiểm định trên IDRiD cho thấy dùng bất đồng chéo làm cổng defer BỎ SÓT
+///   ~60% ca cần chuyển tuyến — không an toàn cho sàng lọc. Vì vậy quyết định
+///   defer nay theo nguyên tắc referable: chỉ TỰ THÔNG QUA khi CẢ HAI nhánh
+///   (phân loại DR và grade suy từ tổn thương) đều dưới ngưỡng referable; bất
+///   kỳ nhánh nào chạm referable, hoặc thiếu một nhánh, đều chuyển bác sĩ.
+///   Bất đồng chéo VẪN được tính và lưu để minh bạch/nghiên cứu nhưng KHÔNG
+///   còn là cổng quyết định. Điểm nguy cơ nền KHÔNG gate defer nữa mà dùng để
+///   XẾP ƯU TIÊN hàng đợi triage. Điểm nguy cơ KHÔNG đụng DR grade và không
+///   thay Doctor confirmation.
 /// </summary>
 public interface IDeferralService
 {
     DeferralResult Evaluate(DrGrade gradeHead, DrGrade? lesionImplied,
-                            int riskScore, decimal baseDisagreementThreshold);
+                            decimal baseDisagreementThreshold, DrGrade referableGrade);
 }
 
 public record DeferralResult(
@@ -35,42 +39,36 @@ public class DeferralService : IDeferralService
     /// <summary>Thang DR có 5 mức nên chênh lệch tối đa là 4 bậc.</summary>
     private const decimal MaxGradeDistance = 4m;
 
-    /// <summary>Sàn cứng: ngưỡng hiệu dụng không bao giờ xuống dưới mức này.</summary>
-    private const decimal MinThreshold = 0.05m;
-
-    /// <summary>Mỗi điểm nguy cơ hạ ngưỡng một bước nhỏ.</summary>
-    private const decimal RiskStep = 0.05m;
-
-    /// <summary>Tác động của nguy cơ bị chặn trên: chỉ 3 điểm đầu có hiệu lực.</summary>
-    private const int MaxRiskEffect = 3;
-
     public DeferralResult Evaluate(
         DrGrade gradeHead,
         DrGrade? lesionImplied,
-        int riskScore,
-        decimal baseDisagreementThreshold)
+        decimal baseDisagreementThreshold,
+        DrGrade referableGrade)
     {
-        // Ngưỡng hiệu dụng = ngưỡng gốc - 0.05 x min(riskScore, 3), có sàn 0.05.
-        // Với gốc 0.35 và riskScore >= 3, ngưỡng xuống 0.20 — vừa đủ để "chênh
-        // một bậc" (0.25) kích hoạt defer, không bao giờ tới mức defer tất cả.
-        var clamped = Math.Min(Math.Max(riskScore, 0), MaxRiskEffect);
-        var effective = baseDisagreementThreshold - RiskStep * clamped;
-        if (effective < MinThreshold) effective = MinThreshold;
+        // Bất đồng chéo vẫn được tính để LƯU (minh bạch/nghiên cứu) nhưng KHÔNG
+        // còn là cổng quyết định defer.
+        decimal? disagreement = null;
+        if (lesionImplied is not null)
+        {
+            var distance = Math.Abs((int)gradeHead - (int)lesionImplied.Value);
+            disagreement = Math.Round(distance / MaxGradeDistance, 4);
+        }
 
-        // Thiếu kết quả một nhánh thì không tính được bất đồng.
-        // Mặc định CHUYỂN BÁC SĨ, không mặc định tin tưởng — an toàn nghiêng
-        // về phía con người khi hệ thống thiếu thông tin.
+        // Thiếu một nhánh -> không đủ hai ý kiến để tự thông qua an toàn ->
+        // chuyển bác sĩ. An toàn nghiêng về phía con người.
         if (lesionImplied is null)
-            return new DeferralResult(null, true, DeferReason.MissingBranch, effective);
+            return new DeferralResult(disagreement, true, DeferReason.MissingBranch,
+                                      baseDisagreementThreshold);
 
-        // Chuẩn hoá khoảng cách thứ bậc về [0,1].
-        var distance = Math.Abs((int)gradeHead - (int)lesionImplied.Value);
-        var disagreement = Math.Round(distance / MaxGradeDistance, 4);
+        // LƯỚI AN TOÀN referable: chỉ tự thông qua khi CẢ HAI nhánh đều dưới
+        // ngưỡng referable. Bất kỳ nhánh nào chạm referable -> chuyển bác sĩ.
+        // Sàng lọc thà xem thừa còn hơn bỏ sót ca cần chuyển tuyến.
+        var referable = (int)referableGrade;
+        var potentiallyReferable =
+            (int)gradeHead >= referable || (int)lesionImplied.Value >= referable;
 
-        // Chỉ còn một tín hiệu sinh mới: bất đồng vượt ngưỡng hiệu dụng.
-        var deferred = disagreement > effective;
-        var reason = deferred ? DeferReason.HighDisagreement : (DeferReason?)null;
-
-        return new DeferralResult(disagreement, deferred, reason, effective);
+        var reason = potentiallyReferable ? DeferReason.Referable : (DeferReason?)null;
+        return new DeferralResult(disagreement, potentiallyReferable, reason,
+                                  baseDisagreementThreshold);
     }
 }

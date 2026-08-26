@@ -228,7 +228,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
           />
 
           <section className="panel ai-diagnosis-square">
-            <div className="panel-h">AI hỗ trợ chẩn đoán AI</div>
+            <div className="panel-h">AI hỗ trợ chẩn đoán</div>
             <div className="panel-b ai-diagnosis-scroll">
               <LoadState
                 loading={diagnoses.loading}
@@ -248,99 +248,8 @@ export function FundusPage({ imageId }: { imageId: number }) {
                       />
                     </div>
 
-                    <div className="detail-grid ai-detail-grid">
-                      <Info k="Bất đồng" v={num(selected.disagreement, 3)} />
-                      <Info
-                        k="Ngưỡng áp dụng"
-                        v={num(selected.effectiveDisagreementThreshold, 2)}
-                      />
-                      <Info
-                        k="Nguy cơ nền"
-                        v={
-                          selected.clinicalRiskScore == null
-                            ? "—"
-                            : `${selected.clinicalRiskScore} điểm`
-                        }
-                      />
-                      <Info
-                        k="Fractal"
-                        v={num(selected.fractalDimension, 4)}
-                      />
-                      <Info
-                        k="Thời điểm"
-                        v={fmtDate(selected.createdAt, true)}
-                      />
-                      <Info
-                        k="Phân độ từ tổn thương"
-                        v={
-                          selected.lesionGradeImplied == null
-                            ? "—"
-                            : grades[selected.lesionGradeImplied]
-                        }
-                      />
-                    </div>
-
-                    <div className="ai-section">
-                      <b>Tổn thương</b>
-                      <div className="bars">
-                        <Lesion
-                          name="Vi phình mạch (MA)"
-                          value={selected.countMA}
-                        />
-                        <Lesion
-                          name="Xuất huyết (HE)"
-                          value={selected.countHE}
-                        />
-                        <Lesion
-                          name="Xuất tiết cứng (EX)"
-                          value={selected.countEX}
-                        />
-                        <Lesion
-                          name="Xuất tiết mềm (SE)"
-                          value={selected.countSE}
-                        />
-                      </div>
-                    </div>
-
-                    {selected.fractalNote && (
-                      <div className="ai-section">
-                        <b>Ghi chú fractal</b>
-                        <p>{selected.fractalNote}</p>
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Ký hiệu</th>
-                              <th>Tên</th>
-                              <th>Vị trí</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td>ST</td>
-                              <td>Superotemporal</td>
-                              <td>Trên, phía thái dương</td>
-                            </tr>
-                            <tr>
-                              <td>SN</td>
-                              <td>Superonasal</td>
-                              <td>Trên, phía mũi</td>
-                            </tr>
-                            <tr>
-                              <td>IT</td>
-                              <td>Inferotemporal</td>
-                              <td>Dưới, phía thái dương</td>
-                            </tr>
-                            <tr>
-                              <td>IN</td>
-                              <td>Inferonasal</td>
-                              <td>Dưới, phía mũi</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {selected.isDeferred && (
+                    {/* Ưu tiên hành động: nếu cần bác sĩ xem, nói rõ bằng lời và đặt lên đầu */}
+                    {selected.isDeferred ? (
                       <div
                         className="state"
                         style={{
@@ -348,15 +257,160 @@ export function FundusPage({ imageId }: { imageId: number }) {
                           borderColor: "var(--defer)",
                         }}
                       >
-                        <b>Chuyển bác sĩ</b>
-                        <div>{selected.deferReasonLabel}</div>
+                        <b>Cần bác sĩ xem xét</b>
+                        <div>
+                          {selected.deferReason === 5
+                            ? "AI thấy dấu hiệu có thể cần chuyển tuyến — bác sĩ xác nhận."
+                            : selected.deferReason === 4
+                              ? "Thiếu một phần kết quả AI — cần bác sĩ xác nhận trực tiếp trên ảnh."
+                              : selected.deferReason === 2
+                                ? "AI phân độ và mức độ tổn thương chưa thống nhất — cần bác sĩ xác nhận."
+                                : selected.deferReasonLabel || "Cần bác sĩ xác nhận."}
+                        </div>
                         {selected.clinicalRiskFactors && (
-                          <div className="small faint">
-                            {selected.clinicalRiskFactors}
+                          <div className="small faint" style={{ marginTop: 4 }}>
+                            Yếu tố ưu tiên xem sớm: {selected.clinicalRiskFactors}
                           </div>
                         )}
                       </div>
+                    ) : (
+                      !selected.isConfirmed && (
+                        <div className="state">
+                          AI không thấy mâu thuẫn giữa các nhánh — bác sĩ xác nhận để
+                          hoàn tất.
+                        </div>
+                      )
                     )}
+
+                    {/* Đối chiếu phân độ theo tổn thương — thông tin lâm sàng, không phải số nghiên cứu */}
+                    <div className="detail-grid ai-detail-grid">
+                      <Info
+                        k="Thời điểm chạy"
+                        v={fmtDate(selected.createdAt, true)}
+                      />
+                      <Info
+                        k="Phân độ theo tổn thương"
+                        v={
+                          selected.lesionGradeImplied == null
+                            ? "—"
+                            : grades[selected.lesionGradeImplied]
+                        }
+                      />
+                    </div>
+                    {selected.lesionGradeImplied != null &&
+                      selected.lesionGradeImplied !== selected.drGrade && (
+                        <div className="small faint">
+                          Phân bố tổn thương gợi ý mức khác với phân độ chính — nên
+                          xem kỹ ảnh trước khi xác nhận.
+                        </div>
+                      )}
+
+                    {/* Tổn thương đếm được — thông tin lâm sàng trực tiếp */}
+                    <div className="ai-section">
+                      <b>Tổn thương phát hiện</b>
+                      <div className="bars">
+                        <Lesion name="Vi phình mạch (MA)" value={selected.countMA} />
+                        <Lesion name="Xuất huyết (HE)" value={selected.countHE} />
+                        <Lesion name="Xuất tiết cứng (EX)" value={selected.countEX} />
+                        <Lesion name="Xuất tiết mềm (SE)" value={selected.countSE} />
+                      </div>
+                    </div>
+
+                    {selected.fractalDimension != null && (
+                      <div className="ai-section">
+                        <b>Chỉ số mạch máu võng mạc</b>
+                        <div className="split">
+                          <span>Độ phức tạp mạch máu (FD)</span>
+                          <b className="mono">
+                            {num(selected.fractalDimension, 3)}
+                          </b>
+                        </div>
+                        <div className="small faint">
+                          Tham chiếu ~1,43–1,47 ở mạch máu bình thường. Dùng để so
+                          sánh xu hướng giữa các lần chụp của cùng bệnh nhân, không
+                          thay chẩn đoán của bác sĩ.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Số nghiên cứu gập lại — bác sĩ không cần, để phục vụ kiểm chứng/nghiên cứu */}
+                    <details className="ai-tech">
+                      <summary>Chi tiết kỹ thuật (dành cho nghiên cứu)</summary>
+                      <div
+                        className="detail-grid ai-detail-grid"
+                        style={{ marginTop: 8 }}
+                      >
+                        <Info k="Bất đồng chéo" v={num(selected.disagreement, 3)} />
+                        <Info
+                          k="Ngưỡng áp dụng"
+                          v={num(selected.effectiveDisagreementThreshold, 2)}
+                        />
+                        <Info
+                          k="Điểm nguy cơ nền"
+                          v={
+                            selected.clinicalRiskScore == null
+                              ? "—"
+                              : `${selected.clinicalRiskScore} điểm`
+                          }
+                        />
+                        <Info
+                          k="Lacunarity (độ rỗng mạch)"
+                          v={num(selected.lacunarity, 4)}
+                        />
+                        <Info
+                          k="Bất đối xứng vùng"
+                          v={num(selected.fractalAsymmetry, 4)}
+                        />
+                        <Info
+                          k="Chênh thái dương–mũi"
+                          v={num(selected.fractalTn, 4)}
+                        />
+                      </div>
+
+                      {(selected.fractalSt != null ||
+                        selected.fractalSn != null ||
+                        selected.fractalIt != null ||
+                        selected.fractalIn != null) && (
+                        <table className="ai-quad-table">
+                          <thead>
+                            <tr>
+                              <th>Vùng</th>
+                              <th>Vị trí</th>
+                              <th>FD</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>ST</td>
+                              <td>Trên, phía thái dương</td>
+                              <td className="mono">{num(selected.fractalSt, 4)}</td>
+                            </tr>
+                            <tr>
+                              <td>SN</td>
+                              <td>Trên, phía mũi</td>
+                              <td className="mono">{num(selected.fractalSn, 4)}</td>
+                            </tr>
+                            <tr>
+                              <td>IT</td>
+                              <td>Dưới, phía thái dương</td>
+                              <td className="mono">{num(selected.fractalIt, 4)}</td>
+                            </tr>
+                            <tr>
+                              <td>IN</td>
+                              <td>Dưới, phía mũi</td>
+                              <td className="mono">{num(selected.fractalIn, 4)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      )}
+
+                      {selected.fractalNote &&
+                        selected.fractalAsymmetry == null && (
+                          <p className="small faint" style={{ marginTop: 8 }}>
+                            {selected.fractalNote}
+                          </p>
+                        )}
+                    </details>
 
                     {selected.review ? (
                       <div className="ai-section">

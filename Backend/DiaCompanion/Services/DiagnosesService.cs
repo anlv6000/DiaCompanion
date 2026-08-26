@@ -98,11 +98,16 @@ public class DiagnosesService : BaseService, IDiagnosesService
 
         var lesionGrade = result.LesionGradeImplied is byte lg ? (DrGrade)lg : (DrGrade?)null;
 
-        // Điểm nguy cơ nền tính theo loại đái tháo đường (chỉ hạ ngưỡng, không đổi grade).
+        // Điểm nguy cơ nền: KHÔNG còn gate defer, chỉ LƯU và dùng XẾP ƯU TIÊN
+        // hàng đợi triage (ca nguy cơ cao được bác sĩ xem trước).
         var risk = await _risk.EvaluateAsync(image.PatientId, ct);
 
+        // Ngưỡng referable đọc tại thời điểm chạy (BR-17). Lưới an toàn: chuyển
+        // bác sĩ nếu bất kỳ nhánh nào chạm referable, hoặc thiếu một nhánh.
+        var referableGrade = (DrGrade)(byte)await _cfg.GetIntAsync(ConfigKeys.ReferableGrade, 2);
+
         var deferral = _deferral.Evaluate(
-            (DrGrade)result.DrGrade, lesionGrade, risk.Score, disagreeThreshold);
+            (DrGrade)result.DrGrade, lesionGrade, disagreeThreshold, referableGrade);
 
         var factorsText = risk.Factors.Count == 0 ? null : string.Join(" · ", risk.Factors);
         if (factorsText is { Length: > 500 }) factorsText = factorsText[..500];
@@ -153,6 +158,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
                 ClinicalRiskScore = (byte)Math.Clamp(risk.Score, 0, 255),
                 ClinicalRiskFactors = factorsText,
                 FractalDimension = result.FractalDimension,
+                FractalSt = result.FractalSt,
+                FractalSn = result.FractalSn,
+                FractalIt = result.FractalIt,
+                FractalIn = result.FractalIn,
+                FractalAsymmetry = result.FractalAsymmetry,
+                FractalTn = result.FractalTn,
+                Lacunarity = result.Lacunarity,
                 VesselMaskPath = result.VesselMaskPath,
                 FractalNote = result.FractalNote,
                 InferenceMs = result.InferenceMs
@@ -325,6 +337,7 @@ public class DiagnosesService : BaseService, IDiagnosesService
         2 => "Bất đồng giữa hai nhánh cao",
         3 => "Tin cậy thấp và bất đồng cao",
         4 => "Thiếu kết quả một nhánh",
+        5 => "Có dấu hiệu có thể cần chuyển tuyến",
         _ => ""
     };
 
@@ -364,6 +377,13 @@ public class DiagnosesService : BaseService, IDiagnosesService
             DeferReason = (byte?)d.DeferReason,
             DeferReasonLabel = DeferLabel((byte?)d.DeferReason),
             FractalDimension = d.FractalDimension,
+            FractalSt = d.FractalSt,
+            FractalSn = d.FractalSn,
+            FractalIt = d.FractalIt,
+            FractalIn = d.FractalIn,
+            FractalAsymmetry = d.FractalAsymmetry,
+            FractalTn = d.FractalTn,
+            Lacunarity = d.Lacunarity,
             FractalNote = d.FractalNote,
             HasLesionMask = !string.IsNullOrWhiteSpace(d.LesionMaskPath),
             HasFractalImage = !string.IsNullOrWhiteSpace(d.VesselMaskPath),

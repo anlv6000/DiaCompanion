@@ -318,7 +318,6 @@ export interface DisagreementCaseDto {
   aiGrade: number;
   doctorGrade: number;
   gradeDistance: number;
-  confidence: number;
   disagreement?: number | null;
   wasDeferred: boolean;
   reason?: string | null;
@@ -691,7 +690,6 @@ export interface VisitReportFinding {
   ai: {
     grade: number;
     gradeLabel: string;
-    confidence: number;
     disagreement?: number | null;
     isDeferred: boolean;
     wasOverridden: boolean;

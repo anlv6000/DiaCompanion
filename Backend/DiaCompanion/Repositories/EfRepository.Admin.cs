@@ -85,7 +85,7 @@ public sealed partial class EfRepository
 
     public async Task<IReadOnlyList<DiagnosisThresholdRow>> GetDiagnosisThresholdRowsAsync(CancellationToken ct = default) =>
         await _db.AiDiagnoses.AsNoTracking()
-            .Select(d => new DiagnosisThresholdRow(d.Confidence, d.Disagreement, d.IsDeferred))
+            .Select(d => new DiagnosisThresholdRow(d.Disagreement, d.IsDeferred))
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<ModelVersionWithCount>> GetModelVersionsWithCountsAsync(CancellationToken ct = default)

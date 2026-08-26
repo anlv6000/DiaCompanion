@@ -94,7 +94,7 @@ export function DashboardPage() {
               <Panel title="Phân bố mức DR đã được bác sĩ xác nhận">
                 <GradeBars distribution={dash.data.gradeDistribution} />
               </Panel>
-              <Panel title="Ngưỡng tin cậy → tỉ lệ defer ước tính">
+              <Panel title="Ngưỡng bất đồng → tỉ lệ defer ước tính">
                 <LoadState
                   loading={impacts.loading}
                   error={impacts.error}
@@ -106,7 +106,7 @@ export function DashboardPage() {
                   }
                 >
                   <LineChart
-                    xLabel="Ngưỡng confidence"
+                    xLabel="Ngưỡng bất đồng"
                     yLabel="Tỉ lệ defer (%)"
                     series={[
                       {
@@ -136,9 +136,9 @@ function useAsyncImpacts(data: ReturnType<typeof useData>, isAdmin: boolean) {
   return useAsync(async () => {
     if (!isAdmin) return [] as { x: string; y: number }[];
     const points: { x: string; y: number }[] = [];
-    for (const proposed of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
+    for (const proposed of [0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]) {
       try {
-        const x = await data.admin.impact("ai.confidence_threshold", proposed);
+        const x = await data.admin.impact("ai.disagreement_threshold", proposed);
         points.push({ x: proposed.toFixed(1), y: x.projectedRate });
       } catch {
         /* bỏ qua điểm lỗi */
@@ -219,7 +219,6 @@ export function ConflictsPage() {
                   "AI",
                   "Bác sĩ",
                   "Lệch bậc",
-                  "Tin cậy",
                   "Bất đồng",
                   "Defer",
                   "Lý do",
@@ -240,7 +239,6 @@ export function ConflictsPage() {
                       <GradeBadge grade={x.doctorGrade} />
                     </td>
                     <td className="mono">{x.gradeDistance}</td>
-                    <td className="mono">{pct(x.confidence)}</td>
                     <td className="mono">{num(x.disagreement, 3)}</td>
                     <td>
                       {x.wasDeferred ? (
@@ -345,7 +343,7 @@ function ConfigEditor({
 
   useEffect(() => {
     if (
-      !["ai.confidence_threshold", "ai.disagreement_threshold"].includes(
+      !["ai.disagreement_threshold"].includes(
         value.key,
       )
     )

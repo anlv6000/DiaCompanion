@@ -111,24 +111,20 @@ public class AdminService : BaseService, IAdminService
         [FromQuery] string key,
         [FromQuery] decimal proposed)
     {
-        if (key is not (ConfigKeys.ConfidenceThreshold or ConfigKeys.DisagreementThreshold))
+        // Chỉ còn ngưỡng bất đồng là tín hiệu quyết định. Độ tin cậy đã nghỉ hưu
+        // nên không còn ước tính theo ngưỡng tin cậy nữa.
+        if (key != ConfigKeys.DisagreementThreshold)
             throw AppException.BadRequest(Msg.RequiredFields,
-                "Chỉ ước tính được cho ngưỡng tin cậy hoặc ngưỡng bất đồng.");
+                "Chỉ ước tính được cho ngưỡng bất đồng.");
 
         var currentRaw = await _repository.GetSystemConfigValueAsync(key);
         var currentValue = decimal.TryParse(currentRaw, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out var cv) ? cv : 0m;
-        var otherKey = key == ConfigKeys.ConfidenceThreshold
-            ? ConfigKeys.DisagreementThreshold
-            : ConfigKeys.ConfidenceThreshold;
-        var otherRaw = await _repository.GetSystemConfigValueAsync(otherKey);
-        var otherValue = decimal.TryParse(otherRaw, System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var ov) ? ov : 0m;
 
         var rows = await _repository.GetDiagnosisThresholdRowsAsync();
-        var projected = key == ConfigKeys.ConfidenceThreshold
-            ? rows.Count(r => r.Confidence < proposed || (r.Disagreement ?? 0) > otherValue)
-            : rows.Count(r => r.Confidence < otherValue || (r.Disagreement ?? 0) > proposed);
+        // Ước tính đơn giản: đếm ca có bất đồng vượt ngưỡng đề xuất. Không mô
+        // phỏng phần hạ ngưỡng theo nguy cơ nền hay ca thiếu nhánh — Note đã nêu rõ.
+        var projected = rows.Count(r => (r.Disagreement ?? 0) > proposed);
         var currentDeferred = rows.Count(r => r.IsDeferred);
 
         return Ok(new ThresholdImpactDto

@@ -62,7 +62,6 @@ public class ExportService : BaseService, IExportService
             Action = (byte)r.Action,
             r.Reason,
             AiGrade = (byte)r.AiDiagnosis.DrGrade,
-            r.AiDiagnosis.Confidence,
             r.AiDiagnosis.Disagreement,
             r.AiDiagnosis.IsDeferred,
             r.AiDiagnosis.FractalDimension,
@@ -142,7 +141,6 @@ public class ExportService : BaseService, IExportService
                 {
                     grade = f.AiGrade,
                     gradeLabel = DiagnosesService.GradeLabel(f.AiGrade),
-                    f.Confidence,
                     f.Disagreement,
                     f.IsDeferred,
                     model = f.ModelVersion,
@@ -208,7 +206,6 @@ public class ExportService : BaseService, IExportService
             FinalGrade = (byte)r.FinalGrade,
             r.Action,
             r.Reason,
-            r.AiDiagnosis.Confidence,
             Model = ModelSetLabel(r.AiDiagnosis),
             ConfirmedBy = r.Doctor!.FullName
         }).ToList();
@@ -265,7 +262,7 @@ public class ExportService : BaseService, IExportService
                 var eye = finding.Eye == (byte)Eye.Od ? "OD" : finding.Eye == (byte)Eye.Os ? "OS" : finding.Eye.ToString();
                 lines.Add(
                     $"{eye}: final {DiagnosesService.GradeLabel(finding.FinalGrade)}; " +
-                    $"AI {DiagnosesService.GradeLabel(finding.AiGrade)}; confidence {finding.Confidence:P1}; " +
+                    $"AI {DiagnosesService.GradeLabel(finding.AiGrade)}; " +
                     $"model {finding.Model}; confirmed by {finding.ConfirmedBy}.");
                 if (finding.Action == ReviewAction.Override && !string.IsNullOrWhiteSpace(finding.Reason))
                     lines.Add($"  Override reason: {finding.Reason}");
@@ -334,7 +331,6 @@ public class ExportService : BaseService, IExportService
             ModelVersion = ModelSetLabel(r.AiDiagnosis),
             AiGrade = r.AiDiagnosis.DrGrade,
             DoctorGrade = r.FinalGrade,
-            Confidence = r.AiDiagnosis.Confidence,
             Disagreement = r.AiDiagnosis.Disagreement,
             WasDeferred = r.AiDiagnosis.IsDeferred,
             r.Reason,
@@ -358,7 +354,6 @@ public class ExportService : BaseService, IExportService
                 (int)r.AiGrade
             ),
 
-            Confidence = r.Confidence,
             Disagreement = r.Disagreement,
             WasDeferred = r.WasDeferred,
             Reason = r.Reason,
@@ -423,7 +418,6 @@ public class ExportService : BaseService, IExportService
             AiGrade = (byte)r.AiDiagnosis.DrGrade,
             LesionGrade = (byte?)r.AiDiagnosis.LesionGradeImplied,
             DoctorGrade = (byte)r.FinalGrade,
-            r.AiDiagnosis.Confidence,
             r.AiDiagnosis.Disagreement,
             r.AiDiagnosis.IsDeferred,
             r.AiDiagnosis.FractalDimension,
@@ -433,7 +427,7 @@ public class ExportService : BaseService, IExportService
 
         var sb = new StringBuilder();
         sb.AppendLine("ai_diagnosis_id,patient_code,eye,model,ai_grade,lesion_implied_grade,doctor_grade," +
-                      "grade_distance,confidence,disagreement,was_deferred,fractal_dimension,reviewed_at,reason");
+                      "grade_distance,disagreement,was_deferred,fractal_dimension,reviewed_at,reason");
 
         foreach (var r in rows)
         {
@@ -443,7 +437,7 @@ public class ExportService : BaseService, IExportService
             var reason = (r.Reason ?? "").Replace("\"", "\"\"");
             var reviewedLocal = _clock.ToLocal(r.CreatedAt) ?? r.CreatedAt;
             sb.AppendLine($"{r.AiDiagnosisId},{r.PatientCode},{r.Eye},{r.Model},{r.AiGrade}," +
-                          $"{r.LesionGrade},{r.DoctorGrade},{distance},{r.Confidence},{r.Disagreement}," +
+                          $"{r.LesionGrade},{r.DoctorGrade},{distance},{r.Disagreement}," +
                           $"{(r.IsDeferred ? 1 : 0)},{r.FractalDimension},{reviewedLocal:O},\"{reason}\"");
         }
 

@@ -143,20 +143,20 @@ def run_dr(image_path: str) -> dict:
 # nếu cần. Ý tưởng: không tổn thương -> 0; có MA nhẹ -> 1; nhiều MA/HE -> 2-3;
 # tổn thương nặng/lan rộng -> 4.
 def _imply_grade_from_lesions(counts: dict) -> int:
+    # Ngưỡng CALIBRATE trên IDRiD (tối đa hoá QWK vs nhãn thật: 0.59 -> 0.77),
+    # KHÔNG đặt bằng tay. Chặn trần grade 3: PDR (4) cần tân mạch, không suy
+    # được từ MA/HE/EX/SE (ICDR). Nhánh DR vẫn được phép ra grade 4.
     ma = counts.get("MA", 0)
     he = counts.get("HE", 0)
     ex = counts.get("EX", 0)
     se = counts.get("SE", 0)
-    total = ma + he + ex + se
-    if total == 0:
+    if ma + he + ex + se == 0:
         return 0
-    if se >= 1 or he >= 20:
-        return 4          # xuất tiết mềm hoặc xuất huyết rất nhiều -> nặng/PDR
-    if he >= 8 or ex >= 8:
-        return 3
-    if ma >= 5 or he >= 1 or ex >= 1:
-        return 2
-    return 1              # chỉ vài vi phình mạch
+    if he >= 15 or ex >= 30 or se >= 3:
+        return 3          # severe NPDR
+    if he >= 8 or ex >= 5 or ma >= 5:
+        return 2          # moderate NPDR
+    return 1              # chỉ vài tổn thương nhẹ -> mild NPDR
 
 
 def run_lesion(image_path: str) -> dict:

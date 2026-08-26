@@ -13,7 +13,6 @@ public class DisagreementCaseDto
     public byte AiGrade { get; set; }
     public byte DoctorGrade { get; set; }
     public int GradeDistance { get; set; }
-    public decimal Confidence { get; set; }
     public decimal? Disagreement { get; set; }
     public bool WasDeferred { get; set; }
     public string? Reason { get; set; }

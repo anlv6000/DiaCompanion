@@ -14,7 +14,7 @@ public sealed partial class EfRepository
             .Where(d => !d.Reviews.Any())
             .Select(d => new
             {
-                d.Id, d.DrGrade, d.Confidence, d.Disagreement, d.IsDeferred, d.DeferReason,
+                d.Id, d.DrGrade, d.Disagreement, d.ClinicalRiskScore, d.IsDeferred, d.DeferReason,
                 d.CreatedAt, d.RowVer,
                 Eye = d.FundusImage!.Eye,
                 VisitId = d.FundusImage.VisitId,
@@ -42,7 +42,7 @@ public sealed partial class EfRepository
             query = query.Where(x => x.CreatedAt < at || (x.CreatedAt == at && x.Id < lastId));
 
         var rows = await query.OrderByDescending(x => x.IsDeferred)
-            .ThenByDescending(x => x.Disagreement)
+            .ThenByDescending(x => x.ClinicalRiskScore ?? 0)
             .ThenByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
             .Take(size + 1)
@@ -50,9 +50,12 @@ public sealed partial class EfRepository
         var hasMore = rows.Count > size;
         if (hasMore) rows.RemoveAt(rows.Count - 1);
         return new TriageQueuePage(rows.Select(x => new TriageQueueRow(
-            x.Id, x.DrGrade, x.Confidence, x.Disagreement, x.IsDeferred, x.DeferReason,
+            x.Id, x.DrGrade, x.Disagreement, x.IsDeferred, x.DeferReason,
             x.CreatedAt, x.RowVer, x.Eye, x.VisitId, x.PatientId, x.PatientCode,
-            x.PatientName, x.DoctorId, x.DoctorName)).ToList(), hasMore);
+            x.PatientName, x.DoctorId, x.DoctorName)
+        {
+            ClinicalRiskScore = x.ClinicalRiskScore
+        }).ToList(), hasMore);
     }
 
     public async Task<TriageCounts> GetTriageCountsAsync(int? currentDoctorId, CancellationToken ct = default)

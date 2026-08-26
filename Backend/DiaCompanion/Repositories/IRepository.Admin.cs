@@ -18,7 +18,7 @@ public sealed record DashboardStats(
     IReadOnlyList<GradeCount> GradeDistribution,
     string? ActiveModel);
 
-public sealed record DiagnosisThresholdRow(decimal Confidence, decimal? Disagreement, bool IsDeferred);
+public sealed record DiagnosisThresholdRow(decimal? Disagreement, bool IsDeferred);
 public sealed record ModelVersionWithCount(ModelVersion Model, int DiagnosisCount);
 public sealed record AuditPage(IReadOnlyList<AuditLog> Items, bool HasMore);
 

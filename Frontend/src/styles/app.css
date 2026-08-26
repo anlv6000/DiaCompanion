@@ -2265,3 +2265,43 @@ input:disabled, select:disabled, textarea:disabled {
     gap: 6px;
   }
 }
+
+
+/* Chi tiết kỹ thuật AI — gập lại (dành cho nghiên cứu, bác sĩ không cần) */
+.ai-tech {
+  margin-top: 12px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 8px;
+}
+.ai-tech > summary {
+  cursor: pointer;
+  font-size: var(--fs-cap);
+  color: var(--muted);
+  user-select: none;
+  list-style: none;
+}
+.ai-tech > summary::-webkit-details-marker {
+  display: none;
+}
+.ai-tech > summary::before {
+  content: "\25B8  ";
+}
+.ai-tech[open] > summary::before {
+  content: "\25BE  ";
+}
+.ai-quad-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: var(--fs-cap);
+}
+.ai-quad-table th,
+.ai-quad-table td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+.ai-quad-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
