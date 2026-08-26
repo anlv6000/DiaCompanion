@@ -160,6 +160,7 @@ export const visitsApi = {
 export const imagesApi = {
   list: (p: Record<string, unknown>) =>
     http.get<T.FundusImageDto[]>("/api/images" + query(p)),
+  get: (id: number) => http.get<T.FundusImageDto>(`/api/images/${id}`),
   upload: (
     file: File,
     patientId: number,

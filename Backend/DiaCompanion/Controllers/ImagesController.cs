@@ -43,6 +43,14 @@ public class ImagesController : BaseApiController
     /// thay vì phát tĩnh hay dùng presigned URL của dịch vụ đám mây (hệ thống
     /// triển khai tại chỗ, có thể không có internet).
     /// </summary>
+    [HttpGet("{id:int}")]
+    [Authorize(Roles = Roles.DoctorOnly)]
+    public async Task<ActionResult<FundusImageDto>> Get(int id)
+    {
+        return await _service.Get(id);
+    }
+
+
     [HttpGet("{id:int}/content")]
     [Authorize(Roles = Roles.DoctorOnly)]
     public async Task<IActionResult> Content(int id)

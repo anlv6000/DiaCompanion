@@ -129,6 +129,7 @@ const buildVisits = () => ({
 });
 const buildImages = () => ({
   list: (p: Record<string, unknown>) => imagesApi.list(p),
+  get: (id: number) => imagesApi.get(id),
   upload: (
     file: File,
     patientId: number,

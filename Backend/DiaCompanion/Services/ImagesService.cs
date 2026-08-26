@@ -43,6 +43,27 @@ public class ImagesService : BaseService, IImagesService
         return Ok(items);
     }
 
+    /// <summary>Lấy metadata một ảnh (chất lượng, rowVersion) — độc lập với AI,
+    /// để duyệt chất lượng được cả trước khi chạy AI (UC-23).</summary>
+    public async Task<ActionResult<FundusImageDto>> Get(int id)
+    {
+        var f = await _repository.GetFundusImageAsync(id)
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy ảnh.");
+        EnsureCanReadPatient(_me, f.PatientId);
+        return Ok(new FundusImageDto
+        {
+            Id = f.Id,
+            PatientId = f.PatientId,
+            VisitId = f.VisitId,
+            Eye = (byte)f.Eye,
+            QualityStatus = (byte)f.QualityStatus,
+            QualityNote = f.QualityNote,
+            CreatedAt = _clock.ToLocal(f.CreatedAt)!.Value,
+            ContentUrl = $"/api/images/{f.Id}/content",
+            RowVersion = f.ToRowVersion()
+        });
+    }
+
     /// <summary>UC-22 — nạp ảnh đáy mắt.</summary>
     [RequestSizeLimit(12 * 1024 * 1024)]
     [Consumes("multipart/form-data")]

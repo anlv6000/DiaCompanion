@@ -23,7 +23,7 @@ import {
   ConfirmDialog,
 } from "@/components/ui";
 import { fmtDate, num } from "@/lib/format";
-import { grades } from "@/lib/enums";
+import { grades, qualityStatuses } from "@/lib/enums";
 
 export function FundusPage({ imageId }: { imageId: number }) {
   const [sp] = useSearchParams();
@@ -33,6 +33,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
   const { user } = useAuth();
   const diagId = Number(sp.get("diagnosis") || 0);
   const diagnoses = useAsync(() => data.diagnoses.byImage(imageId), [imageId]);
+  const imageInfo = useAsync(() => data.images.get(imageId), [imageId]);
   const selected = diagId
     ? diagnoses.data?.find((x) => x.id === diagId)
     : diagnoses.data?.[0];
@@ -59,6 +60,7 @@ export function FundusPage({ imageId }: { imageId: number }) {
   const [grade, setGrade] = useState(0);
   const [reason, setReason] = useState("");
   const [voidReview, setVoidReview] = useState(false);
+  const [rejectQuality, setRejectQuality] = useState(false);
 
   useEffect(() => {
     if (selected) setGrade(selected.drGrade);
@@ -127,6 +129,27 @@ export function FundusPage({ imageId }: { imageId: number }) {
     }
   };
 
+  const setQuality = async (status: number, note?: string) => {
+    const rv = imageInfo.data?.rowVersion;
+    if (!rv) return;
+    setBusy(true);
+    try {
+      await data.images.quality(imageId, status, note, rv);
+      toast.push(
+        status === 1
+          ? "Đã duyệt: ảnh đạt chất lượng."
+          : "Đã đánh dấu: ảnh không đạt chất lượng.",
+        "success",
+      );
+      await imageInfo.reload();
+      setRejectQuality(false);
+    } catch (e) {
+      toast.push((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const voidR = async (r: string) => {
     if (!selected?.review) return;
     await data.triage.voidReview(
@@ -161,6 +184,48 @@ export function FundusPage({ imageId }: { imageId: number }) {
           </>
         }
       />
+
+      {imageInfo.data && (
+        <div className="state ai-quality-bar">
+          <span className="ai-quality-label">Chất lượng ảnh</span>
+          <StatusBadge
+            text={qualityStatuses[imageInfo.data.qualityStatus] ?? "—"}
+            kind={
+              imageInfo.data.qualityStatus === 1
+                ? "ok"
+                : imageInfo.data.qualityStatus === 2
+                  ? "alert"
+                  : ""
+            }
+          />
+          {canReview && !closedVisit && !selected && (
+            <div className="ai-quality-actions">
+              <Button
+                kind="primary"
+                size="sm"
+                busy={busy}
+                disabled={busy || imageInfo.data.qualityStatus === 1}
+                onClick={() => setQuality(1)}
+              >
+                Duyệt đạt
+              </Button>
+              <Button
+                kind="danger"
+                size="sm"
+                disabled={busy || imageInfo.data.qualityStatus === 2}
+                onClick={() => setRejectQuality(true)}
+              >
+                Không đạt
+              </Button>
+            </div>
+          )}
+          {selected && (
+            <small className="ai-quality-hint faint">
+              Đã chạy AI nên không đổi được đánh giá chất lượng.
+            </small>
+          )}
+        </div>
+      )}
 
       {closedVisit && (
         <div className="state ai-rerun-lock">
@@ -488,6 +553,19 @@ export function FundusPage({ imageId }: { imageId: number }) {
           </section>
         </div>
       </LoadState>
+
+      {rejectQuality && (
+        <ConfirmDialog
+          title="Đánh dấu ảnh không đạt"
+          message="Ảnh không đạt chất lượng sẽ không được đưa vào chạy AI. Vui lòng nhập lý do."
+          confirmText="Xác nhận không đạt"
+          requireReason
+          danger
+          busy={busy}
+          onClose={() => setRejectQuality(false)}
+          onConfirm={(reason) => setQuality(2, reason)}
+        />
+      )}
 
       {voidReview && selected?.review && (
         <ConfirmDialog

@@ -11,10 +11,11 @@ import {
   Icon,
 } from "@/components/ui";
 import { ProtectedImage } from "@/components/ProtectedImage";
-import { fmtDate, pct, num } from "@/lib/format";
+import { fmtDate, num } from "@/lib/format";
 import {
   diabetesTypes,
   genders,
+  grades,
   referralTypes,
   metricContexts,
   label,
@@ -46,6 +47,15 @@ const en = {
   feedback: "Patient feedback",
   disclaimer: "Clinical notice",
 };
+
+// Diễn giải mức độ bằng lời cho bệnh nhân (theo thứ tự grade 0..4).
+const gradeMeaning = [
+  "Không phát hiện dấu hiệu bệnh võng mạc đái tháo đường ở mắt này.",
+  "Có tổn thương rất nhẹ. Hãy duy trì kiểm soát đường huyết và khám lại theo hẹn.",
+  "Tổn thương mức trung bình. Cần theo dõi sát, có thể cần khám chuyên khoa mắt.",
+  "Tổn thương nặng. Nên khám chuyên khoa mắt sớm.",
+  "Bệnh võng mạc giai đoạn tăng sinh — mức nặng nhất. Cần khám chuyên khoa mắt ngay.",
+];
 
 export function VisitReportPage({ visitId }: { visitId: number }) {
   const ctx = useData();
@@ -322,6 +332,32 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                       v={fmtDate(report.visit.recheckDueDate)}
                     />
                   </div>
+                  <div className="report-subblock report-patient-next">
+                    <b>Bạn cần làm gì tiếp theo</b>
+                    <ul>
+                      {report.visit.referral === 3 && (
+                        <li>
+                          Khám chuyên khoa mắt <strong>ngay</strong> theo chỉ định
+                          của bác sĩ.
+                        </li>
+                      )}
+                      {report.visit.referral === 2 && (
+                        <li>Sắp xếp khám chuyên khoa mắt theo chỉ định.</li>
+                      )}
+                      {report.visit.recheckMonths != null && (
+                        <li>
+                          Tái khám sau {report.visit.recheckMonths} tháng
+                          {report.visit.recheckDueDate
+                            ? ` (dự kiến ${fmtDate(report.visit.recheckDueDate)})`
+                            : ""}
+                          .
+                        </li>
+                      )}
+                      <li>
+                        Uống thuốc đúng đơn và kiểm soát đường huyết theo hướng dẫn.
+                      </li>
+                    </ul>
+                  </div>
                 </ReportSection>
               )}
 
@@ -416,85 +452,106 @@ function RetinalImageCard({
       </div>
 
       <div className="report-eye-details">
-        <div className="report-subblock">
-          <b>Quality</b>
-          <div>
-            <StatusBadge
-              text={image.qualityStatusLabel}
-              kind={
-                image.qualityStatus === 1
-                  ? "ok"
-                  : image.qualityStatus === 2
-                    ? "alert"
-                    : ""
-              }
-            />
-          </div>
-          {image.qualityNote && <small>{image.qualityNote}</small>}
-        </div>
-
         {finding ? (
           <>
-            <div className="report-eye-summary-grid">
-              <div className="report-subblock">
-                <b>AI DR</b>
-                <div className="report-inline-value">
-                  <GradeBadge grade={finding.ai.grade} />
-                </div>
-                {finding.ai.isDeferred && (
-                  <small>
-                    AI đánh dấu cần bác sĩ xem xét do bất đồng chéo hoặc thiếu nhánh.
-                  </small>
-                )}
+            {/* Kết luận dễ hiểu — bệnh nhân đọc trước */}
+            <div className="report-subblock report-eye-verdict">
+              <b>Kết luận mắt {eyeName}</b>
+              <div className="report-inline-value">
+                <GradeBadge grade={finding.finalGrade} />
+                <span>{grades[finding.finalGrade] ?? "—"}</span>
               </div>
+              <p>{gradeMeaning[finding.finalGrade] ?? ""}</p>
+            </div>
 
-              <div className="report-subblock">
-                <b>Lesion</b>
-                <div className="report-lesion-grid mono">
-                  <span>MA: {finding.lesions.countMA ?? "—"}</span>
-                  <span>HE: {finding.lesions.countHE ?? "—"}</span>
-                  <span>EX: {finding.lesions.countEX ?? "—"}</span>
-                  <span>SE: {finding.lesions.countSE ?? "—"}</span>
+            {/* Chi tiết chuyên môn — cho bác sĩ */}
+            <div className="report-subblock">
+              <b>Chi tiết chuyên môn</b>
+              <div className="report-eye-summary-grid">
+                <div>
+                  <small>AI gợi ý</small>
+                  <div className="report-inline-value">
+                    <GradeBadge grade={finding.ai.grade} />
+                  </div>
+                  {finding.ai.isDeferred && (
+                    <small>AI đánh dấu cần bác sĩ xem xét.</small>
+                  )}
                 </div>
-              </div>
-
-              <div className="report-subblock">
-                <b>Fractal</b>
-                <div className="mono">FD: {num(finding.fractal, 3)}</div>
+                <div>
+                  <small>Tổn thương đếm được</small>
+                  <div className="report-lesion-grid">
+                    <span>Vi phình mạch: {finding.lesions.countMA ?? "—"}</span>
+                    <span>Xuất huyết: {finding.lesions.countHE ?? "—"}</span>
+                    <span>Xuất tiết cứng: {finding.lesions.countEX ?? "—"}</span>
+                    <span>Xuất tiết mềm: {finding.lesions.countSE ?? "—"}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
+            {/* Xác nhận của bác sĩ */}
             <div className="report-subblock report-doctor-confirmation">
               <b>Bác sĩ xác nhận</b>
               <div className="report-confirm-row">
-                <span>Final Grade:</span>
-                <GradeBadge grade={finding.finalGrade} />
-              </div>
-              <div className="report-confirm-row">
-                <span>Action:</span>
+                <span>Hướng xử trí:</span>
                 <StatusBadge
                   text={actionLabel}
                   kind={action === 1 ? "defer" : "ok"}
                 />
               </div>
               <div className="report-confirm-row report-reason-row">
-                <span>Reason:</span>
+                <span>Lý do:</span>
                 <strong>{reason || "—"}</strong>
               </div>
               <small>
                 {finding.confirmedBy} · {fmtDate(finding.createdAt, true)}
               </small>
             </div>
+
+            {/* Chất lượng ảnh */}
+            <div className="report-subblock">
+              <b>Chất lượng ảnh</b>
+              <div>
+                <StatusBadge
+                  text={image.qualityStatusLabel}
+                  kind={
+                    image.qualityStatus === 1
+                      ? "ok"
+                      : image.qualityStatus === 2
+                        ? "alert"
+                        : ""
+                  }
+                />
+              </div>
+              {image.qualityNote && <small>{image.qualityNote}</small>}
+            </div>
           </>
         ) : (
-          <div className="report-subblock">
-            <b>Kết quả AI / xác nhận</b>
-            <p>
-              {image.qualityStatus === 2
-                ? "Ảnh Ungradable nên không có kết quả AI."
-                : "Chưa có kết quả được bác sĩ xác nhận cho ảnh này."}
-            </p>
-          </div>
+          <>
+            <div className="report-subblock">
+              <b>Chất lượng ảnh</b>
+              <div>
+                <StatusBadge
+                  text={image.qualityStatusLabel}
+                  kind={
+                    image.qualityStatus === 1
+                      ? "ok"
+                      : image.qualityStatus === 2
+                        ? "alert"
+                        : ""
+                  }
+                />
+              </div>
+            </div>
+            <div className="report-subblock">
+              <b>Kết quả</b>
+              <p>
+                {image.qualityStatus === 2
+                  ? "Ảnh không đạt chất lượng nên không có kết quả AI."
+                  : "Chưa có kết quả được bác sĩ xác nhận cho ảnh này."}
+              </p>
+            </div>
+          </>
         )}
       </div>
     </section>

@@ -9,6 +9,7 @@ public interface IImagesService
 {
     Task<ActionResult<List<FundusImageDto>>> List(
         [FromQuery] int? patientId, [FromQuery] int? visitId);
+    Task<ActionResult<FundusImageDto>> Get(int id);
     Task<ActionResult<FundusImageDto>> Upload([FromForm] UploadFundusRequest req);
     Task<IActionResult> Content(int id);
     Task<IActionResult> SetQuality(int id, QualityCheckRequest req);

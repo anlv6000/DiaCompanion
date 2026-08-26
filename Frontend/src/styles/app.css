@@ -2305,3 +2305,39 @@ input:disabled, select:disabled, textarea:disabled {
   color: var(--muted);
   font-weight: 600;
 }
+
+
+/* Thanh duyệt chất lượng ảnh trên trang AI */
+.ai-quality-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ai-quality-label {
+  font-weight: 600;
+}
+.ai-quality-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Báo cáo: kết luận dễ hiểu cho bệnh nhân */
+.report-eye-verdict {
+  border-left: 3px solid var(--hairline);
+  padding-left: 10px;
+}
+.report-eye-verdict .report-inline-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.report-patient-next ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.report-patient-next li {
+  margin-bottom: 4px;
+}
