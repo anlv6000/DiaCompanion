@@ -55,6 +55,27 @@ public class MetricTrendDto
     public IReadOnlyList<MetricChartPointDto> Chart { get; set; } = Array.Empty<MetricChartPointDto>();
 }
 
+public class GlucoseTrendDto : MetricTrendDto
+{
+    public IReadOnlyList<MetricChartPointDto> BeforeMealChart { get; set; } = Array.Empty<MetricChartPointDto>();
+    public IReadOnlyList<MetricChartPointDto> AfterMealChart { get; set; } = Array.Empty<MetricChartPointDto>();
+}
+
+public class GlucoseRangeDto
+{
+    public decimal? Lower { get; set; }
+    public decimal? Upper { get; set; }
+}
+
+public class MetricThresholdsDto
+{
+    public byte DiabetesType { get; set; }
+    public GlucoseRangeDto BeforeMeal { get; set; } = new();
+    public GlucoseRangeDto AfterMeal { get; set; } = new();
+    public decimal SystolicBpAbnormalFrom { get; set; }
+    public decimal DiastolicBpAbnormalFrom { get; set; }
+}
+
 public class BloodPressureLatestDto
 {
     public int SystolicId { get; set; }
@@ -91,7 +112,8 @@ public class MetricSummaryDto
     public DateOnly From { get; set; }
     public DateOnly To { get; set; }
     public int TotalAbnormalCount { get; set; }
-    public MetricTrendDto Glucose { get; set; } = new();
+    public GlucoseTrendDto Glucose { get; set; } = new();
     public MetricTrendDto HbA1c { get; set; } = new();
     public BloodPressureTrendDto BloodPressure { get; set; } = new();
+    public MetricThresholdsDto Thresholds { get; set; } = new();
 }

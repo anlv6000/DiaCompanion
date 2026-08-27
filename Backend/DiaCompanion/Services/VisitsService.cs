@@ -359,12 +359,67 @@ public class VisitsService : BaseService, IVisitsService
     {
         var patientId = await RequirePatientIdForUserAsync(userId);
         var dto = await _repository.GetCompletedVisitForPatientAsync(patientId, visitId)
-        ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+            ?? throw AppException.NotFound(Msg.LoadFailed, "Không tìm thấy lượt khám.");
+
         dto.VisitDate = _clock.ToLocal(dto.VisitDate)!.Value;
         dto.CreatedAt = _clock.ToLocal(dto.CreatedAt)!.Value;
         dto.ClosedAt = _clock.ToLocal(dto.ClosedAt);
         dto.HealthMetrics = ToVisitHealthMetricsDto(
             visitId, await _repository.GetVisitHealthMetricsAsync(visitId));
+
+        // Chỉ đưa kết quả đã được bác sĩ xác nhận lên Patient. Không trả AI thô,
+        // disagreement, model version hay các tín hiệu nội bộ của triage ở màn này.
+        // Tái sử dụng các query read-only sẵn có; việc gọi repository này KHÔNG
+        // tạo audit Export (audit chỉ nằm trong ExportService).
+        var reviews = await _repository.GetVisitDiagnosisReviewsForExportAsync(visitId);
+        dto.ConfirmedFindings = reviews
+            .Where(r => !r.IsVoided && r.AiDiagnosis?.FundusImage is not null)
+            .GroupBy(r => r.AiDiagnosis!.FundusImage!.Eye)
+            .Select(group =>
+            {
+                // Nếu cùng một mắt có nhiều ảnh/review, hiển thị mức nặng nhất;
+                // nếu cùng mức thì ưu tiên review mới hơn.
+                var selected = group
+                    .OrderByDescending(r => (byte)r.FinalGrade)
+                    .ThenByDescending(r => r.CreatedAt)
+                    .First();
+
+                return new VisitConfirmedFindingDto
+                {
+                    Eye = (byte)group.Key,
+                    FinalGrade = (byte)selected.FinalGrade,
+                    FinalGradeLabel = DiagnosesService.GradeLabel((byte)selected.FinalGrade),
+                    ConfirmedBy = selected.Doctor?.FullName,
+                    ConfirmedAt = _clock.ToLocal(selected.CreatedAt)!.Value
+                };
+            })
+            .OrderBy(x => x.Eye)
+            .ToList();
+
+        var prescriptions = await _repository.GetVisitPrescriptionsForExportAsync(visitId);
+        dto.Prescriptions = prescriptions
+            .Where(p => !p.IsVoided)
+            .OrderBy(p => p.IssuedAt)
+            .Select(p => new VisitPrescriptionDto
+            {
+                Id = p.Id,
+                IssuedAt = _clock.ToLocal(p.IssuedAt)!.Value,
+                Note = p.Note,
+                Items = p.Items
+                    .Where(i => i.IsActive)
+                    .OrderBy(i => i.Id)
+                    .Select(i => new VisitPrescriptionItemDto
+                    {
+                        Id = i.Id,
+                        DrugName = i.DrugName,
+                        Dose = i.Dose,
+                        TimesPerDay = i.TimesPerDay,
+                        DurationDays = i.DurationDays,
+                        Instruction = i.Instruction
+                    })
+                    .ToList()
+            })
+            .ToList();
 
         return dto;
     }

@@ -26,6 +26,7 @@ export default function MetricsScreen({ route }) {
   const toast = useToast();
   const [editing, setEditing] = useState(null); // null | "new" | bản ghi
   const [filterType, setFilterType] = useState("");
+  const [glucoseContext, setGlucoseContext] = useState(1); // 1 trước ăn, 2 sau ăn
 
   const summary = useAsync(() => data.metrics.summary(30), []);
   const list = useAsync(() => data.metrics.list({ type: filterType || undefined, size: 50 }), [filterType]);
@@ -58,28 +59,114 @@ export default function MetricsScreen({ route }) {
     ]);
   };
 
-  // Backend trả cấu trúc lồng: { glucose:{average, abnormalCount, chart:[{date,value}]},
-  // hba1c:{latest}, bloodPressure:{...} }. Map đúng field để vẽ biểu đồ.
+  // Backend trả riêng chuỗi glucose trước/sau ăn cùng ngưỡng đang dùng để
+  // đánh dấu bất thường. Nhờ vậy mobile không hard-code ngưỡng lâm sàng.
   const glucose = summary.data?.glucose || {};
-  const chartPoints = (glucose.chart || []).map((p) => ({
+  const thresholds = summary.data?.thresholds || {};
+  const selectedGlucoseChart = glucoseContext === 1
+    ? (glucose.beforeMealChart || [])
+    : (glucose.afterMealChart || []);
+  const selectedGlucoseRange = glucoseContext === 1
+    ? thresholds.beforeMeal
+    : thresholds.afterMeal;
+
+  const glucosePoints = selectedGlucoseChart.map((p) => ({
     x: p.date,
     y: Number(p.value),
   }));
+
+  const glucoseReferenceLines = [
+    selectedGlucoseRange?.lower != null
+      ? { value: Number(selectedGlucoseRange.lower), label: "Ngưỡng thấp" }
+      : null,
+    selectedGlucoseRange?.upper != null
+      ? { value: Number(selectedGlucoseRange.upper), label: "Ngưỡng cao" }
+      : null,
+  ].filter(Boolean);
+
+  const bloodPressure = summary.data?.bloodPressure || {};
+  const bpChart = bloodPressure.chart || [];
+  const systolicPoints = bpChart.map((p) => ({ x: p.date, y: Number(p.systolic) }));
+  const diastolicPoints = bpChart.map((p) => ({ x: p.date, y: Number(p.diastolic) }));
 
   const saved = () => { setEditing(null); list.reload(); summary.reload(); };
 
   return (
     <>
       <Screen>
-        {/* Tóm tắt đường huyết */}
+        {/* Đường huyết — tách trước/sau ăn vì ngưỡng bất thường khác nhau. */}
         <Card>
           <SectionTitle>Đường huyết 30 ngày</SectionTitle>
           <LoadState loading={summary.loading} error={summary.error} onRetry={summary.reload}>
-            <MiniChart points={chartPoints} unit=" mmol/L" />
+            <View style={styles.contextRow}>
+              <FilterChip
+                label="Trước ăn"
+                active={glucoseContext === 1}
+                onPress={() => setGlucoseContext(1)}
+              />
+              <FilterChip
+                label="Sau ăn"
+                active={glucoseContext === 2}
+                onPress={() => setGlucoseContext(2)}
+              />
+            </View>
+
+            <Text style={styles.chartHint}>
+              {glucoseRangeText(selectedGlucoseRange)}
+            </Text>
+            <MiniChart
+              points={glucosePoints}
+              unit=" mmol/L"
+              referenceLines={glucoseReferenceLines}
+              xLabelFormatter={(x) => shortDate(x)}
+            />
+            <Text style={styles.thresholdHint}>
+              Đường đỏ nét đứt là ngưỡng bất thường theo loại đái tháo đường và thời điểm đo.
+            </Text>
+
             <View style={styles.summaryRow}>
               <Summary label="Trung bình" value={num(glucose.average)} unit="mmol/L" />
               <Summary label="Bất thường" value={glucose.abnormalCount ?? 0} unit="lần" />
               <Summary label="HbA1c gần nhất" value={num(summary.data?.hba1c?.latest?.value)} unit="%" />
+            </View>
+          </LoadState>
+        </Card>
+
+        {/* Huyết áp đã có sẵn chart ở backend; mobile trước đây chưa vẽ. */}
+        <Card>
+          <SectionTitle>Huyết áp 30 ngày</SectionTitle>
+          <LoadState loading={summary.loading} error={summary.error} onRetry={summary.reload}>
+            <Text style={styles.bpTitle}>Tâm thu</Text>
+            <MiniChart
+              points={systolicPoints}
+              unit=" mmHg"
+              referenceLines={[{
+                value: Number(thresholds.systolicBpAbnormalFrom ?? 140),
+                label: `Bất thường ≥ ${thresholds.systolicBpAbnormalFrom ?? 140}`,
+              }]}
+              xLabelFormatter={(x) => shortDate(x)}
+            />
+
+            <View style={styles.bpDivider} />
+            <Text style={styles.bpTitle}>Tâm trương</Text>
+            <MiniChart
+              points={diastolicPoints}
+              color={colors.defer}
+              unit=" mmHg"
+              referenceLines={[{
+                value: Number(thresholds.diastolicBpAbnormalFrom ?? 90),
+                label: `Bất thường ≥ ${thresholds.diastolicBpAbnormalFrom ?? 90}`,
+              }]}
+              xLabelFormatter={(x) => shortDate(x)}
+            />
+
+            <Text style={styles.thresholdHint}>
+              Đường đỏ nét đứt biểu thị ngưỡng để đánh dấu huyết áp bất thường.
+            </Text>
+            <View style={styles.summaryRow}>
+              <Summary label="TB tâm thu" value={num(bloodPressure.averageSystolic)} unit="mmHg" />
+              <Summary label="TB tâm trương" value={num(bloodPressure.averageDiastolic)} unit="mmHg" />
+              <Summary label="Bất thường" value={bloodPressure.abnormalCount ?? 0} unit="lần" />
             </View>
           </LoadState>
         </Card>
@@ -149,6 +236,24 @@ export default function MetricsScreen({ route }) {
       {editing && <MetricForm value={editing} onClose={() => setEditing(null)} onSaved={saved} />}
     </>
   );
+}
+
+function shortDate(value) {
+  const text = fmtDate(value);
+  return text === "—" ? text : text.slice(0, 5);
+}
+
+function glucoseRangeText(range) {
+  if (!range) return "Ngưỡng được lấy trực tiếp từ cấu hình nghiệp vụ của backend.";
+  const lower = range.lower;
+  const upper = range.upper;
+  if (lower != null && upper != null)
+    return `Khoảng tham chiếu: ${num(lower)}–${num(upper)} mmol/L.`;
+  if (upper != null)
+    return `Ngưỡng bất thường phía trên: ${num(upper)} mmol/L.`;
+  if (lower != null)
+    return `Ngưỡng bất thường phía dưới: ${num(lower)} mmol/L.`;
+  return "Chưa có ngưỡng tham chiếu cho bối cảnh này.";
 }
 
 /**
@@ -329,6 +434,12 @@ const styles = StyleSheet.create({
   summaryValue: { ...font.h2, color: colors.ink },
   summaryUnit: { ...font.tiny, color: colors.faint },
   summaryLabel: { ...font.small, color: colors.muted, marginTop: 2 },
+
+  contextRow: { flexDirection: "row", gap: 8, marginBottom: spacing.sm },
+  chartHint: { ...font.small, color: colors.muted, marginBottom: spacing.sm, lineHeight: 20 },
+  thresholdHint: { ...font.tiny, color: colors.alert, marginTop: spacing.sm, lineHeight: 18 },
+  bpTitle: { ...font.small, color: colors.ink, fontWeight: "700", marginBottom: 2 },
+  bpDivider: { height: 1, backgroundColor: colors.hairline, marginVertical: spacing.md },
 
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.md },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

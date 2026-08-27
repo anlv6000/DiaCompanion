@@ -13,6 +13,9 @@ namespace DiaCompanion.Api.Services;
 /// </summary>
 public class MonitoringService : BaseService, IMonitoringService
 {
+    private const decimal SystolicBpAbnormalFrom = 140m;
+    private const decimal DiastolicBpAbnormalFrom = 90m;
+
     private readonly IRepository _repository;
     private readonly ICurrentUser _me;
     private readonly IClinicClock _clock;
@@ -186,7 +189,7 @@ public class MonitoringService : BaseService, IMonitoringService
                 RecordedAtUtc = recordedUtc,
                 RecordedLocalDate = recordedLocalDate,
                 Note = req.Note,
-                IsAbnormal = systolicValue >= 140m
+                IsAbnormal = systolicValue >= SystolicBpAbnormalFrom
             };
 
             var diastolicMetric = new HealthMetric
@@ -199,7 +202,7 @@ public class MonitoringService : BaseService, IMonitoringService
                 RecordedAtUtc = recordedUtc,
                 RecordedLocalDate = recordedLocalDate,
                 Note = req.Note,
-                IsAbnormal = diastolicValue >= 90m
+                IsAbnormal = diastolicValue >= DiastolicBpAbnormalFrom
             };
 
             _repository.Add(systolicMetric);
@@ -393,13 +396,13 @@ public class MonitoringService : BaseService, IMonitoringService
             systolicMetric.Note = req.Note;
             systolicMetric.RecordedAtUtc = recordedUtc;
             systolicMetric.RecordedLocalDate = recordedLocalDate;
-            systolicMetric.IsAbnormal = systolicValue >= 140m;
+            systolicMetric.IsAbnormal = systolicValue >= SystolicBpAbnormalFrom;
 
             diastolicMetric.Value = diastolicValue;
             diastolicMetric.Note = req.Note;
             diastolicMetric.RecordedAtUtc = recordedUtc;
             diastolicMetric.RecordedLocalDate = recordedLocalDate;
-            diastolicMetric.IsAbnormal = diastolicValue >= 90m;
+            diastolicMetric.IsAbnormal = diastolicValue >= DiastolicBpAbnormalFrom;
 
             await _audit.LogAsync(
                 AuditAction.MetricUpdate,
@@ -548,6 +551,7 @@ public class MonitoringService : BaseService, IMonitoringService
         var from = today.AddDays(-(days - 1));
 
         var metrics = await _repository.GetHealthMetricsAsync(patientId, from, today);
+        var diabetesType = await GetPatientDiabetesTypeAsync(patientId);
 
         var glucose = metrics.Where(m => m.MetricType == MetricType.Glucose).ToList();
         var hba1c = metrics.Where(m => m.MetricType == MetricType.HbA1c).ToList();
@@ -576,29 +580,40 @@ public class MonitoringService : BaseService, IMonitoringService
         var hba1cAbnormalCount = hba1c.Count(m => m.IsAbnormal);
         var bloodPressureAbnormalCount = bloodPressure.Count(p => p.IsAbnormal);
 
+        static IReadOnlyList<MetricChartPointDto> BuildGlucoseChart(IEnumerable<HealthMetric> source) =>
+            source.GroupBy(m => m.RecordedLocalDate)
+                .OrderBy(g => g.Key)
+                .Select(g => new MetricChartPointDto
+                {
+                    Date = g.Key,
+                    Value = Math.Round(g.Average(m => m.Value), 1),
+                    Count = g.Count(),
+                    AbnormalCount = g.Count(m => m.IsAbnormal),
+                    IsAbnormal = g.Any(m => m.IsAbnormal)
+                })
+                .ToList();
+
+        var beforeMealRange = GlucoseThresholds.GetTargetRange(diabetesType, MetricContext.BeforeMeal);
+        var afterMealRange = GlucoseThresholds.GetTargetRange(diabetesType, MetricContext.AfterMeal);
+
         return Ok(new MetricSummaryDto
         {
             Days = days,
             From = from,
             To = today,
             TotalAbnormalCount = glucoseAbnormalCount + hba1cAbnormalCount + bloodPressureAbnormalCount,
-            Glucose = new MetricTrendDto
+            Glucose = new GlucoseTrendDto
             {
                 Average = glucose.Count > 0 ? Math.Round(glucose.Average(m => m.Value), 1) : (decimal?)null,
                 Latest = ToLatest(glucose.OrderByDescending(m => m.RecordedAtUtc).FirstOrDefault()),
                 AbnormalCount = glucoseAbnormalCount,
-                // Gom theo ngày ĐỊA PHƯƠNG để trục hoành biểu đồ đúng ngày bệnh nhân đo.
-                Chart = glucose.GroupBy(m => m.RecordedLocalDate)
-                    .OrderBy(g => g.Key)
-                    .Select(g => new MetricChartPointDto
-                    {
-                        Date = g.Key,
-                        Value = Math.Round(g.Average(m => m.Value), 1),
-                        Count = g.Count(),
-                        AbnormalCount = g.Count(m => m.IsAbnormal),
-                        IsAbnormal = g.Any(m => m.IsAbnormal)
-                    })
-                    .ToList()
+                // Giữ biểu đồ tổng cho client cũ, đồng thời tách theo bối cảnh để
+                // mobile vẽ đúng ngưỡng trước ăn / sau ăn.
+                Chart = BuildGlucoseChart(glucose),
+                BeforeMealChart = BuildGlucoseChart(
+                    glucose.Where(m => m.Context == MetricContext.BeforeMeal)),
+                AfterMealChart = BuildGlucoseChart(
+                    glucose.Where(m => m.Context == MetricContext.AfterMeal))
             },
             HbA1c = new MetricTrendDto
             {
@@ -649,6 +664,22 @@ public class MonitoringService : BaseService, IMonitoringService
                         IsAbnormal = p.IsAbnormal
                     })
                     .ToList()
+            },
+            Thresholds = new MetricThresholdsDto
+            {
+                DiabetesType = diabetesType,
+                BeforeMeal = new GlucoseRangeDto
+                {
+                    Lower = beforeMealRange.Lower,
+                    Upper = beforeMealRange.Upper
+                },
+                AfterMeal = new GlucoseRangeDto
+                {
+                    Lower = afterMealRange.Lower,
+                    Upper = afterMealRange.Upper
+                },
+                SystolicBpAbnormalFrom = SystolicBpAbnormalFrom,
+                DiastolicBpAbnormalFrom = DiastolicBpAbnormalFrom
             }
         });
 
@@ -792,12 +823,6 @@ public class MonitoringService : BaseService, IMonitoringService
         var today = _clock.LocalToday;
 
         var rows = await _repository.GetMedicationLogsForDateAsync(pid, today);
-        var items = rows.Select(MapMedication).ToList();
-        foreach (var i in items)
-        {
-            i.ScheduledAt = _clock.ToLocal(i.ScheduledAt)!.Value;
-        }
-        
         return Ok(rows.Select(MapMedication).ToList());
     }
 
@@ -820,7 +845,7 @@ public class MonitoringService : BaseService, IMonitoringService
         _repository.ApplyOriginalRowVersion(log, req.RowVersion);
         var oldStatus = log.Status;
         log.Status = req.Status;
-        log.TakenAt = req.Status == MedicationStatus.Taken ? _clock.ToLocal(_clock.UtcNow) : null;
+        log.TakenAt = req.Status == MedicationStatus.Taken ? _clock.UtcNow : null;
         await _audit.LogAsync(
             AuditAction.MedicationConfirm,
             nameof(MedicationLog),
@@ -913,10 +938,10 @@ public class MonitoringService : BaseService, IMonitoringService
                 return value > await _cfg.GetDecimalAsync("metric.hba1c_target", 7.0m);
 
             case MetricType.SystolicBp:
-                return value >= 140;
+                return value >= SystolicBpAbnormalFrom;
 
             case MetricType.DiastolicBp:
-                return value >= 90;
+                return value >= DiastolicBpAbnormalFrom;
 
             default:
                 return false;
