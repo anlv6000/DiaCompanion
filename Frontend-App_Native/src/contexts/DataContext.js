@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo, useState, useCallback } from "react";
 import {
-  profileApi, metricsApi, lifestyleApi, medicationApi, recheckApi,
+  profileApi, metricsApi, lifestyleApi, medicationApi, prescriptionsApi, recheckApi,
   progressionApi, symptomApi, notificationApi, blogApi, feedbackApi, visitsApi,
 } from "../api/services";
 import { useAuth } from "./AuthContext";
@@ -65,6 +65,11 @@ export function DataProvider({ children }) {
     medication: {
       today: () => medicationApi.today(),
       setStatus: (id, status, rowVersion) => medicationApi.setStatus(id, status, rowVersion),
+    },
+
+    prescriptions: {
+      list: (params) => prescriptionsApi.list(params),
+      get: (id) => prescriptionsApi.get(id),
     },
 
     recheck: {

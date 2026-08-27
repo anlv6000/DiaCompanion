@@ -61,6 +61,14 @@ export const lifestyleApi = {
     http.del(`/api/monitoring/lifestyle/${id}` + query({ rowVersion })),
 };
 
+// Đơn thuốc của bệnh nhân.
+// Dùng để bổ sung hướng dẫn uống thuốc (Instruction) cho màn "Thuốc hôm nay"
+// mà không cần thay đổi endpoint MedicationLog hiện tại ở backend.
+export const prescriptionsApi = {
+  list: (params) => http.get("/api/prescriptions" + query(params)),
+  get: (id) => http.get(`/api/prescriptions/${id}`),
+};
+
 // Thuốc hôm nay.
 export const medicationApi = {
   today: () => http.get("/api/monitoring/medications/today"),

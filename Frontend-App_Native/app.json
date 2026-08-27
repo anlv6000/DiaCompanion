@@ -31,7 +31,7 @@
       "package": "com.qielli.diacompanion"
     },
     "extra": {
-      "apiBase": "https://localhost:55403",
+      "apiBase": "https://diacompanion.io.vn",
       "eas": {
         "projectId": "9acb91ca-b817-44d7-8b43-c3e2eb167847"
       }
