@@ -205,7 +205,11 @@ public sealed partial class EfRepository
         // ============================================================
         var query = _db.Patients
             .AsNoTracking()
-            .Include(p => p.User)
+            .Include(p => p.User).Where(p =>
+        p.UserId != null &&
+        _db.UserRoles.Any(ur =>
+            ur.UserId == p.UserId &&
+            ur.Role.Name == Roles.Patient)) 
             .AsQueryable();
 
 
@@ -258,11 +262,6 @@ public sealed partial class EfRepository
                         ur.UserId == p.UserId &&
                         ur.Role.Name == Roles.Patient &&
                         !ur.IsActive));
-            }
-            else if (value == "no-account")
-            {
-                query = query.Where(p =>
-                    p.UserId == null);
             }
         }
 

@@ -8,6 +8,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // Proxy để gọi backend cùng origin khi dev (tránh CORS).
-    proxy: { "/api": { target: "https://diacompanion.io.vn", changeOrigin: true } },
+    proxy: { "/api": { target: "https://localhost:55403", changeOrigin: true } },
   },
 });

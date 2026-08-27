@@ -51,13 +51,11 @@ export function PatientAccountsPage() {
         // Backend đang nhận:
         // active | locked | no-account
         status:
-          active === "true"
-            ? "active"
-            : active === "false"
-              ? "locked"
-              : active === "none"
-                ? "no-account"
-                : "",
+  active === "true"
+    ? "active"
+    : active === "false"
+      ? "locked"
+      : "",
 
         page,
         pageSize: 25,
@@ -149,9 +147,7 @@ export function PatientAccountsPage() {
                 Đã khóa
               </option>
 
-              <option value="none">
-                Chưa có tài khoản
-              </option>
+              
             </select>
           </Field>
         </div>
