@@ -190,10 +190,10 @@ function NotificationBell({
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>
+      {/* <Button onClick={() => setOpen(true)}>
         <Icon name="heart" />
         Thông báo{count > 0 ? ` (${count})` : ""}
-      </Button>
+      </Button> */}
       {open && (
         <Modal title="Thông báo" onClose={() => setOpen(false)}>
           <LoadState
@@ -1414,7 +1414,7 @@ function CloseVisitForm({
   const toast = useToast();
   const [conclusion, setConclusion] = useState("");
   const [referral, setReferral] = useState(0);
-  const [recheckMonths, setRecheckMonths] = useState<number | "">(6);
+  const [recheckMonths, setRecheckMonths] = useState<number | "">("");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -1446,7 +1446,7 @@ function CloseVisitForm({
           rows={4}
           value={conclusion}
           onChange={(e) => setConclusion(e.target.value)}
-          placeholder="Kết luận khám, hướng xử trí…"
+          placeholder="Kết luận khám, hướng xác nhận…"
         />
       </Field>
       <Field labelText="Chuyển tuyến">
@@ -1458,7 +1458,10 @@ function CloseVisitForm({
           ))}
         </select>
       </Field>
-      <Field labelText="Tái khám sau (tháng)">
+      <Field
+        labelText="Tái khám sau (tháng)"
+        help="Để trống để hệ thống tự xác định theo mức DR đã được bác sĩ xác nhận."
+      >
         <input
           type="number"
           min={1}

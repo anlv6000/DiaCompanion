@@ -281,34 +281,46 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                 </ReportSection>
               )}
 
-              {sections.prescriptions && (
-                <ReportSection title={labels.prescriptions}>
-                  {prescriptions.length ? (
-                    prescriptions.map((p, i) => (
-                      <div className="report-rx" key={`${p.issuedAt}-${i}`}>
-                        <div className="split report-rx-head">
-                          <b>Ngày kê: {fmtDate(p.issuedAt, true)}</b>
-                          <span>{p.note || ""}</span>
-                        </div>
-                        <div className="report-prescription-list">
-                          {p.items.map((x, j) => (
-                            <div className="report-prescription-item" key={j}>
-                              <strong>{x.drugName}</strong>
-                              <span>{x.dose}</span>
-                              <span>{x.timesPerDay} lần/ngày</span>
-                              <span>{x.durationDays} ngày</span>
-                              {x.instruction && <small>{x.instruction}</small>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p>Không có đơn thuốc trong lượt khám này.</p>
-                  )}
-                </ReportSection>
-              )}
-
+             {sections.prescriptions && (
+  <ReportSection title={labels.prescriptions}>
+    {prescriptions.length ? (
+      prescriptions.map((p, i) => (
+        <div className="report-rx" key={`${p.issuedAt}-${i}`}>
+          <div className="split report-rx-head">
+            <b>Ngày kê: {fmtDate(p.issuedAt, true)}</b>
+          </div>
+          <div className="report-prescription-list">
+            {p.items.map((x, j) => (
+              <div className="report-prescription-item" key={j}>
+                {/* Cắt drugName 20 kí tự */}
+                <strong title={x.drugName}>
+                  {x.drugName?.length > 20 ? `${x.drugName.substring(0, 20)}...` : x.drugName}
+                </strong>
+                
+                {/* Cắt dose 20 kí tự nếu cần thiết */}
+                <span title={x.dose}>
+                  {x.dose?.length > 20 ? `${x.dose.substring(0, 20)}...` : x.dose}
+                </span>
+                
+                <span>{x.timesPerDay} lần/ngày</span>
+                <span>{x.durationDays} ngày</span>
+                
+                {/* Cắt instruction (ghi chú) dài, ví dụ 30 hoặc 20 kí tự */}
+                {x.instruction && (
+                  <small title={x.instruction}>
+                    {x.instruction?.length > 20 ? `${x.instruction.substring(0, 20)}...` : x.instruction}
+                  </small>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))
+    ) : (
+      <p>Không có đơn thuốc trong lượt khám này.</p>
+    )}
+  </ReportSection>
+)}
               {sections.conclusion && (
                 <ReportSection title={labels.conclusion}>
                   <div className="report-conclusion">
@@ -326,10 +338,6 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                           ? "—"
                           : `${report.visit.recheckMonths} tháng`
                       }
-                    />
-                    <Info
-                      k="Ngày dự kiến"
-                      v={fmtDate(report.visit.recheckDueDate)}
                     />
                   </div>
                   <div className="report-subblock report-patient-next">
@@ -361,32 +369,7 @@ export function VisitReportPage({ visitId }: { visitId: number }) {
                 </ReportSection>
               )}
 
-              {sections.feedback && (
-                <ReportSection title={labels.feedback}>
-                  {report.feedback ? (
-                    <div className="report-feedback">
-                      <div className="report-rating" aria-label={`${report.feedback.rating}/5 sao`}>
-                        <strong>{report.feedback.rating}/5 sao</strong>
-                        <span>
-                          {"★".repeat(report.feedback.rating)}
-                          {"☆".repeat(Math.max(0, 5 - report.feedback.rating))}
-                        </span>
-                      </div>
-                      {report.feedback.tags && (
-                        <p>
-                          <b>Nhãn:</b> {report.feedback.tags}
-                        </p>
-                      )}
-                      <p>{report.feedback.comment || "Không có nhận xét."}</p>
-                      <small className="faint">
-                        Gửi lúc {fmtDate(report.feedback.createdAt, true)}
-                      </small>
-                    </div>
-                  ) : (
-                    <p>Bệnh nhân chưa gửi phản hồi cho lượt khám này.</p>
-                  )}
-                </ReportSection>
-              )}
+              
 
               {sections.disclaimer && (
                 <footer className="report-disclaimer">{report.disclaimer}</footer>
@@ -493,7 +476,7 @@ function RetinalImageCard({
             <div className="report-subblock report-doctor-confirmation">
               <b>Bác sĩ xác nhận</b>
               <div className="report-confirm-row">
-                <span>Hướng xử trí:</span>
+                <span>Hướng xác nhận:</span>
                 <StatusBadge
                   text={actionLabel}
                   kind={action === 1 ? "defer" : "ok"}
@@ -508,41 +491,11 @@ function RetinalImageCard({
               </small>
             </div>
 
-            {/* Chất lượng ảnh */}
-            <div className="report-subblock">
-              <b>Chất lượng ảnh</b>
-              <div>
-                <StatusBadge
-                  text={image.qualityStatusLabel}
-                  kind={
-                    image.qualityStatus === 1
-                      ? "ok"
-                      : image.qualityStatus === 2
-                        ? "alert"
-                        : ""
-                  }
-                />
-              </div>
-              {image.qualityNote && <small>{image.qualityNote}</small>}
-            </div>
+            
           </>
         ) : (
           <>
-            <div className="report-subblock">
-              <b>Chất lượng ảnh</b>
-              <div>
-                <StatusBadge
-                  text={image.qualityStatusLabel}
-                  kind={
-                    image.qualityStatus === 1
-                      ? "ok"
-                      : image.qualityStatus === 2
-                        ? "alert"
-                        : ""
-                  }
-                />
-              </div>
-            </div>
+            
             <div className="report-subblock">
               <b>Kết quả</b>
               <p>

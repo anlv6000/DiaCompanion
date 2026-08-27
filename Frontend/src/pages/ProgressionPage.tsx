@@ -76,11 +76,11 @@ export function ProgressionPage({
       <PageHeader
         title="Diễn tiến DR"
         subtitle="Ghép phân độ xác nhận, fractal dimension và HbA1c theo thời gian."
-        actions={
-          <Button onClick={exportPng} disabled={!prog.data?.points.length}>
-            Xuất PNG
-          </Button>
-        }
+        // actions={
+        //   <Button onClick={exportPng} disabled={!prog.data?.points.length}>
+        //     Xuất PNG
+        //   </Button>
+        // }
       />
       {!initial && (
         <Panel>

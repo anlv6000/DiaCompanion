@@ -11,7 +11,7 @@ export const diabetesTypes = ["Không xác định", "Type 1", "Type 2", "Thai k
 export const visitStatuses = ["Đang khám", "Đã đóng"];
 export const referralTypes = [
   "Không",
-  "Tái khám",
+  
   "Chuyên khoa mắt",
   "Khẩn cấp",
 ];
