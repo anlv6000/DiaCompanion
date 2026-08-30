@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "DiaCompanion SMS Gateway",
+    "slug": "diacompanion-sms-gateway",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.diacompanion.smsgateway",
+      "permissions": [
+        "android.permission.SEND_SMS",
+        "android.permission.INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "minSdkVersion": 26
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "46efbead-ee30-42c6-935d-1381c5cc7215"
+      }
+    }
+  }
+}

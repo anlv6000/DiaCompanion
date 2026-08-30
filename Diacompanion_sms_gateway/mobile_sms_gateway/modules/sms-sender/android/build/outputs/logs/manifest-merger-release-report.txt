@@ -1,0 +1,14 @@
+-- Merging decision tree log ---
+manifest
+ADDED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml:1:1-2:12
+INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml:1:1-2:12
+	package
+		INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml
+uses-sdk
+INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml
+INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from G:\diacompanion_sms_gateway_bundle\mobile_sms_gateway\modules\sms-sender\android\src\main\AndroidManifest.xml
